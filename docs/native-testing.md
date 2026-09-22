@@ -137,3 +137,9 @@ Verified in the actual window:
 Current screenshots: [editor](screenshots/rust-editor.png), [mask painting](screenshots/rust-mask.png), [group movement](screenshots/rust-group.png), [reopened project](screenshots/rust-reopened.png), [compact window](screenshots/rust-compact.png).
 
 Unverified: macOS/Windows execution and signing, remote CI, and direct GPU texture sharing. The uncompressed native resource path still copies pixels. The later crop, raster-mask, folder, pixel-selection, and `.comp` package pass is covered by Rust and actual-addon tests; this workspace has no Xvfb or graphical display for a fresh window screenshot. The source map states the supported `.comp` subset and remaining mask deviations.
+
+## Project picker check — 2026-09-23
+
+QuickGUI 0.1.6 rejects a picker configured for both files and directories on Linux. The toolbar and File menu now offer separate **Open** and **Open .comp** actions. The first uses a file picker for `.picsie` and `.electropic`; the second uses a directory picker for `.comp` packages.
+
+The rebuilt Linux app was run on an isolated X11 display with the GTK file portal. A saved `.picsie` file opened in a second editor window. A `.comp` directory saved through the UI reopened through **Open .comp**; the folder picker required entering the package directory before selecting it. At the 960 × 640 minimum size, both Open actions remained visible and aligned. See the [five-flow UX tour](ux-tour.md) for the new captures. `npm run check`, `npm test`, and `npm run build` passed.

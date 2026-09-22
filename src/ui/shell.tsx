@@ -196,13 +196,21 @@ export function Shell(props: {
   async function open() {
     const result = await NativeDialog.showOpenDialog(window, {
       title: "Open project",
-      properties: ["openFile", "openDirectory"],
+      properties: ["openFile"],
       filters: [
-        { name: "Picsie, Compositor, and legacy projects", extensions: ["picsie", "comp", "electropic"] },
+        { name: "Picsie and legacy projects", extensions: ["picsie", "electropic"] },
       ],
     });
     const file = result.filePaths[0];
     if (!result.canceled && file) props.openWindow(await Editor.open(file), file);
+  }
+  async function openCompositor() {
+    const result = await NativeDialog.showOpenDialog(window, {
+      title: "Open Compositor package",
+      properties: ["openDirectory"],
+    });
+    const directory = result.filePaths[0];
+    if (!result.canceled && directory) props.openWindow(await Editor.open(directory), directory);
   }
   async function exportImage(format: "png" | "jpeg") {
     const doc = editor.document;
@@ -267,6 +275,7 @@ export function Shell(props: {
         items: [
           { label: "New…", accelerator: "CmdOrCtrl+N", click: () => act(() => setNewOpen(true)) },
           { label: "Open Project…", accelerator: "CmdOrCtrl+O", click: () => void run(open) },
+          { label: "Open Compositor Package…", click: () => void run(openCompositor) },
           {
             label: "Import Image…",
             accelerator: "CmdOrCtrl+Shift+O",
@@ -545,6 +554,7 @@ export function Shell(props: {
         <View style={{ flexGrow: 1 }} />
         <Action label="New" onClick={() => setNewOpen(true)} disabled={busy()} />
         <Action label="Open" onClick={() => void run(open)} disabled={busy()} />
+        <Action label="Open .comp" onClick={() => void run(openCompositor)} disabled={busy()} />
         <Action label="Import image" onClick={() => void run(importDialog)} disabled={busy()} />
         <Action
           label="Save"

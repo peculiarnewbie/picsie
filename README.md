@@ -19,6 +19,7 @@ bun run dev
 ```
 
 The first window contains an editable sample composition. Use **New** to create a transparent canvas. Each new or opened project gets its own native window.
+Use **Open** for `.picsie` and legacy `.electropic` files, or **Open .comp** for Compositor directory packages.
 
 ```sh
 npm run check:architecture # UI/Rust boundary, with no legacy exemptions
@@ -50,6 +51,8 @@ Dev/build/test commands enforce the architecture policy. Production TypeScript i
 - Full-resolution PNG export preserving transparency, and JPEG export with a white background through **File → Export JPEG** on macOS or Ctrl+Alt+Shift+S on Linux.
 
 ## Basic workflow
+
+For a visual walkthrough, see the [five-flow UX tour](docs/ux-tour.md) with step-by-step screenshots from the native app.
 
 1. Import an image, or start with the included composition.
 2. Select a layer in the panel or click its bounds using Move. Shift-click a layer row to select a range; Ctrl/Cmd-click toggles individual layers. Shift-click on the canvas toggles layers. Locked and hidden layers are skipped by canvas hit testing.
