@@ -59,6 +59,14 @@ export function MaskPanel(props: {
             </View>
             <View style={row}>
               <Action
+                label={mask().linked ? "Linked to layer" : "Independent mask"}
+                active={mask().linked}
+                disabled={disabled()}
+                onClick={() => props.act(() => state().toggleMaskLink())}
+              />
+            </View>
+            <View style={row}>
+              <Action
                 label={mask().enabled ? "Disable" : "Enable"}
                 disabled={disabled()}
                 onClick={() =>

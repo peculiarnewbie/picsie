@@ -19,16 +19,33 @@ export type Blend =
   | "saturation"
   | "color"
   | "luminosity";
+export type Sampling = "Nearest" | "Smooth" | "High";
 export type Content =
   | { kind: "paint" }
+  | { kind: "group" }
   | { kind: "shape"; shape: Shape; color: string }
   | { kind: "gradient"; from: string; to: string }
   | { kind: "text"; text: string; fontSize: number; fontFamily: FontFamily; color: string }
   | { kind: "image" };
 export type MaskMode = "hide" | "reveal";
-export type LayerMask = { enabled: boolean; base: MaskMode };
+export type LayerMask = {
+  enabled: boolean;
+  base: MaskMode;
+  linked: boolean;
+  placement?: MaskPlacement;
+};
+export type MaskPlacement = {
+  x: number;
+  y: number;
+  scaleX: number;
+  scaleY: number;
+  rotation: number;
+  flipX: boolean;
+  flipY: boolean;
+};
 export type Layer = {
   id: string;
+  parentId?: string;
   name: string;
   visible: boolean;
   locked: boolean;
@@ -43,6 +60,7 @@ export type Layer = {
   flipY: boolean;
   opacity: number;
   blend: Blend;
+  sampling: Sampling;
   brightness: number;
   saturation: number;
   blur: number;
@@ -76,7 +94,10 @@ export type Tool =
   | "ellipse"
   | "text"
   | "hand"
-  | "eyedropper";
+  | "eyedropper"
+  | "crop"
+  | "marquee"
+  | "lasso";
 export type PaintTarget = "content" | "mask";
 export type SelectionMode = "replace" | "toggle" | "range";
 export type Phase = "down" | "move" | "up" | "cancel";
@@ -87,6 +108,12 @@ export type InitialDocument =
   | { kind: "new"; name: string; width: number; height: number };
 export type Side = "above" | "below";
 export type CanvasSizeOptions = { width: number; height: number; anchor: number; fill?: string };
+export type CropRect = { x: number; y: number; width: number; height: number };
+export type CropRatio = "free" | "original" | "square" | "fourThree" | "sixteenNine";
+export type LayerRow = { id: string; depth: number; visible: boolean; collapsed: boolean };
+export type SelectionBounds = { x: number; y: number; width: number; height: number };
+export type MarqueeKind = "rectangle" | "ellipse";
+export type PixelSelectionMode = "replace" | "add" | "subtract";
 export type Command =
   | { type: "select"; id?: string; mode: SelectionMode }
   | { type: "selectAll" }
@@ -101,17 +128,30 @@ export type Command =
   | { type: "updateLayer"; patch: Partial<Layer> }
   | { type: "addPaintLayer" }
   | { type: "addGradient" }
+  | { type: "addGroup" }
+  | { type: "groupSelected" }
+  | { type: "toggleGroupExpansion"; id: string }
+  | { type: "moveToGroup"; parentId?: string }
   | { type: "duplicate" }
   | { type: "remove" }
   | { type: "reorder"; direction: number }
   | { type: "reorderTo"; targetId: string; side: Side }
   | { type: "nudge"; delta: Point }
   | { type: "resizeCanvas"; options: CanvasSizeOptions }
+  | { type: "setCropRatio"; ratio: CropRatio }
+  | { type: "commitCrop" }
+  | { type: "cancelCrop" }
+  | { type: "setMarqueeKind"; kind: MarqueeKind }
+  | { type: "setSelectionMode"; mode: PixelSelectionMode }
+  | { type: "deselectPixels" }
+  | { type: "selectAllPixels" }
+  | { type: "clearSelectedPixels" }
   | { type: "addMask"; base: MaskMode }
   | { type: "setPaintTarget"; target: PaintTarget }
   | { type: "setMaskMode"; mode: MaskMode }
   | { type: "resetMask"; base: MaskMode }
   | { type: "removeMask" }
+  | { type: "toggleMaskLink" }
   | { type: "undo" }
   | { type: "redo" }
   | { type: "finishGesture" }
@@ -128,4 +168,10 @@ export type EditorState = {
   brushSize: number;
   brushOpacity: number;
   viewport: Viewport;
+  cropRect: CropRect | null;
+  cropRatio: CropRatio;
+  layerRows: Array<LayerRow>;
+  pixelSelectionBounds: SelectionBounds | null;
+  marqueeKind: MarqueeKind;
+  selectionMode: PixelSelectionMode;
 };

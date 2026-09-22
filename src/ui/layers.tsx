@@ -28,7 +28,7 @@ export function LayersPanel(props: {
     if (pointer.phase === "down") {
       if (!state().isSelected(id)) state().select(id);
       if (!state().selectedLayers.some((layer) => !layer.locked)) return;
-      const ids = [...state().document.layers].reverse().map((layer) => layer.id);
+      const ids = state().layerRows.map((row) => row.id);
       drag = { index: ids.indexOf(id), ids, moved: false };
     } else if (pointer.phase === "cancel") {
       drag = undefined;
@@ -67,14 +67,16 @@ export function LayersPanel(props: {
           disabled={props.busy}
           onClick={() => props.act(() => state().addGradient())}
         />
+        <Action label="Folder" disabled={props.busy} onClick={() => props.act(() => state().addGroup())} />
         <Text style={{ color: colors.muted, fontSize: 11 }}>{state().document.layers.length}</Text>
       </View>
       <Text style={{ color: colors.muted, fontSize: 10, lineHeight: "14px" }}>
         Shift: range · Ctrl/⌘: toggle · Drag grip: reorder
       </Text>
       <View style={{ ...column, gap: 3, maxHeight: 255, overflowY: "auto" }}>
-        <For each={[...state().document.layers].reverse().map((layer) => layer.id)}>
-          {(id) => {
+        <For each={state().layerRows}>
+          {(item) => {
+            const id = item.id;
             const layer = () => state().document.layers.find((layer) => layer.id === id)!;
             let clickMode: SelectionMode = "replace";
             const rememberModifiers = (event: QuickGuiEvent) => {
@@ -92,7 +94,7 @@ export function LayersPanel(props: {
                   gap: 4,
                   height: 40,
                   flexShrink: 0,
-                  paddingLeft: 5,
+                  paddingLeft: 5 + item.depth * 14,
                   paddingRight: 6,
                   borderRadius: 5,
                   position: "relative",
@@ -110,6 +112,16 @@ export function LayersPanel(props: {
                       ...(drop()?.side === "above" ? { top: 0 } : { bottom: 0 }),
                     }}
                   />
+                </Show>
+                <Show when={layer().content.kind === "group"}>
+                  <Button
+                    ariaLabel={`${item.collapsed ? "Expand" : "Collapse"} ${layer().name}`}
+                    disabled={props.busy}
+                    onClick={() => props.act(() => state().toggleGroupExpansion(id))}
+                    style={{ width: 16, height: 30, color: colors.muted }}
+                  >
+                    <Text>{item.collapsed ? "▸" : "▾"}</Text>
+                  </Button>
                 </Show>
                 <View
                   ariaLabel={`Drag ${layer().name}`}
@@ -141,7 +153,7 @@ export function LayersPanel(props: {
                     width: 20,
                     height: 30,
                     flexShrink: 0,
-                    color: layer().visible ? colors.accent : colors.muted,
+                    color: item.visible ? colors.accent : colors.muted,
                   }}
                 >
                   <Icon name={layer().visible ? "eye" : "eyeOff"} size={16} />
@@ -166,7 +178,9 @@ export function LayersPanel(props: {
                 >
                   <Icon
                     name={
-                      layer().content.kind === "text"
+                      layer().content.kind === "group"
+                        ? "layers"
+                        : layer().content.kind === "text"
                         ? "text"
                         : layer().content.kind === "image"
                           ? "image"
@@ -231,6 +245,7 @@ export function LayersPanel(props: {
         </Show>
       </View>
       <View style={{ ...row, gap: 5 }}>
+        <Action label="Group" disabled={props.busy || !state().selectedIds.length} onClick={() => props.act(() => state().groupSelected())} />
         <Action
           label="Raise layers"
           icon="up"
@@ -261,6 +276,14 @@ export function LayersPanel(props: {
           disabled={props.busy || !state().selectedLayers.some((layer) => !layer.locked)}
         />
       </View>
+      <Show when={state().selectedIds.length > 0}>
+        <View style={{ ...row, gap: 4, flexWrap: "wrap" }}>
+          <Action label="Out of folder" disabled={props.busy || !state().selectedLayers.some((layer) => layer.parentId)} onClick={() => props.act(() => state().moveToGroup())} />
+          <For each={state().document.layers.filter((layer) => layer.content.kind === "group" && !state().isSelected(layer.id))}>
+            {(folder) => <Action label={`Into ${folder.name}`} disabled={props.busy} onClick={() => props.act(() => state().moveToGroup(folder.id))} />}
+          </For>
+        </View>
+      </Show>
       <Show when={state().selectedIds.length > 1}>
         <Text style={{ fontSize: 11, color: colors.accent, lineHeight: "16px" }}>
           {state().selectedIds.length} layers selected

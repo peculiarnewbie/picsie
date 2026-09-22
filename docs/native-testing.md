@@ -136,4 +136,4 @@ Verified in the actual window:
 
 Current screenshots: [editor](screenshots/rust-editor.png), [mask painting](screenshots/rust-mask.png), [group movement](screenshots/rust-group.png), [reopened project](screenshots/rust-reopened.png), [compact window](screenshots/rust-compact.png).
 
-Unverified: macOS/Windows execution and signing, remote CI, and direct GPU texture sharing. The uncompressed native resource path still copies pixels. This migration preserves v1 project and brush/mask semantics; it does not add upstream `.comp` or grayscale-mask parity.
+Unverified: macOS/Windows execution and signing, remote CI, and direct GPU texture sharing. The uncompressed native resource path still copies pixels. The later crop, raster-mask, folder, pixel-selection, and `.comp` package pass is covered by Rust and actual-addon tests; this workspace has no Xvfb or graphical display for a fresh window screenshot. The source map states the supported `.comp` subset and remaining mask deviations.

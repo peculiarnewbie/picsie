@@ -99,6 +99,15 @@ impl NativeEditor {
             } else {
                 None
             },
+            crop: if editor.tool == Tool::Crop {
+                Some(editor.crop_rect.unwrap_or_else(|| {
+                    picsie_core::crop::CropRect::from_document(&editor.history.document)
+                }))
+            } else {
+                None
+            },
+            pixel_selection: editor.pixel_selection.clone(),
+            selection_draft: editor.selection_draft(),
         };
         Ok(AsyncTask::new(task))
     }
@@ -208,6 +217,9 @@ pub struct PreviewTask {
     selection: Vec<String>,
     handles: bool,
     mask_id: Option<String>,
+    crop: Option<picsie_core::crop::CropRect>,
+    pixel_selection: Option<picsie_core::pixel_selection::PixelSelection>,
+    selection_draft: Option<picsie_core::pixel_selection::SelectionDraft>,
 }
 impl Task for PreviewTask {
     type Output = String;
@@ -221,6 +233,9 @@ impl Task for PreviewTask {
                 &self.selection,
                 self.handles,
                 self.mask_id.as_deref(),
+                self.crop,
+                self.pixel_selection.as_ref(),
+                self.selection_draft.as_ref(),
             )
             .map_err(error)?;
         let bytes = picsie_core::render::frame_bytes(&mut surface).map_err(error)?;

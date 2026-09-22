@@ -1,4 +1,4 @@
-use crate::{model::*, render};
+use crate::{comp, model::*, render};
 use anyhow::{Context, Result, ensure};
 use std::{
     fs::{self, File},
@@ -34,6 +34,13 @@ pub fn parse_project(text: &str) -> Result<Document> {
     Ok(doc)
 }
 pub fn open_project(path: &Path) -> Result<Document> {
+    if path.is_dir()
+        || path
+            .extension()
+            .is_some_and(|e| e.eq_ignore_ascii_case("comp"))
+    {
+        return comp::open(path);
+    }
     parse_project(std::str::from_utf8(&bounded_read(path)?)?)
 }
 /// Same-directory replacement preserves the old file on failed writes. Sync before rename.
@@ -49,6 +56,12 @@ pub fn atomic_write(path: &Path, bytes: &[u8]) -> Result<()> {
     Ok(())
 }
 pub fn save_project(path: &Path, doc: &Document) -> Result<()> {
+    if path
+        .extension()
+        .is_some_and(|e| e.eq_ignore_ascii_case("comp"))
+    {
+        return comp::save(path, doc);
+    }
     doc.validate()?;
     let bytes = serde_json::to_vec(doc)?;
     ensure!(

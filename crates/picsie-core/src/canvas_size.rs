@@ -1,5 +1,5 @@
 //! Compositor CanvasSize.swift / CanvasResizer.swift, MIT © 2026 Wonder Assembly LLC.
-use crate::{model::*, render};
+use crate::{crop::CropRect, model::*, render};
 use anyhow::{Result, ensure};
 use serde::{Deserialize, Serialize};
 use ts_rs::TS;
@@ -64,5 +64,19 @@ pub fn resize_canvas(doc: &Document, opt: &CanvasSizeOptions) -> Result<Document
             ),
         );
     }
+    Ok(next)
+}
+
+/// Compositor CanvasResizer applies a crop as a document translation. Source pixels stay intact.
+pub fn crop_canvas(doc: &Document, rect: CropRect) -> Result<Document> {
+    let rect = rect.snapped().validate()?;
+    let mut next = doc.clone();
+    next.width = rect.width as u32;
+    next.height = rect.height as u32;
+    for layer in &mut next.layers {
+        layer.x -= rect.x;
+        layer.y -= rect.y;
+    }
+    next.validate()?;
     Ok(next)
 }

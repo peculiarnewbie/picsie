@@ -1,6 +1,7 @@
 //! TypeScript's contract is generated from Rust. No parallel schema to maintain.
 use picsie_core::{
     canvas_size::CanvasSizeOptions,
+    crop::{CropRatio, CropRect},
     editor::*,
     geometry::Viewport,
     history::{HistoryInfo, Selection},
@@ -21,6 +22,12 @@ struct EditorState {
     brush_size: f64,
     brush_opacity: f64,
     viewport: Viewport,
+    crop_rect: Option<CropRect>,
+    crop_ratio: CropRatio,
+    layer_rows: Vec<LayerRow>,
+    pixel_selection_bounds: Option<picsie_core::pixel_selection::SelectionBounds>,
+    marquee_kind: picsie_core::pixel_selection::MarqueeKind,
+    selection_mode: picsie_core::pixel_selection::PixelSelectionMode,
 }
 fn main() {
     let mut out =
@@ -31,9 +38,11 @@ fn main() {
         Shape,
         FontFamily,
         Blend,
+        Sampling,
         Content,
         MaskMode,
         LayerMask,
+        MaskPlacement,
         Layer,
         Document,
         Viewport,
@@ -48,6 +57,12 @@ fn main() {
         InitialDocument,
         Side,
         CanvasSizeOptions,
+        CropRect,
+        CropRatio,
+        LayerRow,
+        picsie_core::pixel_selection::SelectionBounds,
+        picsie_core::pixel_selection::MarqueeKind,
+        picsie_core::pixel_selection::PixelSelectionMode,
         Command,
         EditorState
     );

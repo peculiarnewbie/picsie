@@ -13,5 +13,6 @@ base64 = "0.22"
 skia-safe = { version = "0.153.3", features = ["textlayout"] }
 ts-rs = { version = "12", features = ["serde-json-impl"] }
 tempfile = "3"
+png = "0.17"
 
 tiff = { version = "0.11.3", default-features = false }

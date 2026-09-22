@@ -149,18 +149,36 @@ export function Shell(props: {
       const result = await NativeDialog.showSaveDialog(window, {
         title: "Save project",
         defaultPath: `${doc.name}.picsie`,
-        filters: [{ name: "Picsie project", extensions: ["picsie"] }],
+        filters: [
+          { name: "Picsie project", extensions: ["picsie"] },
+          { name: "Compositor package", extensions: ["comp"] },
+        ],
       });
       if (result.canceled || !result.filePath) return false;
-      destination = result.filePath.endsWith(".picsie")
+      destination = [".picsie", ".comp"].includes(extname(result.filePath).toLowerCase())
         ? result.filePath
         : `${result.filePath}.picsie`;
     }
     await editor.save(destination);
     setPath(destination);
     changed();
-    setNotice(`Saved ${doc.name}`);
+    const flattened = destination.endsWith(".comp") && doc.layers.some((layer) => ["shape", "gradient", "text"].includes(layer.content.kind));
+    setNotice(flattened ? "Saved .comp package; live shapes, gradients, and text were rasterized" : `Saved ${doc.name}`);
     return true;
+  }
+  async function saveCompositor(): Promise<void> {
+    const result = await NativeDialog.showSaveDialog(window, {
+      title: "Save Compositor package",
+      defaultPath: `${editor.document.name}.comp`,
+      filters: [{ name: "Compositor package", extensions: ["comp"] }],
+    });
+    if (result.canceled || !result.filePath) return;
+    const destination = result.filePath.toLowerCase().endsWith(".comp") ? result.filePath : `${result.filePath}.comp`;
+    await editor.save(destination);
+    setPath(destination);
+    changed();
+    const flattened = editor.document.layers.some((layer) => ["shape", "gradient", "text"].includes(layer.content.kind));
+    setNotice(flattened ? "Saved .comp package; live shapes, gradients, and text were rasterized" : "Saved .comp package");
   }
   async function importPaths(paths: readonly string[]) {
     await editor.importImages(paths);
@@ -178,8 +196,9 @@ export function Shell(props: {
   async function open() {
     const result = await NativeDialog.showOpenDialog(window, {
       title: "Open project",
+      properties: ["openFile", "openDirectory"],
       filters: [
-        { name: "Picsie and legacy Electropic projects", extensions: ["picsie", "electropic"] },
+        { name: "Picsie, Compositor, and legacy projects", extensions: ["picsie", "comp", "electropic"] },
       ],
     });
     const file = result.filePaths[0];
@@ -270,6 +289,7 @@ export function Shell(props: {
                 await save(true);
               }),
           },
+          { label: "Save Compositor Package…", click: () => void run(saveCompositor) },
           {
             label: "Export PNG…",
             accelerator: "CmdOrCtrl+Alt+S",
@@ -367,7 +387,8 @@ export function Shell(props: {
       altPressed = key.alt;
     }
     if (key && (key.control || key.meta) && key.key.toLowerCase() === "a") {
-      editor.selectAll();
+      if (editor.tool === "marquee" || editor.tool === "lasso") editor.selectAllPixels();
+      else editor.selectAll();
       return;
     }
     if (key && process.platform === "linux" && (key.control || key.meta)) {
@@ -396,10 +417,18 @@ export function Shell(props: {
       editor.setTool(tool.id);
       return;
     }
-    if (key.key === "Escape") editor.cancelGesture();
+    if (key.key === "Escape") {
+      if (editor.tool === "crop") editor.cancelCrop();
+      else if (editor.tool === "marquee" || editor.tool === "lasso") editor.deselectPixels();
+      else editor.cancelGesture();
+    }
+    if (key.key === "Enter" && editor.tool === "crop") editor.commitCrop();
     if (key.key.toLowerCase() === "x" && editor.paintTarget === "mask")
       editor.setMaskMode(editor.maskMode === "hide" ? "reveal" : "hide");
-    if (key.key === "Delete" || key.key === "Backspace") editor.remove();
+    if (key.key === "Delete" || key.key === "Backspace") {
+      if (editor.pixelSelectionBounds) editor.clearSelectedPixels();
+      else editor.remove();
+    }
     if (key.key === "[") {
       editor.brushSize = Math.max(1, editor.brushSize - 5);
       editor.notify();
@@ -526,6 +555,7 @@ export function Shell(props: {
           }
           disabled={busy()}
         />
+        <Action label="Save .comp" onClick={() => void run(saveCompositor)} disabled={busy()} />
         <Action
           label="Export PNG"
           icon="export"
@@ -551,9 +581,38 @@ export function Shell(props: {
         <Show
           when={state().tool === "brush" || state().tool === "eraser"}
           fallback={
-            <Text style={{ color: colors.muted, fontSize: 11 }}>
-              V move · B brush · U shape · T text · H pan
-            </Text>
+            <Show
+              when={state().tool === "crop"}
+              fallback={
+                <Show when={state().tool === "marquee" || state().tool === "lasso"} fallback={<Text style={{ color: colors.muted, fontSize: 11 }}>V move · B brush · M marquee · L lasso · C crop</Text>}>
+                  <View style={{ ...row, gap: 5 }}>
+                    <Show when={state().tool === "marquee"}>
+                      <Action label="Rectangle" active={state().marqueeKind === "rectangle"} onClick={() => act(() => editor.setMarqueeKind("rectangle"))} />
+                      <Action label="Ellipse" active={state().marqueeKind === "ellipse"} onClick={() => act(() => editor.setMarqueeKind("ellipse"))} />
+                    </Show>
+                    <For each={[{ id: "replace", label: "New" }, { id: "add", label: "Add" }, { id: "subtract", label: "Subtract" }] as const}>
+                      {(mode) => <Action label={mode.label} active={state().selectionMode === mode.id} onClick={() => act(() => editor.setSelectionMode(mode.id))} />}
+                    </For>
+                    <Action label="Clear pixels" disabled={!state().pixelSelectionBounds || !state().selected} onClick={() => act(() => editor.clearSelectedPixels())} />
+                    <Action label="Deselect" disabled={!state().pixelSelectionBounds} onClick={() => act(() => editor.deselectPixels())} />
+                  </View>
+                </Show>
+              }
+            >
+              <View style={{ ...row, gap: 4 }}>
+                <For each={[
+                  { id: "free", label: "Free" },
+                  { id: "original", label: "Original" },
+                  { id: "square", label: "1:1" },
+                  { id: "fourThree", label: "4:3" },
+                  { id: "sixteenNine", label: "16:9" },
+                ] as const}>
+                  {(ratio) => <Action label={ratio.label} active={state().cropRatio === ratio.id} onClick={() => act(() => editor.setCropRatio(ratio.id))} />}
+                </For>
+                <Action label="Apply" primary onClick={() => act(() => editor.commitCrop())} />
+                <Action label="Cancel" onClick={() => act(() => editor.cancelCrop())} />
+              </View>
+            </Show>
           }
         >
           <View style={{ ...row, width: 245 }}>
@@ -770,7 +829,7 @@ export function Shell(props: {
                           const blend = blendModes.find((mode) => mode === v);
                           if (blend) patch({ blend });
                         }}
-                        disabled={layer().locked || busy()}
+                        disabled={layer().locked || busy() || layer().content.kind === "group"}
                         style={{
                           ...inputStyle,
                           ...row,
@@ -801,6 +860,7 @@ export function Shell(props: {
                     onClick={() => patch({ locked: !layer().locked })}
                   />
                 </Section>
+                <Show when={layer().content.kind !== "group"}>
                 <MaskPanel editor={state} busy={busy()} act={act} />
                 <Section title="Transform">
                   <View style={fieldRow}>
@@ -947,6 +1007,7 @@ export function Shell(props: {
                     disabled={layer().locked}
                   />
                 </Section>
+                </Show>
               </>
             )}
           </Show>

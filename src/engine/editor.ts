@@ -14,6 +14,9 @@ import type {
   Tool,
   Viewport,
   CanvasSizeOptions,
+  CropRatio,
+  MarqueeKind,
+  PixelSelectionMode,
 } from "./types.ts";
 import type { NativeEditor } from "./native-api";
 export type { SelectionMode, Tool } from "./types.ts";
@@ -66,6 +69,9 @@ export class Editor {
   get selectedLayers() {
     return this.document.layers.filter((layer) => this.isSelected(layer.id));
   }
+  get layerRows() {
+    return this.state.layerRows;
+  }
   isSelected(id: string) {
     return this.selectedIds.includes(id);
   }
@@ -95,6 +101,21 @@ export class Editor {
   }
   get viewport() {
     return this.state.viewport;
+  }
+  get cropRect() {
+    return this.state.cropRect;
+  }
+  get cropRatio() {
+    return this.state.cropRatio;
+  }
+  get pixelSelectionBounds() {
+    return this.state.pixelSelectionBounds;
+  }
+  get marqueeKind() {
+    return this.state.marqueeKind;
+  }
+  get selectionMode() {
+    return this.state.selectionMode;
   }
   set viewport(viewport: Viewport) {
     this.dispatch({ type: "setViewport", viewport });
@@ -132,6 +153,18 @@ export class Editor {
   addGradient() {
     this.dispatch({ type: "addGradient" });
   }
+  addGroup() {
+    this.dispatch({ type: "addGroup" });
+  }
+  groupSelected() {
+    this.dispatch({ type: "groupSelected" });
+  }
+  toggleGroupExpansion(id: string) {
+    this.dispatch({ type: "toggleGroupExpansion", id });
+  }
+  moveToGroup(parentId?: string) {
+    this.dispatch({ type: "moveToGroup", parentId });
+  }
   duplicate() {
     this.dispatch({ type: "duplicate" });
   }
@@ -151,6 +184,30 @@ export class Editor {
     this.finishGesture();
     this.accept(await this.native.resizeCanvas(JSON.stringify(options)));
   }
+  setCropRatio(ratio: CropRatio) {
+    this.dispatch({ type: "setCropRatio", ratio });
+  }
+  commitCrop() {
+    this.dispatch({ type: "commitCrop" });
+  }
+  cancelCrop() {
+    this.dispatch({ type: "cancelCrop" });
+  }
+  setMarqueeKind(kind: MarqueeKind) {
+    this.dispatch({ type: "setMarqueeKind", kind });
+  }
+  setSelectionMode(mode: PixelSelectionMode) {
+    this.dispatch({ type: "setSelectionMode", mode });
+  }
+  deselectPixels() {
+    this.dispatch({ type: "deselectPixels" });
+  }
+  selectAllPixels() {
+    this.dispatch({ type: "selectAllPixels" });
+  }
+  clearSelectedPixels() {
+    this.dispatch({ type: "clearSelectedPixels" });
+  }
   addMask(base: MaskMode = "reveal") {
     this.dispatch({ type: "addMask", base });
   }
@@ -165,6 +222,9 @@ export class Editor {
   }
   removeMask() {
     this.dispatch({ type: "removeMask" });
+  }
+  toggleMaskLink() {
+    this.dispatch({ type: "toggleMaskLink" });
   }
   undo() {
     this.dispatch({ type: "undo" });

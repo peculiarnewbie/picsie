@@ -1,7 +1,10 @@
 pub mod canvas_size;
+pub mod comp;
+pub mod crop;
 pub mod editor;
 pub mod files;
 pub mod geometry;
 pub mod history;
 pub mod model;
+pub mod pixel_selection;
 pub mod render;

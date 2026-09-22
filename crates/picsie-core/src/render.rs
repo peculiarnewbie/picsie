@@ -2,6 +2,7 @@
 use crate::{
     geometry::{self, Viewport},
     model::*,
+    pixel_selection::{PixelSelection, SelectionDraft},
 };
 use anyhow::{Result, anyhow, ensure};
 use base64::{Engine as _, engine::general_purpose::STANDARD};
@@ -57,6 +58,126 @@ fn stroke(canvas: &Canvas, points: &[Point], size: f64, opacity: f64, erase: boo
         canvas.draw_path(&path.detach(), &p);
     }
 }
+
+/// Raster coverage follows Compositor's immutable grayscale mask asset model. Legacy strokes
+/// are painted into this surface while old projects are read or a live stroke is previewed.
+fn mask_surface(mask: &LayerMask, layer: &Layer) -> Result<Surface> {
+    let mut result = surface(layer.width, layer.height)?;
+    let canvas = result.canvas();
+    if let Some(raster) = &mask.raster {
+        let info = sk::ImageInfo::new(
+            (raster.width as i32, raster.height as i32),
+            sk::ColorType::Alpha8,
+            sk::AlphaType::Premul,
+            None,
+        );
+        let image = sk::images::raster_from_data(
+            &info,
+            sk::Data::new_copy(raster.pixels.as_slice()),
+            raster.width as usize,
+        )
+        .ok_or_else(|| anyhow!("Cannot create grayscale mask image"))?;
+        canvas.draw_image_rect(
+            image,
+            None,
+            rect(layer.width, layer.height),
+            &Paint::default(),
+        );
+    } else if mask.base == MaskMode::Reveal {
+        canvas.clear(Color::WHITE);
+    }
+    for stroke_value in &mask.strokes {
+        stroke(
+            canvas,
+            &stroke_value.points,
+            stroke_value.size,
+            stroke_value.opacity,
+            stroke_value.mode == MaskMode::Hide,
+            "#ffffff",
+        );
+    }
+    Ok(result)
+}
+
+fn mask_image(mask: &LayerMask, layer: &Layer) -> Result<Image> {
+    let mut source = mask_surface(mask, layer)?;
+    let Some(placement) = mask.placement else {
+        return Ok(source.image_snapshot());
+    };
+    if placement == MaskPlacement::of(layer) {
+        return Ok(source.image_snapshot());
+    }
+    let width = layer.width as usize;
+    let height = layer.height as usize;
+    let mut rgba = vec![0u8; width * height * 4];
+    let info = sk::ImageInfo::new(
+        (layer.width as i32, layer.height as i32),
+        sk::ColorType::RGBA8888,
+        sk::AlphaType::Unpremul,
+        None,
+    );
+    ensure!(
+        source.read_pixels(&info, &mut rgba, width * 4, (0, 0)),
+        "Cannot read placed mask"
+    );
+    let mut edge_total = 0usize;
+    let mut edge_count = 0usize;
+    for y in 0..height {
+        for x in 0..width {
+            if y == 0 || y + 1 == height || x == 0 || x + 1 == width {
+                edge_total += rgba[(y * width + x) * 4 + 3] as usize;
+                edge_count += 1;
+            }
+        }
+    }
+    let background = if edge_total * 2 >= edge_count * 255 {
+        255
+    } else {
+        0
+    };
+    let placed = placement.as_layer(layer);
+    let mut pixels = vec![background; width * height];
+    for y in 0..height {
+        for x in 0..width {
+            let world = geometry::to_world(layer, Point::new(x as f64 + 0.5, y as f64 + 0.5));
+            let local = geometry::to_local(&placed, world);
+            let sx = local.x.floor() as isize;
+            let sy = local.y.floor() as isize;
+            if sx >= 0 && sy >= 0 && sx < width as isize && sy < height as isize {
+                pixels[y * width + x] = rgba[(sy as usize * width + sx as usize) * 4 + 3];
+            }
+        }
+    }
+    let alpha = sk::ImageInfo::new(
+        (layer.width as i32, layer.height as i32),
+        sk::ColorType::Alpha8,
+        sk::AlphaType::Premul,
+        None,
+    );
+    sk::images::raster_from_data(&alpha, sk::Data::new_copy(&pixels), width)
+        .ok_or_else(|| anyhow!("Cannot place grayscale mask"))
+}
+
+pub fn rasterize_mask(mask: &LayerMask, layer: &Layer) -> Result<MaskRaster> {
+    let mut surface = mask_surface(mask, layer)?;
+    let mut rgba = vec![0u8; layer.width as usize * layer.height as usize * 4];
+    let info = sk::ImageInfo::new(
+        (layer.width as i32, layer.height as i32),
+        sk::ColorType::RGBA8888,
+        sk::AlphaType::Unpremul,
+        None,
+    );
+    ensure!(
+        surface.read_pixels(&info, &mut rgba, layer.width as usize * 4, (0, 0)),
+        "Cannot read mask coverage"
+    );
+    let pixels = rgba.chunks_exact(4).map(|pixel| pixel[3]).collect();
+    Ok(MaskRaster {
+        width: layer.width,
+        height: layer.height,
+        pixels: Arc::new(pixels),
+    })
+}
 fn transform(c: &Canvas, l: &Layer) {
     let mid = geometry::center(l);
     c.translate((mid.x as f32, mid.y as f32));
@@ -108,6 +229,7 @@ impl Renderer {
         let c = s.canvas();
         match l.content.as_ref() {
             Content::Paint => (),
+            Content::Group => (),
             Content::Shape { shape, color } => {
                 let p = paint(color);
                 match shape {
@@ -194,22 +316,7 @@ impl Renderer {
         if let Some(mask) = &l.mask
             && mask.enabled
         {
-            let mut m = surface(l.width, l.height)?;
-            let mc = m.canvas();
-            if mask.base == MaskMode::Reveal {
-                mc.clear(Color::WHITE);
-            }
-            for v in &mask.strokes {
-                stroke(
-                    mc,
-                    &v.points,
-                    v.size,
-                    v.opacity,
-                    v.mode == MaskMode::Hide,
-                    "#ffffff",
-                );
-            }
-            let image = m.image_snapshot();
+            let image = mask_image(mask, l)?;
             let mut p = Paint::default();
             p.set_blend_mode(BlendMode::DstIn);
             c.draw_image(&image, (0., 0.), Some(&p));
@@ -236,14 +343,15 @@ impl Renderer {
         let c = s.canvas();
         self.cache
             .retain(|(l, _)| doc.layers.iter().any(|v| v.id == l.id));
-        for l in &doc.layers {
-            if !l.visible || l.opacity == 0. {
+        for l in doc.ordered_layers() {
+            let (visible, opacity) = doc.effective(l);
+            if !visible || opacity == 0. || matches!(l.content.as_ref(), Content::Group) {
                 continue;
             }
             let image = self.layer_surface(l)?;
             let mut p = Paint::default();
             p.set_anti_alias(true)
-                .set_alpha((l.opacity * 255.).round() as u8)
+                .set_alpha((opacity * 255.).round() as u8)
                 .set_blend_mode(blend(l.blend));
             let sat = l.saturation as f32;
             let b = l.brightness as f32;
@@ -288,12 +396,65 @@ impl Renderer {
             c.draw_image_with_sampling_options(
                 &image,
                 (0., 0.),
-                sk::SamplingOptions::new(sk::FilterMode::Linear, sk::MipmapMode::None),
+                sk::SamplingOptions::new(
+                    if l.sampling == Sampling::Nearest {
+                        sk::FilterMode::Nearest
+                    } else {
+                        sk::FilterMode::Linear
+                    },
+                    sk::MipmapMode::None,
+                ),
                 Some(&p),
             );
             c.restore();
         }
         Ok(s)
+    }
+    /// Destructive pixel edit: materialize the editable layer, then remove document-space
+    /// selection coverage. The separate layer mask stays attached to the resulting image.
+    pub fn clear_layer_selection(
+        &mut self,
+        layer: &Layer,
+        selection: &PixelSelection,
+    ) -> Result<Image> {
+        let mut unmasked = layer.clone();
+        unmasked.mask = None;
+        let image = self.layer_surface(&unmasked)?;
+        let width = layer.width as usize;
+        let height = layer.height as usize;
+        let info = sk::ImageInfo::new(
+            (layer.width as i32, layer.height as i32),
+            sk::ColorType::RGBA8888,
+            sk::AlphaType::Unpremul,
+            None,
+        );
+        let mut pixels = vec![0u8; width * height * 4];
+        ensure!(
+            image.read_pixels(
+                &info,
+                &mut pixels,
+                width * 4,
+                (0, 0),
+                sk::image::CachingHint::Disallow
+            ),
+            "Cannot read layer pixels"
+        );
+        for y in 0..height {
+            for x in 0..width {
+                let world = geometry::to_world(layer, Point::new(x as f64 + 0.5, y as f64 + 0.5));
+                if world.x >= 0.
+                    && world.y >= 0.
+                    && world.x < selection.width as f64
+                    && world.y < selection.height as f64
+                {
+                    let coverage = selection.at(world.x as u32, world.y as u32);
+                    let alpha = &mut pixels[(y * width + x) * 4 + 3];
+                    *alpha = (*alpha as u16 * (255 - coverage as u16) / 255) as u8;
+                }
+            }
+        }
+        sk::images::raster_from_data(&info, sk::Data::new_copy(&pixels), width * 4)
+            .ok_or_else(|| anyhow!("Cannot create edited image"))
     }
     pub fn preview(
         &mut self,
@@ -302,6 +463,9 @@ impl Renderer {
         selection: &[String],
         show_handles: bool,
         mask_id: Option<&str>,
+        crop: Option<crate::crop::CropRect>,
+        pixel_selection: Option<&PixelSelection>,
+        selection_draft: Option<&SelectionDraft>,
     ) -> Result<Surface> {
         let mut s = surface(
             v.width.round().max(1.) as u32,
@@ -347,15 +511,57 @@ impl Renderer {
             sk::SamplingOptions::new(sk::FilterMode::Linear, sk::MipmapMode::None),
             None,
         );
+        if let Some(selection) = pixel_selection
+            && let Some(bounds) = &selection.bounds
+        {
+            let width = bounds.width as usize;
+            let height = bounds.height as usize;
+            let mut rgba = vec![0u8; width * height * 4];
+            for y in 0..height {
+                for x in 0..width {
+                    let coverage = selection.at(bounds.x + x as u32, bounds.y + y as u32);
+                    let at = (y * width + x) * 4;
+                    rgba[at..at + 3].copy_from_slice(&[75, 179, 221]);
+                    rgba[at + 3] = (coverage as u16 * 48 / 255) as u8;
+                }
+            }
+            let info = sk::ImageInfo::new(
+                (bounds.width as i32, bounds.height as i32),
+                sk::ColorType::RGBA8888,
+                sk::AlphaType::Unpremul,
+                None,
+            );
+            if let Some(overlay) =
+                sk::images::raster_from_data(&info, sk::Data::new_copy(&rgba), width * 4)
+            {
+                c.draw_image(&overlay, (bounds.x as f32, bounds.y as f32), None);
+            }
+        }
         c.restore();
         let layers: Vec<_> = doc
             .layers
             .iter()
-            .filter(|l| selection.contains(&l.id) && l.visible)
+            .filter(|l| {
+                selection.contains(&l.id)
+                    && l.visible
+                    && !matches!(l.content.as_ref(), Content::Group)
+            })
             .collect();
         let map = |p: Point| Point::new(o.x + p.x * v.zoom, o.y + p.y * v.zoom);
         let mut all = vec![];
         for l in &layers {
+            let outline = if mask_id == Some(l.id.as_str()) {
+                l.mask.as_ref().and_then(|mask| {
+                    (!mask.linked).then(|| {
+                        mask.placement
+                            .unwrap_or_else(|| MaskPlacement::of(l))
+                            .as_layer(l)
+                    })
+                })
+            } else {
+                None
+            };
+            let l = outline.as_ref().unwrap_or(l);
             let points: Vec<_> = geometry::corners(l).into_iter().map(map).collect();
             all.extend(points.iter().copied());
             let mut p = paint(if mask_id == Some(l.id.as_str()) {
@@ -404,6 +610,58 @@ impl Renderer {
                 &p,
             );
         }
+        if let Some(rect) = crop {
+            let top_left = map(Point::new(rect.x, rect.y));
+            let bottom_right = map(Point::new(rect.x + rect.width, rect.y + rect.height));
+            let bounds = Rect::new(
+                top_left.x as f32,
+                top_left.y as f32,
+                bottom_right.x as f32,
+                bottom_right.y as f32,
+            );
+            let mut line = paint("#ffffff");
+            line.set_style(sk::paint::Style::Stroke)
+                .set_stroke_width(1.5);
+            c.draw_rect(bounds, &line);
+            for (hx, hy) in [
+                (0., 0.),
+                (0.5, 0.),
+                (1., 0.),
+                (1., 0.5),
+                (1., 1.),
+                (0.5, 1.),
+                (0., 1.),
+                (0., 0.5),
+            ] {
+                let x = (top_left.x + (bottom_right.x - top_left.x) * hx) as f32;
+                let y = (top_left.y + (bottom_right.y - top_left.y) * hy) as f32;
+                c.draw_rect(Rect::from_xywh(x - 3.5, y - 3.5, 7., 7.), &paint("#ffffff"));
+            }
+        }
+        if let Some(draft) = selection_draft {
+            let mut line = paint("#72cceb");
+            line.set_style(sk::paint::Style::Stroke)
+                .set_stroke_width(1.5)
+                .set_path_effect(sk::PathEffect::dash(&[5., 4.], 0.));
+            if let Some((x0, y0, x1, y1)) = draft.bounds() {
+                let a = map(Point::new(x0, y0));
+                let b = map(Point::new(x1, y1));
+                let bounds = Rect::new(a.x as f32, a.y as f32, b.x as f32, b.y as f32);
+                if draft.marquee == Some(crate::pixel_selection::MarqueeKind::Ellipse) {
+                    c.draw_oval(bounds, &line);
+                } else if draft.marquee.is_some() {
+                    c.draw_rect(bounds, &line);
+                }
+            }
+            if draft.marquee.is_none() && draft.points.len() > 1 {
+                let mut path = sk::PathBuilder::new();
+                path.move_to(point(map(draft.points[0])));
+                for p in &draft.points[1..] {
+                    path.line_to(point(map(*p)));
+                }
+                c.draw_path(&path.detach(), &line);
+            }
+        }
         Ok(s)
     }
     pub fn export(&mut self, doc: &Document, jpeg: bool) -> Result<Vec<u8>> {
@@ -435,6 +693,9 @@ impl Renderer {
         );
         Ok(pixel)
     }
+}
+pub fn clear_selected_pixels(layer: &Layer, selection: &PixelSelection) -> Result<Image> {
+    Renderer::default().clear_layer_selection(layer, selection)
 }
 pub fn decode(bytes: &[u8]) -> Result<Image> {
     let data = sk::Data::new_copy(bytes);

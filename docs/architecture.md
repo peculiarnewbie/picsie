@@ -52,7 +52,7 @@ crates/picsie-core/tests/  Rust behavior and pinned Compositor fixtures
 tests/                        Actual-addon integration and old project fixtures
 ```
 
-`src/core/` has been removed. There are **zero legacy TypeScript engine exemptions**. New projects use `.picsie` files and the `picsie` format marker. Existing `.electropic` v1 projects remain readable and writable, retaining their original marker when saved. Their vector stroke masks and embedded PNG assets are preserved internally in Rust for compatibility. Upstream grayscale mask assets, independent placements/linking, upstream brush raster semantics and `.comp` packages remain separate fidelity work; this migration does not claim to implement those features. See [the source map](compositor-port.md).
+`src/core/` has been removed. There are **zero legacy TypeScript engine exemptions**. New projects use `.picsie` files and the `picsie` format marker. Existing `.electropic` v1 projects remain readable and writable, retaining their original marker when saved. Their vector stroke masks and embedded PNG assets are preserved internally in Rust for compatibility. New masks use Rust-owned grayscale assets, and the Rust package adapter reads/writes the supported `.comp` raster/folder/mask subset. Upstream brush raster semantics and richer `.comp` features remain fidelity work; see [the source map](compositor-port.md).
 
 ## Enforcement
 

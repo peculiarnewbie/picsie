@@ -60,6 +60,318 @@ fn undo(e: &mut Editor) {
 fn redo(e: &mut Editor) {
     cmd(e, json!({"type":"redo"}));
 }
+
+/// Adapted from Compositor GroupTests: folders are pass-through, inherit visibility/opacity,
+/// carry their descendants when regrouped, and refuse cycles.
+#[test]
+fn compositor_folder_hierarchy_opacity_collapse_and_cycles() {
+    let mut e = editor(vec![layer("red")]);
+    let child = e.history.document.layers[0].id.clone();
+    cmd(&mut e, json!({"type":"addGroup"}));
+    let folder = e.selected_id().unwrap().to_owned();
+    e.select(Some(child.clone()), SelectionMode::Replace);
+    cmd(&mut e, json!({"type":"moveToGroup","parentId":folder}));
+    assert_eq!(
+        e.history
+            .document
+            .layers
+            .iter()
+            .find(|l| l.id == child)
+            .unwrap()
+            .parent_id
+            .as_deref(),
+        Some(folder.as_str())
+    );
+    e.select(Some(folder.clone()), SelectionMode::Replace);
+    cmd(
+        &mut e,
+        json!({"type":"updateLayer","patch":{"opacity":0.5}}),
+    );
+    assert_eq!(pix(&e.history.document, 10., 10.), [255, 0, 0, 128]);
+    cmd(&mut e, json!({"type":"toggleGroupExpansion","id":folder}));
+    assert_eq!(e.snapshot()["layerRows"].as_array().unwrap().len(), 1);
+    cmd(&mut e, json!({"type":"toggleGroupExpansion","id":folder}));
+    assert_eq!(e.snapshot()["layerRows"][1]["depth"], 1);
+    e.select(Some(child.clone()), SelectionMode::Toggle);
+    cmd(&mut e, json!({"type":"groupSelected"}));
+    let wrapper = e.selected_id().unwrap().to_owned();
+    let d = &e.history.document;
+    assert_eq!(
+        d.layers
+            .iter()
+            .find(|l| l.id == folder)
+            .unwrap()
+            .parent_id
+            .as_deref(),
+        Some(wrapper.as_str())
+    );
+    assert_eq!(
+        d.layers
+            .iter()
+            .find(|l| l.id == child)
+            .unwrap()
+            .parent_id
+            .as_deref(),
+        Some(folder.as_str())
+    );
+    e.select(Some(wrapper.clone()), SelectionMode::Replace);
+    assert!(
+        e.command(serde_json::from_value(json!({"type":"moveToGroup","parentId":folder})).unwrap())
+            .is_err()
+    );
+    assert_eq!(
+        e.history
+            .document
+            .layers
+            .iter()
+            .find(|l| l.id == wrapper)
+            .unwrap()
+            .parent_id,
+        None
+    );
+    e.select(Some(folder.clone()), SelectionMode::Replace);
+    cmd(
+        &mut e,
+        json!({"type":"updateLayer","patch":{"visible":false}}),
+    );
+    assert_eq!(pix(&e.history.document, 10., 10.), [0; 4]);
+}
+
+#[test]
+fn compositor_folder_duplicate_keeps_subtree_and_reorder_uses_siblings() {
+    let mut e = editor(vec![layer("A"), layer("B")]);
+    let a = e.history.document.layers[0].id.clone();
+    cmd(&mut e, json!({"type":"addGroup"}));
+    let folder = e.selected_id().unwrap().to_owned();
+    e.select(Some(a), SelectionMode::Replace);
+    cmd(&mut e, json!({"type":"moveToGroup","parentId":folder}));
+    e.select(Some(folder.clone()), SelectionMode::Replace);
+    cmd(&mut e, json!({"type":"duplicate"}));
+    let copy = e.selected_id().unwrap().to_owned();
+    assert_ne!(copy, folder);
+    assert_eq!(e.history.document.descendants(&copy).len(), 1);
+    assert_eq!(
+        e.history
+            .document
+            .layers
+            .iter()
+            .find(|l| l.parent_id.as_deref() == Some(copy.as_str()))
+            .unwrap()
+            .name,
+        "A copy"
+    );
+    cmd(&mut e, json!({"type":"reorder","direction":-1}));
+    let roots: Vec<_> = e
+        .history
+        .document
+        .layers
+        .iter()
+        .filter(|l| l.parent_id.is_none())
+        .map(|l| l.id.as_str())
+        .collect();
+    assert!(roots.contains(&copy.as_str()));
+    assert_eq!(e.history.document.layers.len(), 5);
+}
+
+/// Adapted from Compositor SelectionTests: marquee add/subtract and antialiased coverage
+/// clip destructive pixel edits; selection remains explicit after clearing pixels.
+#[test]
+fn compositor_pixel_marquee_lasso_and_clear() {
+    let mut e = editor(vec![layer("red")]);
+    cmd(&mut e, json!({"type":"setTool","tool":"marquee"}));
+    pointer(&mut e, Phase::Down, 0., 0.);
+    pointer(&mut e, Phase::Move, 40., 40.);
+    pointer(&mut e, Phase::Up, 40., 40.);
+    let selected = e.pixel_selection.as_ref().unwrap();
+    assert_eq!(selected.at(10, 10), 255);
+    assert_eq!(selected.at(50, 10), 0);
+    cmd(&mut e, json!({"type":"setSelectionMode","mode":"add"}));
+    pointer(&mut e, Phase::Down, 40., 0.);
+    pointer(&mut e, Phase::Up, 80., 40.);
+    assert_eq!(e.pixel_selection.as_ref().unwrap().at(60, 10), 255);
+    cmd(&mut e, json!({"type":"setSelectionMode","mode":"subtract"}));
+    pointer(&mut e, Phase::Down, 20., 20.);
+    pointer(&mut e, Phase::Up, 60., 50.);
+    assert_eq!(e.pixel_selection.as_ref().unwrap().at(30, 30), 0);
+    cmd(&mut e, json!({"type":"clearSelectedPixels"}));
+    assert_eq!(pix(&e.history.document, 10., 10.), [0; 4]);
+    assert_eq!(pix(&e.history.document, 30., 30.), [255, 0, 0, 255]);
+    undo(&mut e);
+    assert_eq!(pix(&e.history.document, 10., 10.), [255, 0, 0, 255]);
+    cmd(&mut e, json!({"type":"setTool","tool":"lasso"}));
+    cmd(&mut e, json!({"type":"setSelectionMode","mode":"replace"}));
+    pointer(&mut e, Phase::Down, 0., 0.);
+    pointer(&mut e, Phase::Move, 30., 0.);
+    pointer(&mut e, Phase::Move, 0., 30.);
+    pointer(&mut e, Phase::Up, 0., 30.);
+    assert!(
+        e.pixel_selection
+            .as_ref()
+            .unwrap()
+            .contains(Point::new(5., 5.))
+    );
+    assert!(
+        !e.pixel_selection
+            .as_ref()
+            .unwrap()
+            .contains(Point::new(25., 25.))
+    );
+    cmd(&mut e, json!({"type":"deselectPixels"}));
+    assert!(e.pixel_selection.is_none());
+}
+
+/// Adapted from MaskTransformTests: linked placement follows translation and rotation;
+/// unlinked placement remains at its document coordinates.
+#[test]
+fn compositor_linked_mask_placement_follows_transform() {
+    let mut l = layer("masked");
+    l.x = 30.;
+    l.y = 40.;
+    let placed = MaskPlacement {
+        x: 10.,
+        y: 20.,
+        scale_x: 1.,
+        scale_y: 1.,
+        rotation: 0.,
+        flip_x: false,
+        flip_y: false,
+    };
+    l.mask = Some(Arc::new(LayerMask {
+        enabled: true,
+        base: MaskMode::Reveal,
+        raster: Some(Arc::new(MaskRaster {
+            width: 2,
+            height: 2,
+            pixels: Arc::new(vec![255, 255, 255, 0]),
+        })),
+        linked: true,
+        placement: Some(placed),
+        strokes: vec![],
+    }));
+    let mut e = editor(vec![l]);
+    cmd(
+        &mut e,
+        json!({"type":"updateLayer","patch":{"x":35,"y":46}}),
+    );
+    let moved = e
+        .selected()
+        .unwrap()
+        .mask
+        .as_ref()
+        .unwrap()
+        .placement
+        .unwrap();
+    assert_eq!((moved.x, moved.y), (15., 26.));
+    cmd(
+        &mut e,
+        json!({"type":"updateLayer","patch":{"rotation":90}}),
+    );
+    let rotated = e
+        .selected()
+        .unwrap()
+        .mask
+        .as_ref()
+        .unwrap()
+        .placement
+        .unwrap();
+    let original = e.history.document.layers[0].clone();
+    let world_before = to_world(
+        &moved.as_layer(&Layer {
+            x: 35.,
+            y: 46.,
+            rotation: 0.,
+            ..original.clone()
+        }),
+        Point::new(40., 30.),
+    );
+    let expected = to_world(
+        &original,
+        to_local(
+            &Layer {
+                x: 35.,
+                y: 46.,
+                rotation: 0.,
+                ..original.clone()
+            },
+            world_before,
+        ),
+    );
+    near(
+        to_world(&rotated.as_layer(&original), Point::new(40., 30.)),
+        expected,
+    );
+    cmd(&mut e, json!({"type":"toggleMaskLink"}));
+    cmd(&mut e, json!({"type":"updateLayer","patch":{"x":50}}));
+    assert_eq!(
+        e.selected()
+            .unwrap()
+            .mask
+            .as_ref()
+            .unwrap()
+            .placement
+            .unwrap(),
+        rotated
+    );
+}
+
+/// Adapted from Compositor ProjectTests: self-contained package round-trip, overwrite,
+/// and unsafe asset path rejection. Picsie's supported raster/folder/mask subset is explicit.
+#[test]
+fn compositor_package_roundtrip_overwrite_and_reject_unsafe_assets() {
+    let root = tempfile::tempdir().unwrap();
+    let path = root.path().join("Original.comp");
+    let mut d = Document::new("Original", 100, 80).unwrap();
+    d.resolution = 300.;
+    let group = Layer::new("Folder", 100, 80, Content::Group);
+    let group_id = group.id.clone();
+    let mut child = layer("Paint & sky");
+    child.parent_id = Some(group_id.clone());
+    child.x = 7.5;
+    child.y = 9.25;
+    child.rotation = 38.;
+    child.flip_x = true;
+    child.sampling = Sampling::Nearest;
+    child.mask = Some(Arc::new(LayerMask {
+        enabled: true,
+        base: MaskMode::Reveal,
+        raster: Some(Arc::new(MaskRaster::solid(true))),
+        linked: false,
+        placement: None,
+        strokes: vec![],
+    }));
+    d.layers = vec![group, child];
+    save_project(&path, &d).unwrap();
+    let reopened = open_project(&path).unwrap();
+    assert_eq!(reopened.id, d.id);
+    assert_eq!(reopened.resolution, 300.);
+    assert_eq!(
+        reopened.layers[1].parent_id.as_deref(),
+        Some(group_id.as_str())
+    );
+    assert_eq!(reopened.layers[1].sampling, Sampling::Nearest);
+    assert!(!reopened.layers[1].mask.as_ref().unwrap().linked);
+    assert_eq!(
+        Renderer::default().export(&d, false).unwrap(),
+        Renderer::default().export(&reopened, false).unwrap()
+    );
+    let images = path.join("images");
+    assert_eq!(std::fs::read_dir(&images).unwrap().count(), 2);
+    d.layers.pop();
+    save_project(&path, &d).unwrap();
+    assert_eq!(std::fs::read_dir(&images).unwrap().count(), 0);
+    assert_eq!(open_project(&path).unwrap().layers.len(), 1);
+    save_project(&path, &reopened).unwrap();
+    let manifest = path.join("manifest.json");
+    let mut value: serde_json::Value =
+        serde_json::from_slice(&std::fs::read(&manifest).unwrap()).unwrap();
+    value["layers"][1]["imageFile"] = json!("../../outside.png");
+    std::fs::write(&manifest, serde_json::to_vec(&value).unwrap()).unwrap();
+    assert!(open_project(&path).is_err());
+    let blocker = root.path().join("blocker.comp");
+    std::fs::write(&blocker, b"previous project").unwrap();
+    assert!(save_project(&blocker, &reopened).is_err());
+    assert_eq!(std::fs::read(&blocker).unwrap(), b"previous project");
+}
 #[test]
 fn validation_rejects_invalid_dimensions_versions_duplicates_assets_and_commands() {
     assert!(Document::new("Test", 0, 20).is_err());
@@ -561,6 +873,74 @@ fn masks_hide_reveal_disable_remove_and_opacity_preserve_original_pixels() {
     pointer(&mut e, Phase::Up, 40., 30.);
     assert_eq!(pix(&e.history.document, 40., 30.), [255, 0, 0, 127]);
 }
+
+// Compositor LayerMaskTests: uniform masks stay 1×1 until painted; mask pixels and
+// enabled state survive project storage. Picsie's JSON container is a local adaptation.
+#[test]
+fn compositor_raster_mask_expands_on_paint_and_roundtrips() {
+    let mut editor = editor(vec![layer("A")]);
+    cmd(&mut editor, json!({"type":"addMask","base":"reveal"}));
+    let initial = editor.selected().unwrap().mask.as_ref().unwrap();
+    assert_eq!(
+        (
+            initial.raster.as_ref().unwrap().width,
+            initial.raster.as_ref().unwrap().height
+        ),
+        (1, 1)
+    );
+    pointer(&mut editor, Phase::Down, 40., 30.);
+    pointer(&mut editor, Phase::Up, 40., 30.);
+    let mask = editor.selected().unwrap().mask.as_ref().unwrap();
+    assert_eq!(
+        (
+            mask.raster.as_ref().unwrap().width,
+            mask.raster.as_ref().unwrap().height
+        ),
+        (
+            editor.selected().unwrap().width,
+            editor.selected().unwrap().height
+        )
+    );
+    assert!(mask.strokes.is_empty());
+    let dir = tempfile::tempdir().unwrap();
+    let path = dir.path().join("raster.picsie");
+    save_project(&path, &editor.history.document).unwrap();
+    let reopened = open_project(&path).unwrap();
+    assert_eq!(reopened, editor.history.document);
+    assert_eq!(pix(&reopened, 40., 30.), [0; 4]);
+}
+
+// Compositor MaskTransformTests.unlinkedTheLayerMovesAloneAndItsMaskStaysOnTheCanvas.
+#[test]
+fn compositor_unlinked_raster_mask_keeps_document_placement() {
+    let mut layer = layer("Masked");
+    let mut pixels = vec![255u8; 80 * 60];
+    for y in 10..50 {
+        for x in 20..40 {
+            pixels[y * 80 + x] = 0;
+        }
+    }
+    layer.mask = Some(Arc::new(LayerMask {
+        enabled: true,
+        base: MaskMode::Reveal,
+        raster: Some(Arc::new(MaskRaster {
+            width: 80,
+            height: 60,
+            pixels: Arc::new(pixels),
+        })),
+        linked: true,
+        placement: None,
+        strokes: vec![],
+    }));
+    let mut editor = editor(vec![layer]);
+    cmd(&mut editor, json!({"type":"toggleMaskLink"}));
+    cmd(&mut editor, json!({"type":"updateLayer","patch":{"x":20}}));
+    let moved = editor.selected().unwrap();
+    assert_eq!(moved.mask.as_ref().unwrap().placement.unwrap().x, 0.);
+    assert_eq!(pix(&editor.history.document, 30., 30.), [0; 4]);
+    assert_eq!(pix(&editor.history.document, 50., 30.), [255, 0, 0, 255]);
+    assert_eq!(pix(&editor.history.document, 90., 30.), [255, 0, 0, 255]);
+}
 #[test]
 fn mask_reset_eraser_cancel_locks_groups_and_extreme_coordinates() {
     let mut e = editor(vec![layer("A")]);
@@ -643,6 +1023,9 @@ fn compositor_canvas_all_anchors_preserve_assets_masks_and_transforms() {
     l.mask = Some(Arc::new(LayerMask {
         enabled: true,
         base: MaskMode::Hide,
+        raster: None,
+        linked: true,
+        placement: None,
         strokes: vec![],
     }));
     let d = doc(vec![l.clone()]);
@@ -903,6 +1286,9 @@ fn export_png_alpha_jpeg_white_and_preview_isolation() {
             },
             &[d.layers[0].id.clone()],
             true,
+            None,
+            None,
+            None,
             None,
         )
         .unwrap();

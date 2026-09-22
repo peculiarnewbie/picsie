@@ -14,6 +14,9 @@ const paths = {
   eyedropper: '<path d="m14 5 5 5M13 6l-9 9v4h4l9-9M15 4l2-2 5 5-2 2M3 20l2-2"/>',
   image:
     '<rect x="3" y="3" width="18" height="18" rx="2"/><circle cx="8" cy="8" r="1.5"/><path d="m3 16 5-5 4 4 3-3 6 6"/>',
+  crop: '<path d="M6 2v16a2 2 0 0 0 2 2h14M2 6h16a2 2 0 0 1 2 2v14"/>',
+  marquee: '<rect x="3" y="3" width="18" height="18" rx="1" stroke-dasharray="3 2"/>',
+  lasso: '<path d="M12 3c-5 0-8 3-8 7s4 6 8 6 8-2 8-6-3-7-8-7ZM12 16c-1 2-1 4 2 5 2 0 3-1 2-2" stroke-dasharray="3 2"/>',
   layers: '<path d="m12 3 9 5-9 5-9-5 9-5ZM3 12l9 5 9-5M3 16l9 5 9-5"/>',
   eye: '<path d="M2 12s4-7 10-7 10 7 10 7-4 7-10 7S2 12 2 12Z"/><circle cx="12" cy="12" r="3"/>',
   eyeOff:

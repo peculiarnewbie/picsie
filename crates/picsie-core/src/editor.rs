@@ -1,13 +1,17 @@
 //! EditorSession / SelectionClipboard / TransformDrag behavior translated from the pinned Compositor.
 //! MIT © 2026 Wonder Assembly LLC. Existing multi-selection and v1 brush storage are adaptations.
 use crate::{
-    canvas_size::{CanvasSizeOptions, resize_canvas},
+    canvas_size::{CanvasSizeOptions, crop_canvas, resize_canvas},
+    crop::{self, CropDrag, CropRatio, CropRect},
     geometry::{self, Viewport},
     history::{History, Selection},
     model::*,
+    pixel_selection::{self, MarqueeKind, PixelSelection, PixelSelectionMode, SelectionDraft},
+    render,
 };
 use anyhow::{Result, bail, ensure};
 use serde::{Deserialize, Serialize};
+use std::collections::HashSet;
 use std::sync::Arc;
 use ts_rs::TS;
 #[derive(Clone, Copy, Debug, PartialEq, Serialize, Deserialize, TS)]
@@ -21,6 +25,9 @@ pub enum Tool {
     Text,
     Hand,
     Eyedropper,
+    Crop,
+    Marquee,
+    Lasso,
 }
 #[derive(Clone, Copy, Debug, PartialEq, Serialize, Deserialize, TS)]
 #[serde(rename_all = "lowercase")]
@@ -110,6 +117,16 @@ pub enum Command {
     },
     AddPaintLayer,
     AddGradient,
+    AddGroup,
+    GroupSelected,
+    ToggleGroupExpansion {
+        id: String,
+    },
+    MoveToGroup {
+        #[serde(rename = "parentId", default)]
+        #[ts(optional)]
+        parent_id: Option<String>,
+    },
     Duplicate,
     Remove,
     Reorder {
@@ -126,6 +143,20 @@ pub enum Command {
     ResizeCanvas {
         options: CanvasSizeOptions,
     },
+    SetCropRatio {
+        ratio: CropRatio,
+    },
+    CommitCrop,
+    CancelCrop,
+    SetMarqueeKind {
+        kind: MarqueeKind,
+    },
+    SetSelectionMode {
+        mode: PixelSelectionMode,
+    },
+    DeselectPixels,
+    SelectAllPixels,
+    ClearSelectedPixels,
     AddMask {
         base: MaskMode,
     },
@@ -139,6 +170,7 @@ pub enum Command {
         base: MaskMode,
     },
     RemoveMask,
+    ToggleMaskLink,
     Undo,
     Redo,
     FinishGesture,
@@ -152,6 +184,14 @@ pub enum Command {
 pub enum Side {
     Above,
     Below,
+}
+#[derive(Clone, Serialize, TS)]
+#[serde(rename_all = "camelCase")]
+pub struct LayerRow {
+    pub id: String,
+    pub depth: u32,
+    pub visible: bool,
+    pub collapsed: bool,
 }
 #[derive(Clone)]
 enum Gesture {
@@ -181,6 +221,19 @@ enum Gesture {
         layer: Layer,
         stroke: MaskStroke,
     },
+    Crop {
+        drag: CropDrag,
+        before: Option<CropRect>,
+    },
+    MaskMove {
+        origin: Point,
+        layer: Layer,
+        placement: MaskPlacement,
+    },
+    PixelSelection {
+        draft: SelectionDraft,
+        before: Option<PixelSelection>,
+    },
 }
 pub struct Editor {
     pub history: History,
@@ -192,9 +245,32 @@ pub struct Editor {
     pub brush_size: f64,
     pub brush_opacity: f64,
     pub viewport: Viewport,
+    pub crop_rect: Option<CropRect>,
+    pub crop_ratio: CropRatio,
+    pub collapsed_groups: HashSet<String>,
+    pub pixel_selection: Option<PixelSelection>,
+    pub marquee_kind: MarqueeKind,
+    pub selection_mode: PixelSelectionMode,
     gesture: Option<Gesture>,
 }
 impl Editor {
+    fn next_folder_name(doc: &Document) -> String {
+        let mut number = 1;
+        loop {
+            let candidate = format!("Folder {number}");
+            if !doc.layers.iter().any(|l| l.name == candidate) {
+                return candidate;
+            }
+            number += 1;
+        }
+    }
+    pub fn selection_draft(&self) -> Option<SelectionDraft> {
+        if let Some(Gesture::PixelSelection { draft, .. }) = &self.gesture {
+            Some(draft.clone())
+        } else {
+            None
+        }
+    }
     pub fn new(document: Document) -> Result<Self> {
         document.validate()?;
         let last = document.layers.last().map(|l| l.id.clone());
@@ -211,6 +287,12 @@ impl Editor {
             brush_size: 24.,
             brush_opacity: 1.,
             viewport: Viewport::default(),
+            crop_rect: None,
+            crop_ratio: CropRatio::Free,
+            collapsed_groups: HashSet::new(),
+            pixel_selection: None,
+            marquee_kind: MarqueeKind::Rectangle,
+            selection_mode: PixelSelectionMode::Replace,
             gesture: None,
         };
         e.fit();
@@ -235,6 +317,31 @@ impl Editor {
             .cloned()
             .collect()
     }
+    fn selected_roots(&self) -> Vec<Layer> {
+        let doc = &self.history.document;
+        let selected: HashSet<_> = self.selection.ids.iter().map(String::as_str).collect();
+        doc.layers
+            .iter()
+            .filter(|layer| {
+                if !selected.contains(layer.id.as_str()) {
+                    return false;
+                }
+                let mut parent = layer.parent_id.as_deref();
+                while let Some(id) = parent {
+                    if selected.contains(id) {
+                        return false;
+                    }
+                    parent = doc
+                        .layers
+                        .iter()
+                        .find(|l| l.id == id)
+                        .and_then(|l| l.parent_id.as_deref());
+                }
+                true
+            })
+            .cloned()
+            .collect()
+    }
     fn single_selection(&mut self, id: Option<String>) {
         self.selection = Selection {
             ids: id.clone().into_iter().collect(),
@@ -243,7 +350,47 @@ impl Editor {
         self.paint_target = PaintTarget::Content;
     }
     pub fn snapshot(&self) -> serde_json::Value {
-        serde_json::json!({"document":self.history.document.metadata(),"history":self.history.info(),"selection":self.selection,"paintTarget":self.paint_target,"maskMode":self.mask_mode,"tool":self.tool,"color":self.color,"brushSize":self.brush_size,"brushOpacity":self.brush_opacity,"viewport":self.viewport})
+        serde_json::json!({"document":self.history.document.metadata(),"history":self.history.info(),"selection":self.selection,"paintTarget":self.paint_target,"maskMode":self.mask_mode,"tool":self.tool,"color":self.color,"brushSize":self.brush_size,"brushOpacity":self.brush_opacity,"viewport":self.viewport,"cropRect":self.crop_rect,"cropRatio":self.crop_ratio,"layerRows":self.layer_rows(),"pixelSelectionBounds":self.pixel_selection.as_ref().and_then(|v|v.bounds.clone()),"marqueeKind":self.marquee_kind,"selectionMode":self.selection_mode})
+    }
+    fn layer_rows(&self) -> Vec<LayerRow> {
+        fn visit(
+            doc: &Document,
+            parent: Option<&str>,
+            depth: u32,
+            visible: bool,
+            collapsed: &HashSet<String>,
+            out: &mut Vec<LayerRow>,
+        ) {
+            for layer in doc
+                .layers
+                .iter()
+                .rev()
+                .filter(|l| l.parent_id.as_deref() == parent)
+            {
+                let effective = visible && layer.visible;
+                out.push(LayerRow {
+                    id: layer.id.clone(),
+                    depth,
+                    visible: effective,
+                    collapsed: collapsed.contains(&layer.id),
+                });
+                if matches!(layer.content.as_ref(), Content::Group)
+                    && !collapsed.contains(&layer.id)
+                {
+                    visit(doc, Some(&layer.id), depth + 1, effective, collapsed, out);
+                }
+            }
+        }
+        let mut rows = Vec::new();
+        visit(
+            &self.history.document,
+            None,
+            0,
+            true,
+            &self.collapsed_groups,
+            &mut rows,
+        );
+        rows
     }
     pub fn select(&mut self, id: Option<String>, mode: SelectionMode) {
         self.finish_gesture();
@@ -349,6 +496,7 @@ impl Editor {
             "flipY",
             "opacity",
             "blend",
+            "sampling",
             "brightness",
             "saturation",
             "blur",
@@ -361,6 +509,14 @@ impl Editor {
         );
         if layer.locked && patch.keys().any(|k| k != "locked" && k != "visible") {
             return Ok(());
+        }
+        if matches!(layer.content.as_ref(), Content::Group) {
+            ensure!(
+                patch
+                    .keys()
+                    .all(|k| ["name", "visible", "locked", "opacity"].contains(&k.as_str())),
+                "Folders support only name, visibility, lock, and opacity"
+            );
         }
         // Property validation never serializes image bytes or brush point arrays on the UI thread.
         let mut properties = layer.clone();
@@ -409,12 +565,27 @@ impl Editor {
         } else {
             next.mask = layer.mask.clone();
         }
+        Self::follow_mask(layer, &mut next);
         let mut doc = self.history.document.clone();
         doc.replace(next);
         self.edit("Edit layer", doc, None)
     }
     fn inserted(&self, layers: Vec<Layer>) -> Document {
         let mut doc = self.history.document.clone();
+        let parent_id = self.selected().and_then(|selected| {
+            if matches!(selected.content.as_ref(), Content::Group) {
+                Some(selected.id.clone())
+            } else {
+                selected.parent_id.clone()
+            }
+        });
+        let layers = layers
+            .into_iter()
+            .map(|mut layer| {
+                layer.parent_id = parent_id.clone();
+                layer
+            })
+            .collect::<Vec<_>>();
         let at = doc
             .layers
             .iter()
@@ -438,7 +609,11 @@ impl Editor {
         } else {
             "Add layers"
         };
-        self.edit(label, self.inserted(layers), Some(selection))
+        self.edit(label, self.inserted(layers), Some(selection))?;
+        if let Some(parent) = self.selected().and_then(|l| l.parent_id.clone()) {
+            self.collapsed_groups.remove(&parent);
+        }
+        Ok(())
     }
     pub fn import_layers(&mut self, mut layers: Vec<Layer>) -> Result<()> {
         let doc = &self.history.document;
@@ -455,10 +630,43 @@ impl Editor {
     }
     fn with_layers(&self, layers: Vec<Layer>) -> Document {
         let mut doc = self.history.document.clone();
-        for l in layers {
+        let original = self
+            .history
+            .before_document()
+            .unwrap_or(&self.history.document);
+        for mut l in layers {
+            if let Some(old) = original.layers.iter().find(|v| v.id == l.id) {
+                Self::follow_mask(old, &mut l);
+            }
             doc.replace(l);
         }
         doc
+    }
+    fn follow_mask(old: &Layer, next: &mut Layer) {
+        let before = MaskPlacement::of(old);
+        let after = MaskPlacement::of(next);
+        let transformed = next.clone();
+        if let Some(mask) = &mut next.mask {
+            if mask
+                .raster
+                .as_ref()
+                .is_some_and(|v| v.width == 1 && v.height == 1)
+            {
+                Arc::make_mut(mask).placement = None;
+                return;
+            }
+            if before == after {
+                return;
+            }
+            let mask = Arc::make_mut(mask);
+            if mask.linked {
+                if let Some(placed) = mask.placement {
+                    mask.placement = Some(placed.following(old, &transformed));
+                }
+            } else if mask.placement.is_none() {
+                mask.placement = Some(before);
+            }
+        }
     }
     fn moved(layers: &[Layer], delta: Point) -> Vec<Layer> {
         let dx = layers
@@ -483,12 +691,25 @@ impl Editor {
     }
     pub fn finish_gesture(&mut self) {
         if let Some(g) = self.gesture.take()
-            && !matches!(g, Gesture::Pan { .. })
+            && !matches!(
+                g,
+                Gesture::Pan { .. } | Gesture::Crop { .. } | Gesture::PixelSelection { .. }
+            )
         {
             self.end_edit();
         }
     }
     pub fn cancel_gesture(&mut self) {
+        if matches!(self.gesture, Some(Gesture::PixelSelection { .. })) {
+            if let Some(Gesture::PixelSelection { before, .. }) = self.gesture.take() {
+                self.pixel_selection = before;
+                return;
+            }
+        }
+        if let Some(Gesture::Crop { before, .. }) = self.gesture.take() {
+            self.crop_rect = before;
+            return;
+        }
         let selection = self.history.cancel();
         self.gesture = None;
         self.restore_selection(selection);
@@ -519,10 +740,16 @@ impl Editor {
             Some(Arc::new(LayerMask {
                 enabled: l.mask.as_ref().map(|m| m.enabled).unwrap_or(true),
                 base: base.unwrap_or(MaskMode::Reveal),
+                raster: Some(Arc::new(MaskRaster::solid(
+                    base.unwrap_or(MaskMode::Reveal) == MaskMode::Reveal,
+                ))),
+                linked: l.mask.as_ref().map(|m| m.linked).unwrap_or(true),
+                placement: l.mask.as_ref().and_then(|m| m.placement),
                 strokes: vec![],
             }))
         };
         let mut doc = self.history.document.clone();
+        doc.version = 2;
         doc.replace(layer);
         self.edit("Edit mask", doc, None)
     }
@@ -543,6 +770,9 @@ impl Editor {
             }
             Command::SetTool { tool } => {
                 self.finish_gesture();
+                if tool != Tool::Crop {
+                    self.crop_rect = None;
+                }
                 self.tool = tool;
             }
             Command::Fit => self.fit(),
@@ -617,20 +847,201 @@ impl Editor {
                     to: "#171c32".into(),
                 },
             )])?,
+            Command::AddGroup => {
+                let mut folder = Layer::new(
+                    "Folder",
+                    self.history.document.width,
+                    self.history.document.height,
+                    Content::Group,
+                );
+                folder.name = Self::next_folder_name(&self.history.document);
+                self.add_layers(vec![folder])?;
+            }
+            Command::GroupSelected => {
+                let selected: HashSet<_> = self.selection.ids.iter().cloned().collect();
+                if !selected.is_empty() {
+                    let mut doc = self.history.document.clone();
+                    // A selected folder carries its descendants. Only roots are reparented.
+                    let roots: HashSet<_> = selected
+                        .iter()
+                        .filter(|id| {
+                            let mut parent = doc
+                                .layers
+                                .iter()
+                                .find(|l| &l.id == *id)
+                                .and_then(|l| l.parent_id.as_deref());
+                            while let Some(pid) = parent {
+                                if selected.contains(pid) {
+                                    return false;
+                                }
+                                parent = doc
+                                    .layers
+                                    .iter()
+                                    .find(|l| l.id == pid)
+                                    .and_then(|l| l.parent_id.as_deref());
+                            }
+                            true
+                        })
+                        .cloned()
+                        .collect();
+                    let ordered: Vec<_> = doc
+                        .ordered_layers()
+                        .into_iter()
+                        .filter(|l| roots.contains(&l.id))
+                        .map(|l| l.id.clone())
+                        .collect();
+                    let ancestors = |id: &str| {
+                        let mut path = Vec::new();
+                        let mut parent = doc
+                            .layers
+                            .iter()
+                            .find(|l| l.id == id)
+                            .and_then(|l| l.parent_id.clone());
+                        while let Some(pid) = parent {
+                            parent = doc
+                                .layers
+                                .iter()
+                                .find(|l| l.id == pid)
+                                .and_then(|l| l.parent_id.clone());
+                            path.push(Some(pid));
+                        }
+                        path.push(None);
+                        path
+                    };
+                    let parent = ordered
+                        .first()
+                        .and_then(|first| {
+                            ancestors(first).into_iter().find(|candidate| {
+                                ordered.iter().all(|id| ancestors(id).contains(candidate))
+                            })
+                        })
+                        .flatten();
+                    let mut folder = Layer::new("Folder", doc.width, doc.height, Content::Group);
+                    folder.parent_id = parent.clone();
+                    folder.name = Self::next_folder_name(&doc);
+                    let folder_id = folder.id.clone();
+                    let branches: HashSet<_> = ordered
+                        .iter()
+                        .map(|id| {
+                            let mut branch = id.clone();
+                            while let Some(next) = doc
+                                .layers
+                                .iter()
+                                .find(|l| l.id == branch)
+                                .and_then(|l| l.parent_id.clone())
+                            {
+                                if Some(&next) == parent.as_ref() {
+                                    break;
+                                }
+                                branch = next;
+                            }
+                            branch
+                        })
+                        .collect();
+                    let top = doc
+                        .layers
+                        .iter()
+                        .rposition(|l| branches.contains(&l.id))
+                        .unwrap();
+                    doc.layers.insert(top + 1, folder);
+                    for layer in &mut doc.layers {
+                        if roots.contains(&layer.id) {
+                            layer.parent_id = Some(folder_id.clone());
+                        }
+                    }
+                    doc.version = 2;
+                    self.edit("Group layers", doc, Some(vec![folder_id]))?;
+                    if let Some(parent) = parent {
+                        self.collapsed_groups.remove(&parent);
+                    }
+                }
+            }
+            Command::ToggleGroupExpansion { id } => {
+                if self
+                    .history
+                    .document
+                    .layers
+                    .iter()
+                    .any(|l| l.id == id && matches!(l.content.as_ref(), Content::Group))
+                {
+                    if !self.collapsed_groups.remove(&id) {
+                        if self.selected_id().is_some_and(|selected| {
+                            self.history.document.descendants(&id).contains(selected)
+                        }) {
+                            self.single_selection(Some(id.clone()));
+                        }
+                        self.collapsed_groups.insert(id);
+                    }
+                }
+            }
+            Command::MoveToGroup { parent_id } => {
+                let mut doc = self.history.document.clone();
+                if let Some(parent) = &parent_id {
+                    ensure!(
+                        doc.layers.iter().any(
+                            |l| l.id == *parent && matches!(l.content.as_ref(), Content::Group)
+                        ),
+                        "Choose a folder"
+                    );
+                    ensure!(
+                        !self.selection.ids.contains(parent),
+                        "A folder cannot contain itself"
+                    );
+                }
+                let selected: std::collections::HashSet<_> =
+                    self.selected_roots().into_iter().map(|l| l.id).collect();
+                if selected.is_empty() {
+                    return Ok(());
+                }
+                let mut moving = Vec::new();
+                doc.layers.retain(|layer| {
+                    if selected.contains(&layer.id) {
+                        let mut moved = layer.clone();
+                        moved.parent_id = parent_id.clone();
+                        moving.push(moved);
+                        false
+                    } else {
+                        true
+                    }
+                });
+                doc.layers.extend(moving);
+                doc.version = 2;
+                self.edit("Move layers into folder", doc, None)?;
+                if let Some(parent) = parent_id {
+                    self.collapsed_groups.remove(&parent);
+                }
+            }
             Command::Duplicate => {
                 let mut doc = self.history.document.clone();
                 let mut ids = vec![];
-                let mut layers = vec![];
-                for l in doc.layers {
-                    layers.push(l.clone());
-                    if self.selection.ids.contains(&l.id) {
-                        let mut n = l;
-                        n.id = id();
-                        n.name = format!("{} copy", n.name.chars().take(190).collect::<String>());
-                        n.locked = false;
-                        ids.push(n.id.clone());
-                        layers.push(n);
+                let roots = self.selected_roots();
+                let mut layers = doc.layers.clone();
+                for root in roots.iter().rev() {
+                    let subtree = doc.descendants(&root.id);
+                    let members: Vec<_> = doc
+                        .layers
+                        .iter()
+                        .filter(|l| l.id == root.id || subtree.contains(&l.id))
+                        .cloned()
+                        .collect();
+                    let mapping: std::collections::HashMap<_, _> =
+                        members.iter().map(|l| (l.id.clone(), id())).collect();
+                    let mut copies = Vec::new();
+                    for mut copy in members {
+                        copy.id = mapping[&copy.id].clone();
+                        copy.parent_id = copy
+                            .parent_id
+                            .map(|parent| mapping.get(&parent).cloned().unwrap_or(parent));
+                        copy.name =
+                            format!("{} copy", copy.name.chars().take(190).collect::<String>());
+                        copy.locked = false;
+                        if copy.id == mapping[&root.id] {
+                            ids.push(copy.id.clone());
+                        }
+                        copies.push(copy);
                     }
+                    let at = layers.iter().position(|l| l.id == root.id).unwrap() + 1;
+                    layers.splice(at..at, copies);
                 }
                 if !ids.is_empty() {
                     doc.layers = layers;
@@ -639,8 +1050,14 @@ impl Editor {
             }
             Command::Remove => {
                 let mut doc = self.history.document.clone();
-                doc.layers
-                    .retain(|l| l.locked || !self.selection.ids.contains(&l.id));
+                let mut removing = std::collections::HashSet::new();
+                for id in &self.selection.ids {
+                    if doc.layers.iter().any(|l| l.id == *id && !l.locked) {
+                        removing.insert(id.clone());
+                        removing.extend(doc.descendants(id));
+                    }
+                }
+                doc.layers.retain(|l| !removing.contains(&l.id));
                 self.edit("Delete layers", doc, None)?;
             }
             Command::Reorder { direction } => {
@@ -649,31 +1066,48 @@ impl Editor {
                     "Invalid reorder direction"
                 );
                 let mut doc = self.history.document.clone();
-                let mut indices: Vec<_> = (0..doc.layers.len()).collect();
-                if direction == 1 {
-                    indices.reverse();
-                }
-                let moving: Vec<_> = self
-                    .selected_layers()
+                let moving: HashSet<_> = self
+                    .selected_roots()
                     .into_iter()
                     .filter(|l| !l.locked)
                     .map(|l| l.id)
                     .collect();
-                for i in indices {
-                    let other = i as isize + direction as isize;
-                    if other >= 0
-                        && (other as usize) < doc.layers.len()
-                        && moving.contains(&doc.layers[i].id)
-                        && !moving.contains(&doc.layers[other as usize].id)
-                    {
-                        doc.layers.swap(i, other as usize);
+                let parents: HashSet<_> = doc
+                    .layers
+                    .iter()
+                    .filter(|l| moving.contains(&l.id))
+                    .map(|l| l.parent_id.clone())
+                    .collect();
+                for parent in parents {
+                    let siblings: Vec<_> = doc
+                        .layers
+                        .iter()
+                        .enumerate()
+                        .filter(|(_, l)| l.parent_id == parent)
+                        .map(|(i, _)| i)
+                        .collect();
+                    let positions: Vec<_> = if direction == 1 {
+                        (0..siblings.len()).rev().collect()
+                    } else {
+                        (0..siblings.len()).collect()
+                    };
+                    for position in positions {
+                        let other = position as isize + direction as isize;
+                        if other >= 0
+                            && (other as usize) < siblings.len()
+                            && moving.contains(&doc.layers[siblings[position]].id)
+                            && !moving.contains(&doc.layers[siblings[other as usize]].id)
+                        {
+                            doc.layers
+                                .swap(siblings[position], siblings[other as usize]);
+                        }
                     }
                 }
                 self.edit("Reorder layers", doc, None)?;
             }
             Command::ReorderTo { target_id, side } => {
                 let moving: Vec<_> = self
-                    .selected_layers()
+                    .selected_roots()
                     .into_iter()
                     .filter(|l| !l.locked)
                     .collect();
@@ -681,11 +1115,29 @@ impl Editor {
                     return Ok(());
                 }
                 let mut doc = self.history.document.clone();
+                let Some(target) = doc.layers.iter().find(|l| l.id == target_id).cloned() else {
+                    return Ok(());
+                };
+                ensure!(
+                    !moving
+                        .iter()
+                        .any(|l| doc.descendants(&l.id).contains(&target_id)),
+                    "A folder cannot be moved into itself"
+                );
                 doc.layers.retain(|l| !moving.iter().any(|v| v.id == l.id));
                 if let Some(at) = doc.layers.iter().position(|l| l.id == target_id) {
                     let at = at + usize::from(matches!(side, Side::Above));
-                    doc.layers.splice(at..at, moving);
+                    doc.layers.splice(
+                        at..at,
+                        moving.into_iter().map(|mut l| {
+                            l.parent_id = target.parent_id.clone();
+                            l
+                        }),
+                    );
                     self.edit("Reorder layers", doc, None)?;
+                    if let Some(parent) = target.parent_id {
+                        self.collapsed_groups.remove(&parent);
+                    }
                 }
             }
             Command::Nudge { delta } => {
@@ -693,10 +1145,23 @@ impl Editor {
                     delta.x.is_finite() && delta.y.is_finite(),
                     "Invalid movement"
                 );
+                let mut moving_ids = HashSet::new();
+                for root in self.selected_roots() {
+                    moving_ids.insert(root.id.clone());
+                    moving_ids.extend(self.history.document.descendants(&root.id));
+                }
                 let layers: Vec<_> = self
-                    .selected_layers()
-                    .into_iter()
-                    .filter(|l| !l.locked && l.visible)
+                    .history
+                    .document
+                    .layers
+                    .iter()
+                    .filter(|l| {
+                        moving_ids.contains(&l.id)
+                            && !l.locked
+                            && l.visible
+                            && !matches!(l.content.as_ref(), Content::Group)
+                    })
+                    .cloned()
                     .collect();
                 if !layers.is_empty() {
                     self.edit(
@@ -711,14 +1176,91 @@ impl Editor {
                 let doc = resize_canvas(&self.history.document, &options)?;
                 if doc != self.history.document {
                     self.edit("Canvas Size", doc, None)?;
+                    self.pixel_selection = None;
                     self.fit();
+                }
+            }
+            Command::SetCropRatio { ratio } => {
+                self.finish_gesture();
+                self.crop_ratio = ratio;
+                if let Some(r) = ratio.value(&self.history.document) {
+                    let current = self
+                        .crop_rect
+                        .unwrap_or_else(|| CropRect::from_document(&self.history.document));
+                    let next = CropRect {
+                        y: current.y + (current.height - current.width / r) / 2.,
+                        height: current.width / r,
+                        ..current
+                    }
+                    .snapped();
+                    if next.validate().is_ok() {
+                        self.crop_rect = Some(next);
+                    }
+                }
+            }
+            Command::CommitCrop => {
+                self.finish_gesture();
+                if let Some(rect) = self.crop_rect {
+                    let next = crop_canvas(&self.history.document, rect)?;
+                    self.edit("Crop", next, None)?;
+                    self.crop_rect = None;
+                    self.pixel_selection = None;
+                    self.fit();
+                }
+            }
+            Command::CancelCrop => {
+                self.cancel_gesture();
+                self.crop_rect = None;
+            }
+            Command::SetMarqueeKind { kind } => {
+                self.finish_gesture();
+                self.marquee_kind = kind;
+            }
+            Command::SetSelectionMode { mode } => {
+                self.finish_gesture();
+                self.selection_mode = mode;
+            }
+            Command::DeselectPixels => {
+                self.finish_gesture();
+                self.pixel_selection = None;
+            }
+            Command::SelectAllPixels => {
+                self.finish_gesture();
+                let doc = &self.history.document;
+                self.pixel_selection = Some(PixelSelection {
+                    width: doc.width,
+                    height: doc.height,
+                    pixels: Arc::new(vec![255; doc.width as usize * doc.height as usize]),
+                    bounds: Some(pixel_selection::SelectionBounds {
+                        x: 0,
+                        y: 0,
+                        width: doc.width,
+                        height: doc.height,
+                    }),
+                });
+            }
+            Command::ClearSelectedPixels => {
+                self.finish_gesture();
+                if let (Some(selection), Some(layer)) = (&self.pixel_selection, self.selected()) {
+                    if selection.bounds.is_none() {
+                        return Ok(());
+                    }
+                    if !layer.locked && !matches!(layer.content.as_ref(), Content::Group) {
+                        let mut next = layer.clone();
+                        let image = render::clear_selected_pixels(&next, selection)?;
+                        next.content = Arc::new(render::png_content(&image)?);
+                        next.strokes.clear();
+                        self.edit("Clear selected pixels", self.with_layers(vec![next]), None)?;
+                    }
                 }
             }
             Command::AddMask { base } => {
                 if self.selection.ids.len() == 1
-                    && self
-                        .selected()
-                        .is_some_and(|l| !l.locked && l.mask.is_none())
+                    && self.selected().is_some_and(|l| {
+                        !l.locked
+                            && l.mask.is_none()
+                            && !matches!(l.content.as_ref(), Content::Group)
+                    })
                 {
                     self.mask_edit(Some(base), false)?;
                     self.paint_target = PaintTarget::Mask;
@@ -750,6 +1292,19 @@ impl Editor {
                 if self.selected().and_then(|l| l.mask.as_ref()).is_some() {
                     self.mask_edit(None, true)?;
                     self.paint_target = PaintTarget::Content;
+                }
+            }
+            Command::ToggleMaskLink => {
+                if let Some(layer) = self.selected().cloned() {
+                    if !layer.locked {
+                        if let Some(mask) = &layer.mask {
+                            let mut next = layer.clone();
+                            let mut mask = mask.as_ref().clone();
+                            mask.linked = !mask.linked;
+                            next.mask = Some(Arc::new(mask));
+                            self.edit("Link layer mask", self.with_layers(vec![next]), None)?;
+                        }
+                    }
                 }
             }
             Command::Undo => {
@@ -794,6 +1349,21 @@ impl Editor {
         let p = geometry::to_document(&self.history.document, &self.viewport, vp);
         if phase == Phase::Down {
             self.finish_gesture();
+            if self.tool == Tool::Crop {
+                let before = self.crop_rect;
+                let original =
+                    before.unwrap_or_else(|| CropRect::from_document(&self.history.document));
+                let mode = crop::hit(original, p, self.viewport.zoom);
+                self.gesture = Some(Gesture::Crop {
+                    drag: CropDrag {
+                        start: p,
+                        original,
+                        mode,
+                    },
+                    before,
+                });
+                return Ok(());
+            }
             if self.tool == Tool::Hand {
                 self.gesture = Some(Gesture::Pan {
                     origin: vp,
@@ -801,7 +1371,47 @@ impl Editor {
                 });
                 return Ok(());
             }
+            if matches!(self.tool, Tool::Marquee | Tool::Lasso) {
+                let mode = if modifiers.alt {
+                    PixelSelectionMode::Subtract
+                } else if modifiers.shift {
+                    PixelSelectionMode::Add
+                } else {
+                    self.selection_mode
+                };
+                let marquee = (self.tool == Tool::Marquee).then_some(self.marquee_kind);
+                self.gesture = Some(Gesture::PixelSelection {
+                    draft: SelectionDraft::new(p, marquee, mode),
+                    before: self.pixel_selection.clone(),
+                });
+                return Ok(());
+            }
             if self.tool == Tool::Move {
+                if self.paint_target == PaintTarget::Mask
+                    && self.selection.ids.len() == 1
+                    && let Some(layer) = self.selected().cloned()
+                    && !layer.locked
+                    && layer.visible
+                    && let Some(mask) = &layer.mask
+                    && !mask.linked
+                {
+                    let placement = mask.placement.unwrap_or_else(|| MaskPlacement::of(&layer));
+                    let at = geometry::to_local(&placement.as_layer(&layer), p);
+                    if at.x < 0.
+                        || at.y < 0.
+                        || at.x > layer.width as f64
+                        || at.y > layer.height as f64
+                    {
+                        return Ok(());
+                    }
+                    self.begin_edit("Move layer mask");
+                    self.gesture = Some(Gesture::MaskMove {
+                        origin: p,
+                        layer,
+                        placement,
+                    });
+                    return Ok(());
+                }
                 if let Some(l) = self.selected().cloned()
                     && self.selection.ids.len() == 1
                     && !l.locked
@@ -1060,9 +1670,73 @@ impl Editor {
                     .push(Arc::new(stroke.clone()));
                 self.history.preview(self.with_layers(vec![l]));
             }
+            Gesture::Crop { drag, .. } => {
+                let ratio = self.crop_ratio.value(&self.history.document);
+                let mut rect = drag.updated(p, ratio, modifiers.alt);
+                let mut xs = vec![0., self.history.document.width as f64];
+                let mut ys = vec![0., self.history.document.height as f64];
+                for layer in self.history.document.layers.iter().filter(|l| l.visible) {
+                    let corners = geometry::corners(layer);
+                    xs.extend([
+                        corners.iter().map(|p| p.x).fold(f64::INFINITY, f64::min),
+                        corners
+                            .iter()
+                            .map(|p| p.x)
+                            .fold(f64::NEG_INFINITY, f64::max),
+                    ]);
+                    ys.extend([
+                        corners.iter().map(|p| p.y).fold(f64::INFINITY, f64::min),
+                        corners
+                            .iter()
+                            .map(|p| p.y)
+                            .fold(f64::NEG_INFINITY, f64::max),
+                    ]);
+                }
+                rect = crop::snap(rect, *drag, p, ratio, (&xs, &ys), 6. / self.viewport.zoom);
+                if rect.validate().is_ok() {
+                    self.crop_rect = Some(rect);
+                }
+            }
+            Gesture::MaskMove {
+                origin,
+                layer,
+                placement,
+            } => {
+                let mut next = layer.clone();
+                let mut mask = next.mask.as_ref().unwrap().as_ref().clone();
+                let mut moved = *placement;
+                moved.x += p.x - origin.x;
+                moved.y += p.y - origin.y;
+                if moved.valid() {
+                    mask.placement = if moved == MaskPlacement::of(layer) {
+                        None
+                    } else {
+                        Some(moved)
+                    };
+                    next.mask = Some(Arc::new(mask));
+                    self.history.preview(self.with_layers(vec![next]));
+                }
+            }
+            Gesture::PixelSelection { draft, before } => {
+                draft.drag(p, modifiers.shift && draft.marquee.is_some());
+                if phase == Phase::Up {
+                    self.pixel_selection =
+                        pixel_selection::finish(&self.history.document, before.as_ref(), draft)?;
+                }
+            }
         }
         self.gesture = Some(gesture);
         if phase == Phase::Up {
+            if matches!(self.gesture, Some(Gesture::Mask { .. })) {
+                let mut layer = self.selected().expect("active mask layer").clone();
+                let mut mask = layer.mask.as_ref().expect("active mask").as_ref().clone();
+                mask.raster = Some(Arc::new(render::rasterize_mask(&mask, &layer)?));
+                mask.strokes.clear();
+                layer.mask = Some(Arc::new(mask));
+                let mut doc = self.with_layers(vec![layer]);
+                doc.version = 2;
+                self.history.preview(doc);
+            }
             self.finish_gesture();
         }
         Ok(())

@@ -7,6 +7,9 @@ export const tools = [
   { id: "text", label: "Text", key: "T" },
   { id: "hand", label: "Hand", key: "H" },
   { id: "eyedropper", label: "Sample color", key: "I" },
+  { id: "crop", label: "Crop", key: "C" },
+  { id: "marquee", label: "Marquee", key: "M" },
+  { id: "lasso", label: "Lasso", key: "L" },
 ] as const;
 
 export const blendModes = [

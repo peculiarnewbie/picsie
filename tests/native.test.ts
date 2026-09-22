@@ -90,6 +90,61 @@ test("Rust masks, transforms, canvas resize, save/reopen and JPEG work across th
     }
   }));
 
+test("native folder, pixel selection, crop, and Compositor package commands round-trip", async () =>
+  temporary(async (dir) => {
+    const e = session();
+    try {
+      e.viewport = { width: 200, height: 160, zoom: 1, pan: { x: 0, y: 0 } };
+      e.setTool("rectangle");
+      e.setColor("#ff0000");
+      e.pointer("down", { x: 10, y: 10 });
+      e.pointer("up", { x: 90, y: 90 });
+      const child = e.selectedId!;
+      e.addGroup();
+      const folder = e.selectedId!;
+      e.select(child);
+      e.moveToGroup(folder);
+      assert.equal(e.document.layers.find((layer) => layer.id === child)?.parentId, folder);
+      assert.equal(e.layerRows.find((row) => row.id === child)?.depth, 1);
+      e.select(folder);
+      e.updateLayer({ opacity: 0.5 });
+      e.setTool("marquee");
+      e.pointer("down", { x: 20, y: 20 });
+      e.pointer("up", { x: 40, y: 40 });
+      assert.deepEqual(e.pixelSelectionBounds, { x: 20, y: 20, width: 20, height: 20 });
+      e.select(child);
+      e.clearSelectedPixels();
+      const png = join(dir, "selected.png");
+      await e.export(png, "png");
+      assert.deepEqual(await pixel(png, 30, 30), [0, 0, 0, 0]);
+      assert.deepEqual(await pixel(png, 50, 50), [255, 0, 0, 128]);
+      e.setTool("crop");
+      e.pointer("down", { x: 200, y: 160 });
+      e.pointer("up", { x: 120, y: 120 });
+      e.commitCrop();
+      assert.equal(e.document.width, 120);
+      await e.export(png, "png");
+      const project = join(dir, "edited.comp");
+      await e.save(project);
+      assert.equal((await stat(project)).isDirectory(), true);
+      const manifest = JSON.parse(await readFile(join(project, "manifest.json"), "utf8"));
+      assert.equal(manifest.format, "com.compositor.project");
+      assert.equal(manifest.version, 8);
+      const reopened = await Editor.open(project);
+      try {
+        assert.equal(reopened.document.layers.length, e.document.layers.length);
+        assert.equal(reopened.document.layers.find((layer) => layer.id === child)?.parentId, folder);
+        const second = join(dir, "reopened.png");
+        await reopened.export(second, "png");
+        assert.deepEqual(await readFile(second), await readFile(png));
+      } finally {
+        reopened.close();
+      }
+    } finally {
+      e.close();
+    }
+  }));
+
 test("file import is atomic, owns its assets, and metadata excludes all raster data", async () =>
   temporary(async (dir) => {
     const e = session();

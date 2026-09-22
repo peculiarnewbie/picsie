@@ -47,6 +47,9 @@ pub struct HistoryInfo {
     pub revision: String,
 }
 impl History {
+    pub fn before_document(&self) -> Option<&Document> {
+        self.pending.as_ref().map(|s| &s.document)
+    }
     pub fn new(document: Document) -> Self {
         let revision = id();
         Self {
@@ -172,6 +175,9 @@ impl History {
                         a.push((Arc::as_ptr(s) as usize, 64 + s.points.len() * 16));
                     }
                     if let Some(m) = &l.mask {
+                        if let Some(raster) = &m.raster {
+                            a.push((Arc::as_ptr(raster) as usize, raster.pixels.len()));
+                        }
                         for s in &m.strokes {
                             a.push((Arc::as_ptr(s) as usize, 64 + s.points.len() * 16));
                         }

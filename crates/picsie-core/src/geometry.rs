@@ -157,8 +157,13 @@ pub fn rotate(l: &Layer, origin: Point, p: Point, snap: bool) -> Layer {
     n
 }
 pub fn hit_test(doc: &Document, p: Point) -> Option<&Layer> {
-    doc.layers.iter().rev().find(|l| {
-        if !l.visible || l.locked || l.opacity == 0. {
+    doc.ordered_layers().into_iter().rev().find(|l| {
+        let (visible, opacity) = doc.effective(l);
+        if !visible
+            || l.locked
+            || opacity == 0.
+            || matches!(l.content.as_ref(), crate::model::Content::Group)
+        {
             return false;
         }
         let p = to_local(l, p);
