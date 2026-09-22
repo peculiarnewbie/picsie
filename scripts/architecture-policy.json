@@ -1,0 +1,8 @@
+{
+  "runtimeDependencies": ["@quickgui/native", "@quickgui/solid", "solid-js"],
+  "uiImports": ["@quickgui/native", "@quickgui/solid", "solid-js", "node:path"],
+  "bridgeImports": [],
+  "legacyCore": {},
+  "legacyImports": {},
+  "legacyUiSnippets": {}
+}

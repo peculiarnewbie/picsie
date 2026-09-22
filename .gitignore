@@ -1,0 +1,7 @@
+node_modules/
+.quickgui/
+dist/
+artifacts/
+.DS_Store
+target/
+native/*.node

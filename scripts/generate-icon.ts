@@ -1,0 +1,24 @@
+import { createCanvas } from "@napi-rs/canvas";
+import { mkdir, writeFile } from "node:fs/promises";
+
+const canvas = createCanvas(512, 512);
+const ctx = canvas.getContext("2d");
+ctx.fillStyle = "#1b2138";
+ctx.beginPath();
+ctx.roundRect(24, 24, 464, 464, 108);
+ctx.fill();
+const gradient = ctx.createLinearGradient(80, 80, 410, 450);
+gradient.addColorStop(0, "#cbd5ff");
+gradient.addColorStop(1, "#6587ff");
+ctx.fillStyle = gradient;
+ctx.beginPath();
+ctx.moveTo(284, 75);
+ctx.lineTo(133, 286);
+ctx.lineTo(242, 286);
+ctx.lineTo(210, 435);
+ctx.lineTo(388, 218);
+ctx.lineTo(269, 218);
+ctx.closePath();
+ctx.fill();
+await mkdir("resources", { recursive: true });
+await writeFile("resources/icon.png", await canvas.encode("png"));
