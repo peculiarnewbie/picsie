@@ -7,7 +7,7 @@ import { checkArchitecture } from "./check-architecture.mjs";
 
 const legacySource = "export const oldEngine = 1;\n";
 async function fixture(run) {
-  const root = await mkdtemp(join(tmpdir(), "electropic-architecture-"));
+  const root = await mkdtemp(join(tmpdir(), "picsie-architecture-"));
   const put = async (file, source) => {
     await mkdir(dirname(join(root, file)), { recursive: true });
     await writeFile(join(root, file), source);
@@ -19,7 +19,7 @@ async function fixture(run) {
       JSON.stringify({
         runtimeDependencies: ["solid-js"],
         uiImports: ["solid-js"],
-        bridgeImports: ["@electropic/engine"],
+        bridgeImports: ["@picsie/engine"],
         legacyCore: {},
         legacyImports: {},
         legacyUiSnippets: {},
@@ -38,7 +38,7 @@ test("architecture permits UI and a thin native bridge", () =>
       "src/ui/panel.tsx",
       'import { createSignal } from "solid-js"; import { engine } from "../engine/index.ts";',
     );
-    await put("src/engine/index.ts", 'export { engine } from "@electropic/engine";');
+    await put("src/engine/index.ts", 'export { engine } from "@picsie/engine";');
     assert.deepEqual(await check(), []);
   }));
 

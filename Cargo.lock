@@ -134,32 +134,6 @@ source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "252afb9ae5eaa683babdc6a068b3f5726eb19e05070c731f9b2a23a7c3e8ed34"
 
 [[package]]
-name = "electropic-core"
-version = "0.1.0"
-dependencies = [
- "anyhow",
- "base64",
- "serde",
- "serde_json",
- "skia-safe",
- "tempfile",
- "tiff",
- "ts-rs",
- "uuid",
-]
-
-[[package]]
-name = "electropic-native"
-version = "0.1.0"
-dependencies = [
- "electropic-core",
- "napi",
- "napi-build",
- "napi-derive",
- "serde_json",
-]
-
-[[package]]
 name = "equivalent"
 version = "1.0.2"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -514,6 +488,32 @@ name = "once_cell"
 version = "1.21.4"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "9f7c3e4beb33f85d45ae3e3a1792185706c8e16d043238c593331cc7cd313b50"
+
+[[package]]
+name = "picsie-core"
+version = "0.1.0"
+dependencies = [
+ "anyhow",
+ "base64",
+ "serde",
+ "serde_json",
+ "skia-safe",
+ "tempfile",
+ "tiff",
+ "ts-rs",
+ "uuid",
+]
+
+[[package]]
+name = "picsie-native"
+version = "0.1.0"
+dependencies = [
+ "napi",
+ "napi-build",
+ "napi-derive",
+ "picsie-core",
+ "serde_json",
+]
 
 [[package]]
 name = "pin-project-lite"

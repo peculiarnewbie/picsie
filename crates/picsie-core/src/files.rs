@@ -22,7 +22,7 @@ pub fn bounded_read(path: &Path) -> Result<Vec<u8>> {
 }
 pub fn parse_project(text: &str) -> Result<Document> {
     ensure!(text.len() as u64 <= MAX_FILE_BYTES, "Project exceeds 96 MB");
-    let doc: Document = serde_json::from_str(text).context("Invalid Electropic project")?;
+    let doc: Document = serde_json::from_str(text).context("Invalid Picsie project")?;
     doc.validate()?;
     for l in &doc.layers {
         if let Content::Image { data } = l.content.as_ref() {
@@ -89,7 +89,7 @@ pub struct Frames {
 impl Frames {
     pub fn new() -> Result<Self> {
         let mut builder = tempfile::Builder::new();
-        builder.prefix("electropic-frames-");
+        builder.prefix("picsie-frames-");
         let directory = if cfg!(target_os = "linux") && Path::new("/dev/shm").is_dir() {
             builder
                 .tempdir_in("/dev/shm")

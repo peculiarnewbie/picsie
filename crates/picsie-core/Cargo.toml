@@ -1,5 +1,5 @@
 [package]
-name = "electropic-core"
+name = "picsie-core"
 version.workspace = true
 edition.workspace = true
 license.workspace = true

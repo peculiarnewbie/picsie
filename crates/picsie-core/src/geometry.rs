@@ -1,5 +1,5 @@
 //! Translated from Compositor LayerTransform.swift, MIT © 2026 Wonder Assembly LLC.
-//! Source dimensions + scale retain compatibility with Electropic v1. Shift preserves aspect.
+//! Source dimensions + scale retain compatibility with legacy Electropic v1. Shift preserves aspect.
 use crate::model::{Document, Layer, Point};
 use serde::{Deserialize, Serialize};
 use ts_rs::TS;

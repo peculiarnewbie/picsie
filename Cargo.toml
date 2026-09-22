@@ -1,5 +1,5 @@
 [workspace]
-members = ["crates/electropic-core", "crates/electropic-native"]
+members = ["crates/picsie-core", "crates/picsie-native"]
 resolver = "2"
 
 [workspace.package]

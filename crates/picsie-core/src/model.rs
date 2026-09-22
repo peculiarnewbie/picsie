@@ -1,4 +1,4 @@
-//! Electropic v1 compatibility model. Compositor placement semantics: see docs/compositor-port.md.
+//! Picsie model with Electropic v1 compatibility. Compositor placement semantics: see docs/compositor-port.md.
 use anyhow::{Result, ensure};
 use serde::{Deserialize, Serialize};
 use std::{collections::HashSet, sync::Arc};
@@ -303,7 +303,7 @@ impl Layer {
 impl Document {
     pub fn new(name: &str, width: u32, height: u32) -> Result<Self> {
         let doc = Self {
-            format: "electropic".into(),
+            format: "picsie".into(),
             version: 1,
             name: name.into(),
             width,
@@ -315,8 +315,8 @@ impl Document {
     }
     pub fn validate(&self) -> Result<()> {
         ensure!(
-            self.format == "electropic" && self.version == 1,
-            "Unsupported Electropic project version"
+            (self.format == "picsie" || self.format == "electropic") && self.version == 1,
+            "Unsupported Picsie project version"
         );
         dimensions(self.width, self.height)?;
         ensure!(
@@ -344,7 +344,7 @@ impl Document {
     }
 }
 pub fn demo_document() -> Document {
-    let mut doc = Document::new("Electric studies", 1200, 800).unwrap();
+    let mut doc = Document::new("Color studies", 1200, 800).unwrap();
     let mut add = |name: &str, w, h, x, y, content| {
         let mut l = Layer::new(name, w, h, content);
         l.x = x;
@@ -391,7 +391,7 @@ pub fn demo_document() -> Document {
         80.,
         77.,
         Content::Text {
-            text: "E L E C T R O P I C   /   0 0 1".into(),
+            text: "P I C S I E   /   0 0 1".into(),
             font_size: 19.,
             font_family: FontFamily::Monospace,
             color: "#a5b4d1".into(),
@@ -404,7 +404,7 @@ pub fn demo_document() -> Document {
         76.,
         278.,
         Content::Text {
-            text: "Make something\nelectric.".into(),
+            text: "Make something\ncolorful.".into(),
             font_size: 94.,
             font_family: FontFamily::SansSerif,
             color: "#fff5e8".into(),

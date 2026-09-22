@@ -8,10 +8,10 @@ import { createCanvas, loadImage } from "@napi-rs/canvas";
 import { Editor } from "../src/engine/editor.ts";
 import { CanvasSizeDraft } from "../src/ui/canvas-size-draft.ts";
 const require = createRequire(import.meta.url);
-const native: typeof import("../src/engine/native-api") = require("../native/electropic.node");
+const native: typeof import("../src/engine/native-api") = require("../native/picsie.node");
 const session = () => new Editor({ kind: "new", name: "Native", width: 200, height: 160 });
 async function temporary(run: (path: string) => Promise<void>) {
-  const directory = await mkdtemp(join(tmpdir(), "electropic-rust-test-"));
+  const directory = await mkdtemp(join(tmpdir(), "picsie-rust-test-"));
   try {
     await run(directory);
   } finally {
@@ -68,11 +68,12 @@ test("Rust masks, transforms, canvas resize, save/reopen and JPEG work across th
       assert.deepEqual(await pixel(png, 60, 60), [0, 0, 0, 0]);
       e.updateLayer({ rotation: 37, flipX: true });
       await e.resizeCanvas({ width: 220, height: 180, anchor: 4, fill: "#ffffff" });
-      const project = join(dir, "edited.electropic");
+      const project = join(dir, "edited.picsie");
       await e.save(project);
       assert.equal(e.history.dirty, false);
       const reopened = await Editor.open(project);
       try {
+        assert.equal((await readFile(project, "utf8")).includes('"format":"picsie"'), true);
         assert.deepEqual(reopened.document, e.document);
         await e.export(png, "png");
         const second = join(dir, "reopened.png");
@@ -119,7 +120,7 @@ test("saving an earlier revision cannot incorrectly mark a newer edit clean", as
     const raw = new native.NativeEditor(JSON.stringify({ kind: "demo" }));
     try {
       raw.dispatch(JSON.stringify({ type: "nudge", delta: { x: 5, y: 0 } }));
-      const saving = raw.save(join(dir, "earlier.electropic"));
+      const saving = raw.save(join(dir, "earlier.picsie"));
       raw.dispatch(JSON.stringify({ type: "nudge", delta: { x: 5, y: 0 } }));
       await saving;
       assert.equal(JSON.parse(raw.snapshot()).history.dirty, true);
@@ -167,6 +168,12 @@ test("legacy project fixtures open in the real addon", async () => {
   for (const name of ["legacy-editing", "legacy-native"]) {
     const e = await Editor.open(resolve(`tests/fixtures/${name}.electropic`));
     try {
+      assert.equal(
+        (await readFile(resolve(`tests/fixtures/${name}.electropic`), "utf8")).includes(
+          '"format":"electropic"',
+        ),
+        true,
+      );
       assert.ok(e.document.layers.length >= 6);
       assert.ok((await stat(await e.preview())).size > 54);
     } finally {
@@ -241,9 +248,9 @@ test("Rust validates untrusted commands and malformed projects without losing th
       assert.throws(() => e.updateLayer({ scaleX: 0 }), /transform/);
       await assert.rejects(e.resizeCanvas({ width: 8192, height: 8192, anchor: 4 }), /megapixel/);
       assert.deepEqual(e.document, before);
-      const invalid = join(dir, "invalid.electropic");
+      const invalid = join(dir, "invalid.picsie");
       await writeFile(invalid, '{"version":999}');
-      await assert.rejects(Editor.open(invalid), /Invalid Electropic/);
+      await assert.rejects(Editor.open(invalid), /Invalid Picsie/);
       assert.deepEqual(e.document, before);
     } finally {
       e.close();

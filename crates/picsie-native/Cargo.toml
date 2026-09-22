@@ -1,5 +1,5 @@
 [package]
-name = "electropic-native"
+name = "picsie-native"
 version.workspace = true
 edition.workspace = true
 license.workspace = true
@@ -8,7 +8,7 @@ license.workspace = true
 crate-type = ["cdylib"]
 
 [dependencies]
-electropic-core = { path = "../electropic-core" }
+picsie-core = { path = "../picsie-core" }
 napi = { version = "3", features = ["napi8", "async", "serde-json"] }
 napi-derive = "3"
 serde_json = "1"

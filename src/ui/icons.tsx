@@ -29,7 +29,6 @@ const paths = {
   duplicate: '<rect x="8" y="8" width="13" height="13" rx="2"/><path d="M16 8V3H3v13h5"/>',
   chevron: '<path d="m6 9 6 6 6-6"/>',
   export: '<path d="M14 3h7v7M21 3l-11 11M10 4H4v16h16v-6"/>',
-  bolt: '<path d="m13 2-9 12h7l-1 8 10-13h-8l1-7Z"/>',
   grip: '<path d="M8 5h1M15 5h1M8 12h1M15 12h1M8 19h1M15 19h1"/>',
   mask: '<rect x="3" y="3" width="18" height="18" rx="2"/><path d="M12 3v18"/><path d="M12 3h9v18h-9Z" fill="white"/>',
 } as const;

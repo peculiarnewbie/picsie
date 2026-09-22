@@ -138,7 +138,7 @@ export function Shell(props: {
     setRevision((n) => n + 1);
     renderVersion++;
     schedule();
-    window.setTitle(`${editor.document.name}${editor.history.dirty ? " •" : ""} — Electropic`);
+    window.setTitle(`${editor.document.name}${editor.history.dirty ? " •" : ""} — Picsie`);
     if (process.platform === "darwin") window.setDocumentEdited(editor.history.dirty);
   };
 
@@ -148,13 +148,13 @@ export function Shell(props: {
     if (!destination) {
       const result = await NativeDialog.showSaveDialog(window, {
         title: "Save project",
-        defaultPath: `${doc.name}.electropic`,
-        filters: [{ name: "Electropic project", extensions: ["electropic"] }],
+        defaultPath: `${doc.name}.picsie`,
+        filters: [{ name: "Picsie project", extensions: ["picsie"] }],
       });
       if (result.canceled || !result.filePath) return false;
-      destination = result.filePath.endsWith(".electropic")
+      destination = result.filePath.endsWith(".picsie")
         ? result.filePath
-        : `${result.filePath}.electropic`;
+        : `${result.filePath}.picsie`;
     }
     await editor.save(destination);
     setPath(destination);
@@ -178,7 +178,9 @@ export function Shell(props: {
   async function open() {
     const result = await NativeDialog.showOpenDialog(window, {
       title: "Open project",
-      filters: [{ name: "Electropic project", extensions: ["electropic"] }],
+      filters: [
+        { name: "Picsie and legacy Electropic projects", extensions: ["picsie", "electropic"] },
+      ],
     });
     const file = result.filePaths[0];
     if (!result.canceled && file) props.openWindow(await Editor.open(file), file);
@@ -508,9 +510,9 @@ export function Shell(props: {
           borderColor: colors.line,
         }}
       >
-        <Icon name="bolt" size={20} color={colors.accent} />
-        <Text style={{ fontSize: 14, fontWeight: 600, letterSpacing: 0.6 }}>electropic</Text>
-        <Text style={{ color: colors.muted, fontSize: 11, marginLeft: 12 }}>COMPOSITOR / 01</Text>
+        <Icon name="image" size={20} color={colors.accent} />
+        <Text style={{ fontSize: 14, fontWeight: 600, letterSpacing: 0.6 }}>picsie</Text>
+        <Text style={{ color: colors.muted, fontSize: 11, marginLeft: 12 }}>IMAGE EDITOR</Text>
         <View style={{ flexGrow: 1 }} />
         <Action label="New" onClick={() => setNewOpen(true)} disabled={busy()} />
         <Action label="Open" onClick={() => void run(open)} disabled={busy()} />

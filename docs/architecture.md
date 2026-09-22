@@ -26,7 +26,7 @@ flowchart LR
     Skia -->|Uncompressed native frame resource| Image[QuickGUI Image]
 ```
 
-`crates/electropic-core` has no dependency on JavaScript or QuickGUI. `crates/electropic-native` owns one engine per window and exposes Node-API through napi-rs. The addon is tested in Node and Bun. A static CommonJS loader lets Bun embed it in the packaged executable; no working-directory dependency or external JS engine fallback exists.
+`crates/picsie-core` has no dependency on JavaScript or QuickGUI. `crates/picsie-native` owns one engine per window and exposes Node-API through napi-rs. The addon is tested in Node and Bun. A static CommonJS loader lets Bun embed it in the packaged executable; no working-directory dependency or external JS engine fallback exists.
 
 Rust model/command types generate `src/engine/types.ts` through `ts-rs`. napi-rs generates `native-api.d.ts`, including async return contracts declared on the Rust exports. Regenerate with `npm run build:native`; do not hand-edit these files. Pointer moves are batched for up to 8 ms; down/up/cancel and subsequent commands flush queued samples. Each gesture commits one Rust history transaction.
 
@@ -46,13 +46,13 @@ This is not zero-copy GPU sharing. Skia reads pixels into a native buffer, the r
 app.tsx                       QuickGUI startup and window lifecycle
 src/ui/                       UI and transient form state
 src/engine/                   Native loader, generated types, command adapter
-crates/electropic-core/        Model, commands, geometry, history, rendering, files
-crates/electropic-native/      Node-API ownership and worker tasks
-crates/electropic-core/tests/  Rust behavior and pinned Compositor fixtures
+crates/picsie-core/        Model, commands, geometry, history, rendering, files
+crates/picsie-native/      Node-API ownership and worker tasks
+crates/picsie-core/tests/  Rust behavior and pinned Compositor fixtures
 tests/                        Actual-addon integration and old project fixtures
 ```
 
-`src/core/` has been removed. There are **zero legacy TypeScript engine exemptions**. Existing `.electropic` v1 projects remain readable and writable. Their vector stroke masks and embedded PNG assets are preserved internally in Rust for compatibility. Upstream grayscale mask assets, independent placements/linking, upstream brush raster semantics and `.comp` packages remain separate fidelity work; this migration does not claim to implement those features. See [the source map](compositor-port.md).
+`src/core/` has been removed. There are **zero legacy TypeScript engine exemptions**. New projects use `.picsie` files and the `picsie` format marker. Existing `.electropic` v1 projects remain readable and writable, retaining their original marker when saved. Their vector stroke masks and embedded PNG assets are preserved internally in Rust for compatibility. Upstream grayscale mask assets, independent placements/linking, upstream brush raster semantics and `.comp` packages remain separate fidelity work; this migration does not claim to implement those features. See [the source map](compositor-port.md).
 
 ## Enforcement
 

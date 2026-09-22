@@ -2,8 +2,8 @@ import { defineConfig } from "@quickgui/cli";
 
 export default defineConfig({
   language: "typescript",
-  name: "Electropic",
-  identifier: "dev.electropic.compositor",
+  name: "Picsie",
+  identifier: "dev.peculiarnewbie.picsie",
   entry: "app.tsx",
   resources: ["THIRD_PARTY_NOTICES.md"],
 });

@@ -6,7 +6,7 @@ import { canQuit } from "./src/ui/lifecycle.ts";
 
 function openWindow(editor: Editor = new Editor(), path?: string) {
   new Window({
-    title: "Electropic — Compositor",
+    title: "Picsie",
     width: 1280,
     height: 860,
     minimumWidth: 960,

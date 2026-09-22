@@ -1,5 +1,5 @@
 {
-  "name": "electropic-compositor",
+  "name": "picsie-compositor",
   "version": "0.1.0",
   "private": true,
   "type": "module",
@@ -7,13 +7,13 @@
     "dev": "npm run check:architecture && npm run build:native && quickgui dev",
     "build": "npm run check:architecture && npm run build:native && quickgui build",
     "check": "npm run check:architecture && cargo fmt --all --check && cargo check --workspace && tsc --noEmit",
-    "test": "npm run check:architecture && npm run build:native && npm run test:architecture && cargo test -p electropic-core && tsx --test tests/*.test.ts",
+    "test": "npm run check:architecture && npm run build:native && npm run test:architecture && cargo test -p picsie-core && tsx --test tests/*.test.ts",
     "test:quickgui": "npm run check:architecture && npm run build:native && quickgui test",
     "smoke": "npm run check:architecture && npm run build:native && tsx scripts/render-demo.ts",
     "fmt": "oxfmt --write .",
     "check:architecture": "node scripts/check-architecture.mjs",
     "test:architecture": "node --test scripts/check-architecture.test.mjs",
-    "build:native": "npm run check:architecture && napi build --manifest-path crates/electropic-native/Cargo.toml --package electropic-native --output-dir native --dts ../src/engine/native-api.d.ts --release && cargo run --quiet -p electropic-core --bin export_types && oxfmt --write src/engine/types.ts src/engine/native-api.d.ts",
+    "build:native": "npm run check:architecture && napi build --manifest-path crates/picsie-native/Cargo.toml --package picsie-native --output-dir native --dts ../src/engine/native-api.d.ts --release && cargo run --quiet -p picsie-core --bin export_types && oxfmt --write src/engine/types.ts src/engine/native-api.d.ts",
     "test:bun": "npm run check:architecture && bun test tests/native.test.ts"
   },
   "dependencies": {
@@ -31,6 +31,6 @@
     "typescript": "7.0.2"
   },
   "napi": {
-    "binaryName": "electropic"
+    "binaryName": "picsie"
   }
 }

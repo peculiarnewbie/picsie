@@ -1,4 +1,4 @@
-# Electropic
+# Picsie
 
 An experimental port of [Compositor](https://github.com/robbietilton/Compositor), using a TypeScript/[QuickGUI](https://quickgui.dev/docs/typescript) interface with a Rust engine. This is an initial compositing editor, not a feature-complete port.
 
@@ -45,7 +45,7 @@ Dev/build/test commands enforce the architecture policy. Production TypeScript i
 - Pan, zoom, fit-to-window, and merged-color sampling.
 - Canvas Size with nine anchors, pixels/percent, relative dimensions, aspect-ratio lock, and transparent or colored extensions. Artwork keeps its original scale; content outside a smaller canvas remains recoverable.
 - Compositor-style undo/redo with selection restoration, nested transactions, saved revisions, and up to 100 entries within a 256 MB retained-asset budget. Native Save/Cancel/Discard prompts protect dirty windows and application quit.
-- Validated, self-contained `.electropic` JSON projects, with embedded PNG assets. Saves replace files atomically.
+- Validated, self-contained `.picsie` JSON projects, with embedded PNG assets. Existing `.electropic` v1 projects also open. Saves replace files atomically.
 - Full-resolution PNG export preserving transparency, and JPEG export with a white background through **File → Export JPEG** on macOS or Ctrl+Alt+Shift+S on Linux.
 
 ## Basic workflow
@@ -97,9 +97,9 @@ The engine is independent of the QuickGUI UI:
 app.tsx                       Startup and native window lifecycle
 src/ui/                       UI, controls, dialogs and transient forms
 src/engine/                   Generated contracts and thin native adapter
-crates/electropic-core/        Rust model, commands, geometry, history, Skia and files
-crates/electropic-native/      Node-API addon and asynchronous worker tasks
-crates/electropic-core/tests/  Engine behavior and upstream fixtures
+crates/picsie-core/        Rust model, commands, geometry, history, Skia and files
+crates/picsie-native/      Node-API addon and asynchronous worker tasks
+crates/picsie-core/tests/  Engine behavior and upstream fixtures
 tests/                        Node/Bun integration and legacy project fixtures
 ```
 

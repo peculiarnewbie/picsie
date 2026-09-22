@@ -1,6 +1,6 @@
 //! Behavior fixtures moved from the TypeScript suite. Compositor fixtures are marked below.
 //! Upstream MIT © 2026 Wonder Assembly LLC; pinned source mapping in docs/compositor-port.md.
-use electropic_core::{
+use picsie_core::{
     canvas_size::*, editor::*, files::*, geometry::*, history::*, model::*, render::*,
 };
 use serde_json::json;
@@ -622,7 +622,7 @@ fn mask_duplicate_edits_are_independent_and_roundtrip() {
     assert_eq!(e.history.document.layers[0].mask, original.mask);
     assert_ne!(e.selected().unwrap().mask, original.mask);
     let dir = tempfile::tempdir().unwrap();
-    let path = dir.path().join("mask.electropic");
+    let path = dir.path().join("mask.picsie");
     save_project(&path, &e.history.document).unwrap();
     let reopened = open_project(&path).unwrap();
     assert_eq!(reopened, e.history.document);
@@ -842,7 +842,7 @@ fn canceled_gestures_preserve_redo_and_group_range_anchor() {
 fn file_import_is_self_contained_and_failed_writes_preserve_original() {
     let dir = tempfile::tempdir().unwrap();
     let image = dir.path().join("source.png");
-    let project = dir.path().join("project.electropic");
+    let project = dir.path().join("project.picsie");
     std::fs::write(
         &image,
         Renderer::default()
@@ -855,6 +855,7 @@ fn file_import_is_self_contained_and_failed_writes_preserve_original() {
     save_project(&project, &d).unwrap();
     std::fs::remove_file(&image).unwrap();
     let opened = open_project(&project).unwrap();
+    assert_eq!(opened.format, "picsie");
     assert_eq!(pix(&opened, 10., 10.), [255, 0, 0, 255]);
     let original = std::fs::read(&project).unwrap();
     let mut invalid = d;
@@ -922,6 +923,7 @@ fn real_legacy_projects_open_and_roundtrip_with_no_pixel_payload_in_metadata() {
         let path = Path::new(env!("CARGO_MANIFEST_DIR"))
             .join(format!("../../tests/fixtures/{name}.electropic"));
         let d = open_project(&path).unwrap();
+        assert_eq!(d.format, "electropic");
         let mut r = Renderer::default();
         let bytes = r.export(&d, false).unwrap();
         assert!(bytes.len() > 1000);

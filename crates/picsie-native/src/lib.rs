@@ -1,13 +1,13 @@
 //! Node-API transport only. Engine state and all long-running raster/file work stay in Rust.
-use electropic_core::{
+use napi::{Env, Task, bindgen_prelude::*};
+use napi_derive::napi;
+use picsie_core::{
     editor::{Command, Editor, InitialDocument, PaintTarget, Tool},
     files::{self, Frames},
     geometry::{self, Viewport},
     model::{Document, Layer, Point, demo_document},
     render::Renderer,
 };
-use napi::{Env, Task, bindgen_prelude::*};
-use napi_derive::napi;
 use std::{
     path::Path,
     sync::{
@@ -223,7 +223,7 @@ impl Task for PreviewTask {
                 self.mask_id.as_deref(),
             )
             .map_err(error)?;
-        let bytes = electropic_core::render::frame_bytes(&mut surface).map_err(error)?;
+        let bytes = picsie_core::render::frame_bytes(&mut surface).map_err(error)?;
         self.shared.check()?;
         lock(&self.shared.frames)?.publish(&bytes).map_err(error)
     }
@@ -330,14 +330,14 @@ pub struct CanvasTask {
     shared: Arc<Shared>,
     document: Document,
     revision: String,
-    options: electropic_core::canvas_size::CanvasSizeOptions,
+    options: picsie_core::canvas_size::CanvasSizeOptions,
 }
 impl Task for CanvasTask {
     type Output = Document;
     type JsValue = String;
     fn compute(&mut self) -> Result<Document> {
         self.shared.check()?;
-        electropic_core::canvas_size::resize_canvas(&self.document, &self.options).map_err(error)
+        picsie_core::canvas_size::resize_canvas(&self.document, &self.options).map_err(error)
     }
     fn resolve(&mut self, _: Env, document: Document) -> Result<String> {
         self.shared.check()?;
