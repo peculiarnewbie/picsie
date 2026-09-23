@@ -29,6 +29,8 @@ jobs:
         with:
           bun-version: 1.4.2
       - uses: dtolnay/rust-toolchain@stable
+        with:
+          components: rustfmt
       - uses: Swatinem/rust-cache@v2
       - name: Install native font libraries
         if: runner.os == 'Linux'
