@@ -58,7 +58,6 @@ export function Shell(props: {
     const content = selected()?.content;
     return content?.kind === "text" ? content : undefined;
   };
-  const [frame, setFrame] = createSignal("");
   const [busy, setBusy] = createSignal(false);
   const [notice, setNotice] = createSignal(
     "Drag to move · Handles resize · Shift keeps proportions",
@@ -95,6 +94,16 @@ export function Shell(props: {
     rendering = false,
     renderVersion = 0;
   let timer: ReturnType<typeof setTimeout> | undefined;
+  // QuickGUI decodes image paths asynchronously and paints nothing while loading, so a single
+  // Image node blanks the canvas on every frame. Keep recent frames stacked: the last decoded
+  // one shows through until the next finishes loading, then older nodes retire.
+  const [frames, setFrames] = createSignal<string[]>([]);
+  let framePrune: ReturnType<typeof setTimeout> | undefined;
+  const showFrame = (source: string) => {
+    setFrames((list) => [...list, source].slice(-4));
+    if (framePrune) clearTimeout(framePrune);
+    framePrune = setTimeout(() => setFrames((list) => list.slice(-1)), 500);
+  };
 
   const report = (error: unknown) =>
     setNotice(error instanceof Error ? error.message : String(error));
@@ -127,7 +136,7 @@ export function Shell(props: {
     try {
       const source = await editor.preview();
       // One render runs at a time: show progress during long drags, then render the latest state.
-      if (!disposed) setFrame(source);
+      if (!disposed) showFrame(source);
     } catch (error) {
       if (!disposed) report(error);
     } finally {
@@ -518,6 +527,7 @@ export function Shell(props: {
       return () => {
         disposed = true;
         if (timer) clearTimeout(timer);
+        if (framePrune) clearTimeout(framePrune);
         unsubscribe();
         offResize();
         offFocus();
@@ -788,11 +798,21 @@ export function Shell(props: {
               state().tool === "hand" ? "grab" : state().tool === "move" ? "default" : "crosshair",
           }}
         >
-          <Image
-            source={frame()}
-            fit="fill"
-            style={{ width: state().viewport.width, height: state().viewport.height }}
-          />
+          <For each={frames()}>
+            {(source) => (
+              <Image
+                source={source}
+                fit="fill"
+                style={{
+                  position: "absolute",
+                  top: 0,
+                  left: 0,
+                  width: state().viewport.width,
+                  height: state().viewport.height,
+                }}
+              />
+            )}
+          </For>
         </View>
         <View
           style={{
