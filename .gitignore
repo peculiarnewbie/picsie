@@ -5,3 +5,5 @@ artifacts/
 .DS_Store
 target/
 native/*.node
+quickgui-update.key
+quickgui-update.pub

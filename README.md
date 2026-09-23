@@ -45,7 +45,7 @@ Dev/build/test commands enforce the architecture policy. Production TypeScript i
 - Layer brightness, saturation, and Gaussian blur.
 - Pan, zoom, fit-to-window, and merged-color sampling.
 - Canvas Size with nine anchors, pixels/percent, relative dimensions, aspect-ratio lock, and transparent or colored extensions. Artwork keeps its original scale; content outside a smaller canvas remains recoverable.
-- Crop with eight handles, ratio presets, edge snapping, Apply/Cancel, and retained source pixels. Rectangular/elliptical marquee and freehand lasso support New/Add/Subtract selection and clear selected layer pixels.
+- Crop with eight handles, ratio presets, edge snapping, Apply/Cancel, and retained source pixels. Rectangular/elliptical marquee and freehand lasso support New/Add/Subtract selection, Select → Modify → Feather to soften selection edges, and clearing selected layer pixels.
 - Compositor-style undo/redo with selection restoration, nested transactions, saved revisions, and up to 100 entries within a 256 MB retained-asset budget. Native Save/Cancel/Discard prompts protect dirty windows and application quit.
 - Validated, self-contained `.picsie` JSON projects, with embedded PNG assets. Existing `.electropic` v1 projects also open. The supported raster/folder/mask subset of Compositor `.comp` packages opens and saves as directory packages with a manifest and PNG assets.
 - Full-resolution PNG export preserving transparency, and JPEG export with a white background through **File → Export JPEG** on macOS or Ctrl+Alt+Shift+S on Linux.
@@ -90,7 +90,7 @@ Use Ctrl in place of ⌘ on Linux, with the canvas focused. QuickGUI 0.1.6 does 
 
 This implementation follows Compositor's bottom-to-top layer model and compositing workflow. It reads and writes the supported `.comp` package subset described in the [source map](docs/compositor-port.md); it does not read PSD files.
 
-Still to port: folder masks and clipping relationships, polygonal lasso and wand/object selections, selection feathering/move/transform and undo history, healing and cloning, content-aware tools, perspective distortion, guides/rulers, adjustment layers/curves/levels, layer effects, richer text layout, tabs, and autosave/recovery. `.comp` import explicitly rejects those richer upstream records; `.comp` export rasterizes Picsie's live text, shapes, and gradients. Layer grips, buttons, and shortcuts reorder the selection. Resize and rotation operate on one layer at a time. Drag reordering does not yet auto-scroll the layer list. Canvas picking uses layer bounds, not per-pixel alpha. Text uses explicit line breaks and clips to its source box; resizing scales that box rather than reflowing text.
+Still to port: folder masks and clipping relationships, polygonal lasso and wand/object selections, selection move/transform and undo history, healing and cloning, content-aware tools, perspective distortion, guides/rulers, adjustment layers/curves/levels, layer effects, richer text layout, tabs, and autosave/recovery. `.comp` import explicitly rejects those richer upstream records; `.comp` export rasterizes Picsie's live text, shapes, and gradients. Layer grips, buttons, and shortcuts reorder the selection. Resize and rotation operate on one layer at a time. Drag reordering does not yet auto-scroll the layer list. Canvas picking uses layer bounds, not per-pixel alpha. Text uses explicit line breaks and clips to its source box; resizing scales that box rather than reflowing text.
 
 Canvas Size currently offers pixels and percent; physical-unit controls are not yet exposed. Retained history storage counts encoded PNG and grayscale mask assets and estimates vector-stroke payloads, rather than measuring all native allocations.
 
@@ -117,6 +117,17 @@ The migrated behavior suite runs in Rust, with real-addon tests under both Node 
 Native interaction checks covered anchored canvas expansion, relative sizing and ratio lock, undo/redo selection restoration, range selection, group movement and duplication, drag insertion and reordering, anchored edge resizing, rotation snapping, mask hiding/revealing and disabling, plus the earlier opacity, shape, brush/eraser, undo, text, blend, and fit-to-window checks. Layouts were inspected at 1280 × 860 and 960 × 640. A project was saved and reopened through native file dialogs. Its PNG export was byte-for-byte equal to rendering the saved project through the compositor.
 
 The earlier screenshot pass caught and fixed font-dependent tool icons, inconsistent button and field alignment, shrinking layer rows, a clipped New canvas dialog, missing select labels and popup colors, and text edits losing characters. The new crop, mask, folder, selection, and `.comp` paths are tested through the real addon; this workspace lacks a graphical display for fresh window screenshots. See the [native screenshots and test notes](docs/native-testing.md). **macOS execution, signing, and notarization remain unverified.**
+
+## Release
+
+Releases are built by [Blacksmith](https://www.blacksmith.sh) GitHub Actions runners on Linux and Windows (`blacksmith-4vcpu-ubuntu-2404` and `blacksmith-4vcpu-windows-2025`); the Blacksmith GitHub App must be installed on this repository.
+
+1. Bump `version` in `package.json` and add a `## x.y.z - YYYY-MM-DD` section to [CHANGELOG.md](CHANGELOG.md). The changelog section becomes the release notes and appcast description.
+2. Tag the release `v<version>` and push the tag. The release workflow refuses tags that do not match `package.json`.
+3. Each target runs the architecture guard, Rust/TypeScript checks, and the Node/Bun addon tests, then runs `quickgui build --upload`. This packages Linux (`tar.gz`, `install.sh`, `.deb`) and Windows (NSIS installer and portable archive), signs the Sparkle-compatible appcast, and uploads everything to a **draft** GitHub release.
+4. After both targets have uploaded, publish the draft to make the update feed live: `gh release edit v<version> --draft=false`.
+
+The updater's private signing key is the `QUICKGUI_UPDATER_PRIVATE_KEY` repository secret (the contents of the `quickgui-update.key` file from `npx quickgui keygen`); its public half is committed in [quickgui.config.ts](quickgui.config.ts). Installed apps read the appcast and `install.sh`/`latest-*.txt` pointers from `releases/latest/download`, so nothing moves until the draft is published. Windows installers are unsigned (SmartScreen will warn), macOS is not built, and Windows/Linux packages have only been smoke-tested through the app's own checks.
 
 ## Attribution
 

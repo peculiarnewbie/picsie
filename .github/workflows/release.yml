@@ -1,0 +1,65 @@
+name: Release
+on:
+  push:
+    tags: ["v*"]
+permissions:
+  contents: write
+jobs:
+  build:
+    name: Package ${{ matrix.target }}
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - target: linux-x64
+            runner: blacksmith-4vcpu-ubuntu-2404
+          - target: windows-x64
+            runner: blacksmith-4vcpu-windows-2025
+    runs-on: ${{ matrix.runner }}
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 24
+          cache: npm
+      - uses: oven-sh/setup-bun@v2
+        with:
+          bun-version: 1.4.2
+      - uses: dtolnay/rust-toolchain@stable
+      - uses: Swatinem/rust-cache@v2
+      - name: Install native font libraries
+        if: runner.os == 'Linux'
+        run: sudo apt-get update && sudo apt-get install -y libfontconfig-dev libfreetype-dev
+      # The signed updater artifact on Windows is the NSIS installer, so makensis is required.
+      - name: Install NSIS
+        if: runner.os == 'Windows'
+        shell: pwsh
+        run: |
+          choco install nsis -y --no-progress
+          "C:\Program Files (x86)\NSIS" | Out-File -FilePath $env:GITHUB_PATH -Encoding utf8 -Append
+      - run: npm ci
+      - name: Require the tag to match package.json
+        shell: bash
+        run: |
+          version=$(node -p "require('./package.json').version")
+          if [ "$GITHUB_REF_NAME" != "v$version" ]; then
+            echo "tag $GITHUB_REF_NAME does not match package.json version $version" >&2
+            exit 1
+          fi
+      - run: npm run build:native
+      - run: npm run check
+      - run: npm test
+      - run: npm run test:bun
+      # Builds the production package and uploads it to a draft release for `v<version>`,
+      # with the signed appcast and install.sh/latest pointers. Publish the draft once both
+      # targets have uploaded to make the update feed live.
+      - name: Package and upload to a draft release
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          QUICKGUI_UPDATER_PRIVATE_KEY: ${{ secrets.QUICKGUI_UPDATER_PRIVATE_KEY }}
+        run: npx quickgui build --target ${{ matrix.target }} --upload
+      - uses: actions/upload-artifact@v4
+        with:
+          name: picsie-${{ matrix.target }}
+          path: dist/${{ matrix.target }}/
+          if-no-files-found: error

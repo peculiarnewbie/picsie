@@ -4,7 +4,8 @@ permissions:
   contents: read
 jobs:
   architecture-and-tests:
-    runs-on: ubuntu-latest
+    # Blacksmith runners; the Blacksmith GitHub App must be installed on this repository.
+    runs-on: blacksmith-4vcpu-ubuntu-2404
     steps:
       - uses: actions/checkout@v4
       - uses: actions/setup-node@v4
