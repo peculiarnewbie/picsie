@@ -514,6 +514,8 @@ pub fn save(path: &Path, doc: &Document) -> Result<()> {
     let mut file = File::create(stage.path().join("manifest.json"))?;
     file.write_all(&bytes)?;
     file.sync_all()?;
+    // Windows refuses to rename a directory while a file inside it is still open.
+    drop(file);
     let staged = stage.keep();
     let result = (|| -> Result<()> {
         if path.exists() {
