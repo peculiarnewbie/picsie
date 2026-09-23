@@ -129,6 +129,8 @@ Releases are built by GitHub Actions: Linux on the [Namespace](https://namespace
 
 The updater's private signing key is the `QUICKGUI_UPDATER_PRIVATE_KEY` repository secret (the contents of the `quickgui-update.key` file from `npx quickgui keygen`); its public half is committed in [quickgui.config.ts](quickgui.config.ts). Installed apps read the appcast and `install.sh`/`latest-*.txt` pointers from `releases/latest/download`, so nothing moves until the draft is published. Windows installers are unsigned (SmartScreen will warn), macOS is not built, and Windows/Linux packages have only been smoke-tested through the app's own checks.
 
+Windows packaging carries [scripts/patch-quickgui-nsis.mjs](scripts/patch-quickgui-nsis.mjs) (applied on `npm install`): QuickGUI 0.1.6's NSIS generator writes `InstallDirRegKey SHCTX`, which makensis rejects because `InstallDirRegKey` never accepts `SHCTX` as its root key. Remove the patch once an upstream QuickGUI release fixes the generator.
+
 ## Attribution
 
 [Compositor](https://github.com/robbietilton/Compositor) by Robbie Tilton / Wonder Assembly LLC provided the feature and architecture reference. Selected routines and test fixtures are translated from the pinned upstream source; the remaining prototype differences are listed in the [source map](docs/compositor-port.md). Its upstream MIT notice is retained in [THIRD_PARTY_NOTICES.md](THIRD_PARTY_NOTICES.md). QuickGUI is MIT/Apache-2.0 licensed; package dependencies retain their own licenses.

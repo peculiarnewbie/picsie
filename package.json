@@ -4,6 +4,7 @@
   "private": true,
   "type": "module",
   "scripts": {
+    "postinstall": "node scripts/patch-quickgui-nsis.mjs",
     "dev": "npm run check:architecture && npm run build:native && quickgui dev",
     "build": "npm run check:architecture && npm run build:native && quickgui build",
     "check": "npm run check:architecture && cargo fmt --all --check && cargo check --workspace && tsc --noEmit",
