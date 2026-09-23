@@ -183,6 +183,39 @@ test("feathered selections soften what they clip across the real addon", async (
     }
   }));
 
+test("text editing and slider edits cross the bridge as typed commands", async () =>
+  temporary(async (dir) => {
+    const e = session();
+    try {
+      e.viewport = { width: 200, height: 160, zoom: 1, pan: { x: 0, y: 0 } };
+      e.setTool("text");
+      e.pointer("down", { x: 20, y: 20 });
+      e.pointer("up", { x: 20, y: 20 });
+      assert.equal(e.document.layers.length, 1);
+      const id = e.selectedId!;
+      assert.equal(e.textEditRequests, 0, "creating text must not request editing");
+      e.editText({ id });
+      assert.equal(e.selectedId, id);
+      assert.equal(e.textEditRequests, 1);
+      e.editText({ point: { x: 25, y: 25 } });
+      assert.equal(e.textEditRequests, 2);
+      // A slider drag previews every step but commits as one undo entry.
+      const before = e.history.undoCount;
+      e.beginPropertyEdit("Edit layer opacity");
+      e.updateLayer({ opacity: 0.8 });
+      e.updateLayer({ opacity: 0.2 });
+      e.finishGesture();
+      assert.equal(e.history.undoCount, before + 1);
+      e.undo();
+      assert.equal(e.document.layers.find((layer) => layer.id === id)?.opacity, 1);
+      const png = join(dir, "text.png");
+      await e.export(png, "png");
+      assert.ok((await stat(png)).size > 0);
+    } finally {
+      e.close();
+    }
+  }));
+
 test("file import is atomic, owns its assets, and metadata excludes all raster data", async () =>
   temporary(async (dir) => {
     const e = session();

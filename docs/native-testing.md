@@ -162,3 +162,21 @@ The Select → Modify → Feather port was verified in the packaged Linux app on
 ![Compact marquee header at 960 × 640](screenshots/feather-compact-header.png)
 
 The session captures live in ignored `artifacts/feather-pass/`, including the close-up and compact crops. `npm run check`, `npm test`, `npm run test:bun`, and `npm run build` pass; the translated `SelectionFeatherTests` fixture and labeled local regressions run in the Rust suite, and `tests/native.test.ts` checks the softened alpha falloff through the actual addon.
+
+## Editor UX pass — 2026-09-23
+
+Text editing, the inspector, the color picker, layer dragging, and click-through picking were rebuilt against the pinned upstream behavior and verified in the packaged app on the isolated X11 display (captures in `artifacts/ux-pass/`):
+
+| Interaction | Result |
+| --- | --- |
+| Double-click a text layer's row and type | The layer's text opens in the editor and updates live on the canvas |
+| Press Enter / Shift+Enter | The edit commits as one undo entry / a new line is inserted |
+| Long text in a narrow box | Wraps at the box width minus 12 px padding and clips to the box |
+| Opacity / Brightness / Saturation / Gaussian blur rows | Sliders drive live previews; one drag is one undo entry |
+| Open the color picker from the swatch | SV square, hue strip, R/G/B and hex fields all show the current color |
+| Drag inside the square or type fields | Markers, preview, R/G/B, and hex stay in sync; OK commits, Cancel discards |
+| Drag a layer row down the list | The insertion line tracks the boundary and the row lands there on release |
+| Drop a row onto a folder row | The folder highlights and the row is filed inside it |
+| Middle-click the canvas where layers overlap | Selection cycles through every layer under the pointer |
+
+The drag fix is worth recording: QuickGUI's captured-pointer release event does not report the drag total in `delta`, so drops silently vanished; displacement now comes from `localPosition − localOrigin`. `npm run check`, `npm test`, and `npm run test:bun` pass.

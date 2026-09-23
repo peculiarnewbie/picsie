@@ -30,6 +30,8 @@ fn paint(value: &str) -> Paint {
 fn rect(w: u32, h: u32) -> Rect {
     Rect::from_wh(w as f32, h as f32)
 }
+/// TypeTool's text-to-box gap, in layer pixels.
+const PADDING: f32 = 12.;
 fn point(p: Point) -> sk::Point {
     sk::Point::new(p.x as f32, p.y as f32)
 }
@@ -272,27 +274,32 @@ impl Renderer {
                 text_style
                     .set_font_families(&[family])
                     .set_font_size(*font_size as f32)
-                    .set_height(1.0)
+                    // Auto leading is 120% of the font size, as in TypeTool's autoLeading.
+                    .set_height(1.2)
                     .set_color(self::color(color));
                 let mut paragraph_style = ParagraphStyle::new();
                 paragraph_style.set_text_style(&text_style);
-                for (index, line) in text.split('\n').enumerate() {
-                    if line.is_empty() {
-                        continue;
-                    }
-                    let mut builder = ParagraphBuilder::new(&paragraph_style, fonts.clone());
-                    builder.add_text(line);
-                    let mut paragraph = builder.build();
-                    // Match Canvas fillText: no wrapping; the layer surface clips overflow.
-                    paragraph.layout(100_000.);
-                    let (_, metrics) = paragraph.get_font_at(0).metrics();
-                    // Preserve the former Canvas2D top baseline (canvas v1.0.9 skia_c.cpp).
-                    let top = -paragraph.alphabetic_baseline()
-                        - metrics.ascent
-                        - metrics.underline_position().unwrap_or(0.)
-                        - metrics.underline_thickness().unwrap_or(0.);
-                    paragraph.paint(c, (0., top + index as f32 * *font_size as f32 * 1.2));
-                }
+                let mut builder = ParagraphBuilder::new(&paragraph_style, fonts.clone());
+                builder.add_text(text);
+                let mut paragraph = builder.build();
+                // Box text word-wraps at the box width minus TypeTool's 12px padding on each
+                // side; explicit line breaks still break. Overflow clips to the padded box.
+                let width = (l.width as f32 - 2. * PADDING).max(1.);
+                paragraph.layout(width);
+                let (_, metrics) = paragraph.get_font_at(0).metrics();
+                // Preserve the former Canvas2D top baseline (canvas v1.0.9 skia_c.cpp).
+                let top = -paragraph.alphabetic_baseline()
+                    - metrics.ascent
+                    - metrics.underline_position().unwrap_or(0.)
+                    - metrics.underline_thickness().unwrap_or(0.);
+                c.save();
+                c.clip_rect(
+                    Rect::from_xywh(PADDING, PADDING, width, l.height as f32 - 2. * PADDING),
+                    None,
+                    false,
+                );
+                paragraph.paint(c, (PADDING, PADDING + top));
+                c.restore();
             }
             Content::Image { data } => {
                 let bytes = STANDARD.decode(

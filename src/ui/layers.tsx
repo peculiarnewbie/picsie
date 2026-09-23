@@ -18,8 +18,10 @@ export function LayersPanel(props: {
   busy: boolean;
   act: (callback: () => void) => void;
 }) {
-  const [drop, setDrop] = createSignal<{ id: string; side: "above" | "below" }>();
-  let drag: { index: number; ids: string[]; moved: boolean } | undefined;
+  const [drop, setDrop] = createSignal<{ id: string; side: "above" | "below" | "into" }>();
+  let drag: { startY: number; index: number; ids: string[]; moved: boolean } | undefined;
+  // 40px rows with a 3px gap; fixed heights keep every drop in one coordinate system.
+  const ROW = 43;
   const state = props.editor;
   function reorder(id: string, event: QuickGuiEvent) {
     if (props.busy) return;
@@ -29,25 +31,53 @@ export function LayersPanel(props: {
       if (!state().isSelected(id)) state().select(id);
       if (!state().selectedLayers.some((layer) => !layer.locked)) return;
       const ids = state().layerRows.map((row) => row.id);
-      drag = { index: ids.indexOf(id), ids, moved: false };
+      drag = {
+        startY: ids.indexOf(id) * ROW + pointer.localPosition.y,
+        index: ids.indexOf(id),
+        ids,
+        moved: false,
+      };
     } else if (pointer.phase === "cancel") {
       drag = undefined;
       setDrop(undefined);
     } else if (drag) {
-      drag.moved ||= Math.abs(pointer.delta.y) > 4;
-      const boundary = Math.max(
-        0,
-        Math.min(drag.ids.length, Math.round((drag.index * 43 + pointer.localPosition.y + 5) / 43)),
-      );
-      const destination = {
-        id: drag.ids[Math.min(boundary, drag.ids.length - 1)]!,
-        side: boundary === drag.ids.length ? ("below" as const) : ("above" as const),
-      };
-      const valid =
-        drag.moved && Math.abs(pointer.delta.x) < 280 && !state().isSelected(destination.id);
+      // Displacement from the press point, not `delta`: the release event's delta is not the
+      // drag's total. Fixed row heights keep every drop in one coordinate system.
+      const dx = pointer.localPosition.x - pointer.localOrigin.x;
+      const dy = pointer.localPosition.y - pointer.localOrigin.y;
+      drag.moved ||= Math.abs(dy) > 4;
+      const rows = state().layerRows;
+      const y = drag.startY + dy;
+      const boundary = Math.max(0, Math.min(rows.length, Math.round(y / ROW)));
+      const hovered = Math.max(0, Math.min(rows.length - 1, Math.floor(y / ROW)));
+      const target = rows[Math.min(boundary, rows.length - 1)]!;
+      const within = y - hovered * ROW;
+      const folder = rows[hovered]!;
+      const layer = state().document.layers.find((layer) => layer.id === folder.id);
+      // Upstream drops onto a folder row to file layers inside it; a dragged folder can
+      // never be filed inside itself or its own subtree.
+      const into =
+        layer?.content.kind === "group" &&
+        within > 10 &&
+        within < 33 &&
+        !state().isSelected(folder.id) &&
+        !state().selectedLayers.some((selected) => selected.id === folder.id);
+      const movable = drag.moved && Math.abs(dx) < 280;
+      const destination = into
+        ? { id: folder.id, side: "into" as const }
+        : {
+            id: target.id,
+            side: boundary === rows.length ? ("below" as const) : ("above" as const),
+          };
+      const valid = movable && (into || !state().isSelected(destination.id));
       setDrop(valid ? destination : undefined);
       if (pointer.phase === "up") {
-        if (valid) props.act(() => state().reorderTo(destination.id, destination.side));
+        if (valid)
+          props.act(() =>
+            destination.side === "into"
+              ? state().moveToGroup(destination.id)
+              : state().reorderTo(destination.id, destination.side),
+          );
         drag = undefined;
         setDrop(undefined);
       }
@@ -71,7 +101,7 @@ export function LayersPanel(props: {
         <Text style={{ color: colors.muted, fontSize: 11 }}>{state().document.layers.length}</Text>
       </View>
       <Text style={{ color: colors.muted, fontSize: 10, lineHeight: "14px" }}>
-        Shift: range · Ctrl/⌘: toggle · Drag grip: reorder
+        Shift: range · Ctrl/⌘: toggle · Drag rows: reorder · Drop on a folder: file inside
       </Text>
       <View style={{ ...column, gap: 3, maxHeight: 255, overflowY: "auto" }}>
         <For each={state().layerRows}>
@@ -89,6 +119,7 @@ export function LayersPanel(props: {
             };
             return (
               <View
+                onPointer={(event) => reorder(id, event)}
                 style={{
                   ...row,
                   gap: 4,
@@ -98,10 +129,14 @@ export function LayersPanel(props: {
                   paddingRight: 6,
                   borderRadius: 5,
                   position: "relative",
+                  cursor: "grab",
                   bg: state().isSelected(id) ? "#363e58" : "#282c35",
+                  ...(drop()?.id === id && drop()?.side === "into"
+                    ? { borderWidth: 1, borderColor: colors.accent }
+                    : {}),
                 }}
               >
-                <Show when={drop()?.id === id}>
+                <Show when={drop()?.id === id && drop()?.side !== "into"}>
                   <View
                     style={{
                       position: "absolute",
@@ -125,8 +160,7 @@ export function LayersPanel(props: {
                 </Show>
                 <View
                   ariaLabel={`Drag ${layer().name}`}
-                  tooltip="Drag selected layers to reorder"
-                  onPointer={(event) => reorder(id, event)}
+                  tooltip="Drag rows to reorder; drop on a folder to file inside it"
                   style={{
                     ...row,
                     justifyContent: "center",
@@ -161,7 +195,13 @@ export function LayersPanel(props: {
                 <Button
                   ariaLabel={`Select ${layer().name}`}
                   disabled={props.busy}
-                  onMouseDown={rememberModifiers}
+                  onMouseDown={(event) => {
+                    rememberModifiers(event);
+                    // The core's own multi-click count starts text editing on a second press.
+                    const mouse = mouseEventFromEvent(event);
+                    if (mouse && (mouse.clickCount ?? 0) >= 2 && layer().content.kind === "text" && !props.busy)
+                      props.act(() => state().editText({ id }));
+                  }}
                   onKeyDown={rememberModifiers}
                   onClick={() => {
                     props.act(() => state().select(id, clickMode));

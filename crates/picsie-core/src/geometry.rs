@@ -156,19 +156,28 @@ pub fn rotate(l: &Layer, origin: Point, p: Point, snap: bool) -> Layer {
     n.rotation = (degrees + 180.).rem_euclid(360.) - 180.;
     n
 }
+/// Every pickable layer whose rotated bounds contain the point, topmost first. Bounds are the
+/// hit primitive (as upstream's `LayerTransform.contains`), so transparent pixels still count.
+pub fn hit_layers(doc: &Document, p: Point) -> Vec<&Layer> {
+    doc.ordered_layers()
+        .into_iter()
+        .rev()
+        .filter(|l| {
+            let (visible, opacity) = doc.effective(l);
+            if !visible
+                || l.locked
+                || opacity == 0.
+                || matches!(l.content.as_ref(), crate::model::Content::Group)
+            {
+                return false;
+            }
+            let p = to_local(l, p);
+            p.x >= 0. && p.y >= 0. && p.x <= l.width as f64 && p.y <= l.height as f64
+        })
+        .collect()
+}
 pub fn hit_test(doc: &Document, p: Point) -> Option<&Layer> {
-    doc.ordered_layers().into_iter().rev().find(|l| {
-        let (visible, opacity) = doc.effective(l);
-        if !visible
-            || l.locked
-            || opacity == 0.
-            || matches!(l.content.as_ref(), crate::model::Content::Group)
-        {
-            return false;
-        }
-        let p = to_local(l, p);
-        p.x >= 0. && p.y >= 0. && p.x <= l.width as f64 && p.y <= l.height as f64
-    })
+    hit_layers(doc, p).into_iter().next()
 }
 pub fn canvas_origin(doc: &Document, v: &Viewport) -> Point {
     Point::new(

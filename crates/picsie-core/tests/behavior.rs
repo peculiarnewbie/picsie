@@ -57,6 +57,20 @@ fn moved_layer(name: &str, x: f64) -> Layer {
 fn undo(e: &mut Editor) {
     cmd(e, json!({"type":"undo"}));
 }
+fn press_click(e: &mut Editor, at: Point, meta: bool, shift: bool) {
+    for phase in [Phase::Down, Phase::Up] {
+        e.pointer(PointerSample {
+            phase,
+            point: at,
+            modifiers: Modifiers {
+                shift,
+                meta,
+                ..Default::default()
+            },
+        })
+        .unwrap();
+    }
+}
 fn redo(e: &mut Editor) {
     cmd(e, json!({"type":"redo"}));
 }
@@ -218,6 +232,138 @@ fn compositor_pixel_marquee_lasso_and_clear() {
     );
     cmd(&mut e, json!({"type":"deselectPixels"}));
     assert!(e.pixel_selection.is_none());
+}
+
+/// Adapted from Compositor TypeToolTests and TypeTool.textImage: box text word-wraps at the
+/// box width minus TypeTool's 12px padding on each side, and glyphs outside the padded box
+/// are not drawn.
+#[test]
+fn compositor_text_wraps_at_the_padded_box_width() {
+    use skia_safe::{AlphaType, ColorType, ImageInfo};
+    let text = Layer::new(
+        "Text",
+        90,
+        160,
+        Content::Text {
+            text: "AAAA BBBB CCCC DDDD".into(),
+            font_size: 24.,
+            font_family: FontFamily::SansSerif,
+            color: "#ffffff".into(),
+        },
+    );
+    let d = doc(vec![text]);
+    let mut surface = Renderer::default().render(&d).unwrap();
+    let mut rgba = vec![0u8; 90 * 160 * 4];
+    let info = ImageInfo::new((90, 160), ColorType::RGBA8888, AlphaType::Unpremul, None);
+    assert!(surface.read_pixels(&info, &mut rgba, 90 * 4, (0, 0)));
+    let ink = |x0: usize, y0: usize, x1: usize, y1: usize| {
+        (y0..y1).any(|y| (x0..x1).any(|x| rgba[(y * 90 + x) * 4 + 3] > 32))
+    };
+    // One word per line at this width: the third and fourth lines sit low in the box.
+    assert!(ink(12, 70, 78, 99), "the third wrapped line is missing");
+    assert!(ink(12, 99, 78, 130), "the fourth wrapped line is missing");
+    // The 12px padding strips and the clipped right edge stay empty.
+    assert!(!ink(0, 0, 12, 160), "text leaked into the left padding");
+    assert!(!ink(78, 0, 90, 160), "text leaked past the padded box");
+}
+
+/// Adapted from Compositor TypeToolTests.createEditCancelAndUndo and TypeTool.beginText: the
+/// Type tool edits the text under a click instead of adding a layer, and EditText selects the
+/// target for the UI's editor.
+#[test]
+fn compositor_type_click_edits_text_under_the_pointer() {
+    let mut text = layer("Plain");
+    text.content = Arc::new(Content::Text {
+        text: "Hello".into(),
+        font_size: 32.,
+        font_family: FontFamily::SansSerif,
+        color: "#ffffff".into(),
+    });
+    text.width = 200;
+    text.height = 80;
+    let id = text.id.clone();
+    let mut e = editor(vec![text]);
+    cmd(&mut e, json!({"type":"setTool","tool":"text"}));
+    assert_eq!(e.text_edit_requests, 0);
+    pointer(&mut e, Phase::Down, 40., 40.);
+    assert_eq!(e.selected_id(), Some(id.as_str()));
+    assert_eq!(
+        e.history.document.layers.len(),
+        1,
+        "a click on text must not add a layer"
+    );
+    assert_eq!(e.text_edit_requests, 1);
+    // The named request path a layer-row double-click uses selects and signals too.
+    cmd(&mut e, json!({"type":"editText","id": id}));
+    assert_eq!(e.selected_id(), Some(id.as_str()));
+    assert_eq!(e.text_edit_requests, 2);
+    // Clicking away from any text starts a new text layer, as upstream's drag/click does.
+    cmd(&mut e, json!({"type":"setTool","tool":"text"}));
+    pointer(&mut e, Phase::Down, 400., 400.);
+    assert_eq!(e.history.document.layers.len(), 2);
+}
+
+/// Adapted from Compositor LayerAppearanceTests.opacityDragIsOneUndoAndKeepsSources: a slider
+/// drag previews every step but commits as one undo entry.
+#[test]
+fn compositor_appearance_drags_commit_as_one_undo() {
+    let mut e = editor(vec![layer("red")]);
+    e.update_layer(json!({"name": "renamed"})).unwrap();
+    cmd(
+        &mut e,
+        json!({"type":"beginPropertyEdit","label":"Edit layer opacity"}),
+    );
+    for value in [0.8, 0.5, 0.2] {
+        cmd(
+            &mut e,
+            json!({"type":"updateLayer","patch":{"opacity": value}}),
+        );
+        assert!(
+            (e.selected().unwrap().opacity - value).abs() < 0.001,
+            "live preview"
+        );
+    }
+    cmd(&mut e, json!({"type":"finishGesture"}));
+    undo(&mut e);
+    assert!(
+        (e.selected().unwrap().opacity - 1.0).abs() < 0.001,
+        "the drag must undo together"
+    );
+    assert_eq!(
+        e.selected().unwrap().name,
+        "renamed",
+        "one undo reverts only the drag"
+    );
+    undo(&mut e);
+    assert_eq!(e.selected().unwrap().name, "red");
+}
+
+/// Adapted from Compositor TransformTests.autoSelectCanBeDisabledAndCommandClickOverridesIt:
+/// Cmd/Ctrl-click re-picks. Cycling the full bounds-hit stack is a local extension, because a
+/// full-canvas layer would otherwise bury everything under it.
+#[test]
+fn compositor_cmd_click_cycles_the_layers_under_the_pointer() {
+    let mut bottom = moved_layer("bottom", 10.);
+    bottom.y = 30.;
+    let mut top = moved_layer("top", 30.);
+    top.y = 40.;
+    let (bottom_id, top_id) = (bottom.id.clone(), top.id.clone());
+    let mut e = editor(vec![bottom, top]);
+    // Both layers' bounds contain the point; a plain press picks the topmost.
+    press_click(&mut e, Point::new(60., 60.), false, false);
+    assert_eq!(e.selected_id(), Some(top_id.as_str()));
+    press_click(&mut e, Point::new(60., 60.), true, false);
+    assert_eq!(
+        e.selected_id(),
+        Some(bottom_id.as_str()),
+        "cmd-click picks under"
+    );
+    press_click(&mut e, Point::new(60., 60.), true, false);
+    assert_eq!(
+        e.selected_id(),
+        Some(top_id.as_str()),
+        "cycling wraps around"
+    );
 }
 
 /// Adapted from Compositor SelectionFeatherTests: feather softens the selection itself, so
@@ -751,6 +897,7 @@ fn range_selection_preserves_anchor_and_canvas_shift_toggles() {
         modifiers: Modifiers {
             shift: true,
             alt: false,
+            ..Default::default()
         },
     })
     .unwrap();

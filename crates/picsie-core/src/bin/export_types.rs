@@ -29,6 +29,7 @@ struct EditorState {
     pixel_selection_feather: Option<f64>,
     marquee_kind: picsie_core::pixel_selection::MarqueeKind,
     selection_mode: picsie_core::pixel_selection::PixelSelectionMode,
+    text_edit_requests: u64,
 }
 fn main() {
     let mut out =

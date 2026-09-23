@@ -1,12 +1,15 @@
 import {
   Button,
   Input,
+  Slider,
   Text,
   TextArea,
   View,
+  keyEventFromEvent,
   type NativeStyle,
   type PickerAppearance,
 } from "@quickgui/solid";
+import type { NativeNode } from "@quickgui/native";
 import { createEffect, untrack } from "solid-js";
 import { Show } from "solid-js";
 import { Icon, type IconName } from "./icons.tsx";
@@ -153,32 +156,113 @@ export function Field(props: {
   );
 }
 
-/** Let the native text engine own keystrokes; echoing asynchronous edits can overwrite newer text. */
+/**
+ * Multiline text with QuickGUI's controlled value contract: every keystroke flows to the
+ * engine's property-edit preview, and Enter (not Shift+Enter) or blur finishes the edit as
+ * one undo entry. Upstream's inline editor commits on Cmd+Return; Enter is the user's choice.
+ */
 export function TextEditor(props: {
   value: string;
   disabled?: boolean;
-  onCommit: (value: string) => void;
+  onInput: (text: string) => void;
+  onDone: () => void;
+  /** Bumped by the engine's edit-text requests to move focus here. */
+  focus?: () => number;
 }) {
-  let draft = untrack(() => props.value);
+  let node: NativeNode | undefined;
   createEffect(
-    () => props.value,
-    (value) => {
-      draft = value;
+    () => props.focus?.(),
+    () => {
+      node?.focus();
     },
   );
   return (
     <TextArea
+      ref={(value: NativeNode) => {
+        node = value;
+      }}
       ariaLabel="Layer text"
       value={props.value}
       disabled={props.disabled}
-      onInput={(event) => {
-        draft = event.value ?? "";
+      onInput={(event) => props.onInput(event.value ?? "")}
+      onKeyDown={(event) => {
+        const key = keyEventFromEvent(event);
+        if (key?.key === "Enter" && !key.shift) props.onDone();
       }}
-      onBlur={() => {
-        if (draft !== props.value) props.onCommit(draft);
-      }}
+      onSubmit={props.onDone}
+      onBlur={props.onDone}
       style={{ ...inputStyle, height: 80 }}
     />
+  );
+}
+
+/** SliderSheet's repeating row: caption, slider, and a typed value with its unit. */
+export function SliderField(props: {
+  label: string;
+  value: () => number;
+  min: number;
+  max: number;
+  step?: number;
+  unit?: string;
+  display?: (value: number) => string;
+  onInput: (value: number) => void;
+  onCommit: () => void;
+  disabled?: boolean;
+}) {
+  const shown = () => (props.display ?? ((v: number) => String(Math.round(v))))(props.value());
+  const typed = (text: string) => {
+    const value = Number(text.trim());
+    if (!Number.isFinite(value)) return;
+    props.onInput(Math.min(props.max, Math.max(props.min, value)));
+    props.onCommit();
+  };
+  return (
+    <View style={{ ...row, gap: 8, minHeight: 30 }}>
+      <Text
+        style={{
+          color: colors.muted,
+          fontSize: 10,
+          lineHeight: "14px",
+          width: 74,
+          flexShrink: 0,
+          whiteSpace: "nowrap",
+        }}
+      >
+        {props.label}
+      </Text>
+      <Slider
+        value={[Math.min(props.max, Math.max(props.min, props.value()))]}
+        min={props.min}
+        max={props.max}
+        step={props.step ?? 1}
+        disabled={props.disabled}
+        onValueChange={(values) => props.onInput(values[0] ?? 0)}
+        onValueCommitted={() => props.onCommit()}
+        style={{ flexGrow: 1, minWidth: 0, height: 20, opacity: props.disabled ? 0.4 : 1 }}
+      >
+        <Slider.Control style={{ height: 20, display: "flex", flexDirection: "row", alignItems: "center" }}>
+          <Slider.Track style={{ height: 4, flexGrow: 1, borderRadius: 2, bg: "#191c22", overflow: "hidden" }}>
+            <Slider.Range style={{ height: 4, borderRadius: 2, bg: colors.accent }} />
+          </Slider.Track>
+          <Slider.Thumb index={0} style={{ width: 12, height: 12, borderRadius: 6, bg: "#edf0fc" }} />
+        </Slider.Control>
+      </Slider>
+      <Input
+        ariaLabel={props.label}
+        value={shown()}
+        disabled={props.disabled}
+        onInput={(event) => {
+          if (event.value !== undefined) typed(event.value);
+        }}
+        onSubmit={(event) => {
+          if (event.value !== undefined) typed(event.value);
+        }}
+        style={{ ...inputStyle, width: 52, flexGrow: 0, textAlign: "right" }}
+      />
+      <Text style={{ color: colors.muted, fontSize: 10, width: 14, flexShrink: 0 }}>
+        {props.unit ?? ""}
+      </Text>
+    </View>
   );
 }
 

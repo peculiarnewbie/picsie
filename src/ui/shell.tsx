@@ -16,6 +16,7 @@ import {
   capturedPointerFromEvent,
   dropEventFromEvent,
   keyEventFromEvent,
+  mouseEventFromEvent,
   wheelEventFromEvent,
 } from "@quickgui/solid";
 import { For, Show, createEffect, createSignal } from "solid-js";
@@ -28,6 +29,7 @@ import {
   Field,
   Section,
   TextEditor,
+  SliderField,
   colors,
   column,
   fieldRow,
@@ -36,6 +38,7 @@ import {
   row,
 } from "./controls.tsx";
 import { Icon } from "./icons.tsx";
+import { ColorPickerDialog } from "./color-picker.tsx";
 import { LayersPanel } from "./layers.tsx";
 import { MaskPanel } from "./mask.tsx";
 import { CanvasSizeDialog } from "./canvas-size.tsx";
@@ -83,11 +86,15 @@ export function Shell(props: {
   let stage: NativeNode | undefined;
   let shiftPressed = false;
   let altPressed = false;
+  let controlPressed = false;
+  let metaPressed = false;
   function trackModifiers(event: QuickGuiEvent) {
-    const input = keyEventFromEvent(event);
+    const input = keyEventFromEvent(event) ?? mouseEventFromEvent(event);
     if (input) {
       shiftPressed = input.shift;
       altPressed = input.alt;
+      controlPressed = input.control;
+      metaPressed = input.meta;
     }
   }
   let disposed = false,
@@ -248,6 +255,57 @@ export function Shell(props: {
     setNotice(`Exported ${doc.width} × ${doc.height} ${format.toUpperCase()}`);
   }
   const patch = (value: Partial<Layer>) => act(() => editor.updateLayer(value));
+  // Slider drags preview every step into one undo entry (upstream's begin/finishOpacityEdit).
+  const property = (label: string) => {
+    let open = false;
+    return {
+      input: (value: Partial<Layer>) => {
+        if (!open) {
+          open = true;
+          editor.beginPropertyEdit(label);
+        }
+        patch(value);
+      },
+      commit: () => {
+        if (open) {
+          open = false;
+          editor.finishGesture();
+        }
+      },
+    };
+  };
+  const opacityEdit = property("Edit layer opacity");
+  const brightnessEdit = property("Edit layer brightness");
+  const saturationEdit = property("Edit layer saturation");
+  const blurEdit = property("Edit layer blur");
+  const textEdit = property("Edit text");
+  const layerColor = () => {
+    const content = selected()?.content;
+    return content?.kind === "gradient"
+      ? content.from
+      : content?.kind === "shape" || content?.kind === "text"
+        ? content.color
+        : undefined;
+  };
+  const commitLayerColor = (hex: string) => {
+    const content = selected()?.content;
+    const color = `#${hex}`;
+    if (content?.kind === "gradient") patch({ content: { ...content, from: color } });
+    else if (content?.kind === "shape" || content?.kind === "text")
+      patch({ content: { ...content, color } });
+  };
+  const [picker, setPicker] = createSignal<
+    { target: string; color: string; commit: (hex: string) => void } | undefined
+  >();
+  const openPicker = (target: string, color: string, commit: (hex: string) => void) =>
+    setPicker({ target, color, commit });
+  const [textFocus, setTextFocus] = createSignal(0);
+  createEffect(
+    () => state().textEditRequests,
+    () => {
+      setTextFocus((n) => n + 1);
+    },
+  );
   const number = (value: string) => {
     if (!value.trim() || !Number.isFinite(Number(value))) throw new Error("Enter a finite number");
     return Number(value);
@@ -474,6 +532,11 @@ export function Shell(props: {
   function pointer(event: QuickGuiEvent) {
     if (busy()) return;
     const pointer = capturedPointerFromEvent(event);
+    // Middle-click cycles the layers under the pointer (Ctrl/Cmd-click too, when tracked).
+    if (pointer.phase === "down" && (pointer.button === "middle" || controlPressed || metaPressed)) {
+      act(() => editor.pickUnder(pointer.localPosition));
+      return;
+    }
     if (pointer.button !== "left") return;
     stage?.focus();
     if (editor.tool === "eyedropper" && pointer.phase === "down") {
@@ -483,6 +546,8 @@ export function Shell(props: {
         editor.pointer(pointer.phase, pointer.localPosition, {
           shift: shiftPressed,
           alt: altPressed,
+          control: controlPressed,
+          meta: metaPressed,
         }),
       );
   }
@@ -772,7 +837,14 @@ export function Shell(props: {
           ariaLabel="Image canvas"
           onKeyDown={keyDown}
           onPointer={pointer}
-          onMouseDown={trackModifiers}
+          onMouseDown={(event) => {
+            trackModifiers(event);
+            // A second press — the core counts clicks — on text enters editing, the canvas
+            // affordance upstream leaves to its Type tool and layer list.
+            const mouse = mouseEventFromEvent(event);
+            if (mouse && (mouse.clickCount ?? 0) >= 2 && !busy())
+              act(() => editor.editText({ point: { x: mouse.x, y: mouse.y } }));
+          }}
           onMouseMove={trackModifiers}
           onWheel={(event) => {
             if (busy()) return;
@@ -828,7 +900,19 @@ export function Shell(props: {
         >
           <Section title="Color">
             <View style={fieldRow}>
-              <View style={{ width: 33, height: 33, borderRadius: 6, bg: state().color }} />
+              <Button
+                ariaLabel="Choose foreground color"
+                tooltip="Open the color picker"
+                onClick={() => openPicker("Foreground", state().color, (hex) => act(() => editor.setColor(`#${hex}`)))}
+                style={{
+                  width: 33,
+                  height: 33,
+                  borderRadius: 6,
+                  bg: state().color,
+                  borderWidth: 2,
+                  borderColor: "#edf0fc",
+                }}
+              />
               <Field
                 label="Foreground"
                 value={state().color}
@@ -867,7 +951,17 @@ export function Shell(props: {
                     disabled={layer().locked || busy()}
                     onCommit={(name) => patch({ name })}
                   />
-                  <View style={fieldRow}>
+                  <SliderField
+                    label="Opacity"
+                    unit="%"
+                    value={() => Math.round(layer().opacity * 100)}
+                    min={0}
+                    max={100}
+                    disabled={layer().locked}
+                    onInput={(value) => opacityEdit.input({ opacity: value / 100 })}
+                    onCommit={opacityEdit.commit}
+                  />
+                  <View style={{ ...fieldRow, minHeight: 49 }}>
                     <View style={{ ...column, gap: 5, width: 164, flexShrink: 0 }}>
                       <Text style={{ color: colors.muted, fontSize: 10, lineHeight: "14px" }}>
                         Blend mode
@@ -899,18 +993,12 @@ export function Shell(props: {
                         <Select.Positioner side="top" align="start" sideOffset={4} />
                       </Select>
                     </View>
-                    <Field
-                      label="Opacity %"
-                      value={Math.round(layer().opacity * 100)}
-                      disabled={layer().locked || busy()}
-                      onCommit={(v) => numeric("opacity", v, 100)}
+                    <Action
+                      label={layer().locked ? "Unlock layer" : "Lock layer"}
+                      active={layer().locked}
+                      onClick={() => patch({ locked: !layer().locked })}
                     />
                   </View>
-                  <Action
-                    label={layer().locked ? "Unlock layer" : "Lock layer"}
-                    active={layer().locked}
-                    onClick={() => patch({ locked: !layer().locked })}
-                  />
                 </Section>
                 <Show when={layer().content.kind !== "group"}>
                 <MaskPanel editor={state} busy={busy()} act={act} />
@@ -963,10 +1051,13 @@ export function Shell(props: {
                     <TextEditor
                       value={textContent()?.text ?? ""}
                       disabled={layer().locked || busy()}
-                      onCommit={(text) => {
+                      focus={textFocus}
+                      onInput={(text) => {
                         const content = editor.selected?.content;
-                        if (content?.kind === "text") patch({ content: { ...content, text } });
+                        if (content?.kind === "text")
+                          textEdit.input({ content: { ...content, text } });
                       }}
+                      onDone={textEdit.commit}
                     />
                     <Field
                       wide
@@ -1014,16 +1105,34 @@ export function Shell(props: {
                   }
                 >
                   <Section title="Fill">
-                    <Action
-                      label="Use foreground color"
-                      onClick={() => {
-                        const content = editor.selected?.content;
-                        if (content?.kind === "shape" || content?.kind === "text")
-                          patch({ content: { ...content, color: editor.color } });
-                        if (content?.kind === "gradient")
-                          patch({ content: { ...content, from: editor.color } });
-                      }}
-                    />
+                    <View style={fieldRow}>
+                      <Button
+                        ariaLabel={`Choose ${layer().name} color`}
+                        tooltip="Open the color picker"
+                        onClick={() => {
+                          const color = layerColor();
+                          if (color) openPicker(layer().name, color, commitLayerColor);
+                        }}
+                        style={{
+                          width: 33,
+                          height: 33,
+                          borderRadius: 6,
+                          bg: layerColor() ?? "#000000",
+                          borderWidth: 2,
+                          borderColor: "#edf0fc",
+                        }}
+                      />
+                      <Action
+                        label="Use foreground color"
+                        onClick={() => {
+                          const content = editor.selected?.content;
+                          if (content?.kind === "shape" || content?.kind === "text")
+                            patch({ content: { ...content, color: editor.color } });
+                          if (content?.kind === "gradient")
+                            patch({ content: { ...content, from: editor.color } });
+                        }}
+                      />
+                    </View>
                     <Show when={layer().content.kind === "gradient"}>
                       <Action
                         label="Use foreground for end color"
@@ -1037,26 +1146,37 @@ export function Shell(props: {
                   </Section>
                 </Show>
                 <Section title="Adjustments">
-                  <View style={{ ...row }}>
-                    <Field
-                      label="Brightness %"
-                      value={Math.round(layer().brightness * 100)}
-                      onCommit={(v) => numeric("brightness", v, 100)}
-                      disabled={layer().locked}
-                    />
-                    <Field
-                      label="Saturation %"
-                      value={Math.round(layer().saturation * 100)}
-                      onCommit={(v) => numeric("saturation", v, 100)}
-                      disabled={layer().locked}
-                    />
-                  </View>
-                  <Field
-                    wide
-                    label="Gaussian blur (px)"
-                    value={layer().blur}
-                    onCommit={(v) => numeric("blur", v)}
+                  <SliderField
+                    label="Brightness"
+                    unit="%"
+                    value={() => Math.round(layer().brightness * 100)}
+                    min={0}
+                    max={300}
                     disabled={layer().locked}
+                    onInput={(value) => brightnessEdit.input({ brightness: value / 100 })}
+                    onCommit={brightnessEdit.commit}
+                  />
+                  <SliderField
+                    label="Saturation"
+                    unit="%"
+                    value={() => Math.round(layer().saturation * 100)}
+                    min={0}
+                    max={300}
+                    disabled={layer().locked}
+                    onInput={(value) => saturationEdit.input({ saturation: value / 100 })}
+                    onCommit={saturationEdit.commit}
+                  />
+                  <SliderField
+                    label="Gaussian blur"
+                    unit="px"
+                    value={() => layer().blur}
+                    display={(value) => String(Math.round(value * 10) / 10)}
+                    min={0}
+                    max={100}
+                    step={0.5}
+                    disabled={layer().locked}
+                    onInput={(value) => blurEdit.input({ blur: value })}
+                    onCommit={blurEdit.commit}
                   />
                 </Section>
                 </Show>
@@ -1130,6 +1250,19 @@ export function Shell(props: {
             }
           }}
         />
+      </Show>
+      <Show when={picker()}>
+        {(open) => (
+          <ColorPickerDialog
+            target={open().target}
+            color={open().color}
+            onCommit={(hex) => {
+              open().commit(hex);
+              setPicker(undefined);
+            }}
+            onClose={() => setPicker(undefined)}
+          />
+        )}
       </Show>
       <Dialog.Root open={newOpen()} onOpenChange={setNewOpen}>
         <Dialog.Portal style={{ display: "flex", alignItems: "center", justifyContent: "center" }}>

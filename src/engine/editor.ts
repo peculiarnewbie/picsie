@@ -120,6 +120,9 @@ export class Editor {
   get selectionMode() {
     return this.state.selectionMode;
   }
+  get textEditRequests() {
+    return this.state.textEditRequests;
+  }
   set viewport(viewport: Viewport) {
     this.dispatch({ type: "setViewport", viewport });
   }
@@ -202,6 +205,15 @@ export class Editor {
   setSelectionMode(mode: PixelSelectionMode) {
     this.dispatch({ type: "setSelectionMode", mode });
   }
+  editText(target: { id?: string; point?: Point }) {
+    this.dispatch({ type: "editText", ...target });
+  }
+  pickUnder(point: Point) {
+    this.dispatch({ type: "pickUnder", point });
+  }
+  beginPropertyEdit(label: string) {
+    this.dispatch({ type: "beginPropertyEdit", label });
+  }
   featherSelection(amount: number) {
     this.dispatch({ type: "featherSelection", amount });
   }
@@ -248,7 +260,12 @@ export class Editor {
     this.samples.push({
       phase,
       point,
-      modifiers: { shift: modifiers.shift ?? false, alt: modifiers.alt ?? false },
+      modifiers: {
+        shift: modifiers.shift ?? false,
+        alt: modifiers.alt ?? false,
+        control: modifiers.control ?? false,
+        meta: modifiers.meta ?? false,
+      },
     });
     if (phase !== "move" || this.samples.length >= 256) this.flushPointer();
     else this.pointerTimer ??= setTimeout(() => this.flushPointer(), 8);

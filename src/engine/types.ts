@@ -101,7 +101,7 @@ export type Tool =
 export type PaintTarget = "content" | "mask";
 export type SelectionMode = "replace" | "toggle" | "range";
 export type Phase = "down" | "move" | "up" | "cancel";
-export type Modifiers = { shift: boolean; alt: boolean };
+export type Modifiers = { shift: boolean; alt: boolean; control: boolean; meta: boolean };
 export type PointerSample = { phase: Phase; point: Point; modifiers: Modifiers };
 export type InitialDocument =
   | { kind: "demo" }
@@ -147,6 +147,9 @@ export type Command =
   | { type: "selectAllPixels" }
   | { type: "clearSelectedPixels" }
   | { type: "featherSelection"; amount: number }
+  | { type: "editText"; id?: string; point?: Point }
+  | { type: "beginPropertyEdit"; label: string }
+  | { type: "pickUnder"; point: Point }
   | { type: "addMask"; base: MaskMode }
   | { type: "setPaintTarget"; target: PaintTarget }
   | { type: "setMaskMode"; mode: MaskMode }
@@ -176,4 +179,5 @@ export type EditorState = {
   pixelSelectionFeather: number | null;
   marqueeKind: MarqueeKind;
   selectionMode: PixelSelectionMode;
+  textEditRequests: bigint;
 };

@@ -56,6 +56,10 @@ pub struct Modifiers {
     pub shift: bool,
     #[serde(default)]
     pub alt: bool,
+    #[serde(default)]
+    pub control: bool,
+    #[serde(default)]
+    pub meta: bool,
 }
 #[derive(Clone, Debug, Serialize, Deserialize, TS)]
 pub struct PointerSample {
@@ -160,6 +164,20 @@ pub enum Command {
     FeatherSelection {
         amount: u32,
     },
+    EditText {
+        #[serde(default)]
+        #[ts(optional)]
+        id: Option<String>,
+        #[serde(default)]
+        #[ts(optional)]
+        point: Option<Point>,
+    },
+    BeginPropertyEdit {
+        label: String,
+    },
+    PickUnder {
+        point: Point,
+    },
     AddMask {
         base: MaskMode,
     },
@@ -206,6 +224,8 @@ enum Gesture {
         origin: Point,
         layers: Vec<Layer>,
     },
+    /// A slider drag in flight: property updates preview into one undo step.
+    Property,
     Transform {
         origin: Point,
         handle: &'static str,
@@ -254,6 +274,8 @@ pub struct Editor {
     pub pixel_selection: Option<PixelSelection>,
     pub marquee_kind: MarqueeKind,
     pub selection_mode: PixelSelectionMode,
+    /// Bumped whenever an edit-text request selects a layer, so the UI can focus its editor.
+    pub text_edit_requests: u64,
     gesture: Option<Gesture>,
 }
 impl Editor {
@@ -296,6 +318,7 @@ impl Editor {
             pixel_selection: None,
             marquee_kind: MarqueeKind::Rectangle,
             selection_mode: PixelSelectionMode::Replace,
+            text_edit_requests: 0,
             gesture: None,
         };
         e.fit();
@@ -352,8 +375,30 @@ impl Editor {
         };
         self.paint_target = PaintTarget::Content;
     }
+    /// Cmd/Ctrl-click walks the layers whose bounds contain the point, top to bottom and back
+    /// around. Upstream's Cmd-click re-picks the topmost layer; cycling is a local extension
+    /// so a full-canvas layer cannot bury the stack.
+    fn pick_under(&mut self, p: Point) {
+        let stack: Vec<String> = geometry::hit_layers(&self.history.document, p)
+            .into_iter()
+            .map(|l| l.id.clone())
+            .collect();
+        if stack.is_empty() {
+            return;
+        }
+        let next = match self
+            .selection
+            .ids
+            .last()
+            .and_then(|active| stack.iter().position(|id| id == active))
+        {
+            Some(at) => stack[(at + 1) % stack.len()].clone(),
+            None => stack[0].clone(),
+        };
+        self.single_selection(Some(next));
+    }
     pub fn snapshot(&self) -> serde_json::Value {
-        serde_json::json!({"document":self.history.document.metadata(),"history":self.history.info(),"selection":self.selection,"paintTarget":self.paint_target,"maskMode":self.mask_mode,"tool":self.tool,"color":self.color,"brushSize":self.brush_size,"brushOpacity":self.brush_opacity,"viewport":self.viewport,"cropRect":self.crop_rect,"cropRatio":self.crop_ratio,"layerRows":self.layer_rows(),"pixelSelectionBounds":self.pixel_selection.as_ref().and_then(|v|v.bounds.clone()),"pixelSelectionFeather":self.pixel_selection.as_ref().map(|v|v.feather),"marqueeKind":self.marquee_kind,"selectionMode":self.selection_mode})
+        serde_json::json!({"document":self.history.document.metadata(),"history":self.history.info(),"selection":self.selection,"paintTarget":self.paint_target,"maskMode":self.mask_mode,"tool":self.tool,"color":self.color,"brushSize":self.brush_size,"brushOpacity":self.brush_opacity,"viewport":self.viewport,"cropRect":self.crop_rect,"cropRatio":self.crop_ratio,"layerRows":self.layer_rows(),"pixelSelectionBounds":self.pixel_selection.as_ref().and_then(|v|v.bounds.clone()),"pixelSelectionFeather":self.pixel_selection.as_ref().map(|v|v.feather),"marqueeKind":self.marquee_kind,"selectionMode":self.selection_mode,"textEditRequests":self.text_edit_requests})
     }
     fn layer_rows(&self) -> Vec<LayerRow> {
         fn visit(
@@ -571,6 +616,12 @@ impl Editor {
         Self::follow_mask(layer, &mut next);
         let mut doc = self.history.document.clone();
         doc.replace(next);
+        // A slider drag previews every step into one undo entry, as `beginOpacityEdit` /
+        // `finishOpacityEdit` bracket upstream appearance drags.
+        if matches!(self.gesture, Some(Gesture::Property)) {
+            self.history.preview(doc);
+            return Ok(());
+        }
         self.edit("Edit layer", doc, None)
     }
     fn inserted(&self, layers: Vec<Layer>) -> Document {
@@ -1243,6 +1294,47 @@ impl Editor {
                     feather: 0.,
                 });
             }
+            Command::BeginPropertyEdit { label } => {
+                ensure!(!label.is_empty() && label.len() <= 64, "Invalid edit label");
+                self.finish_gesture();
+                self.begin_edit(&label);
+                self.gesture = Some(Gesture::Property);
+            }
+            Command::PickUnder { point } => {
+                self.finish_gesture();
+                ensure!(
+                    point.x.is_finite() && point.y.is_finite(),
+                    "Invalid pointer coordinate"
+                );
+                let p = geometry::to_document(&self.history.document, &self.viewport, point);
+                self.pick_under(p);
+            }
+            Command::EditText { id, point } => {
+                self.finish_gesture();
+                let named = id.and_then(|id| {
+                    self.history
+                        .document
+                        .layers
+                        .iter()
+                        .find(|l| l.id == id && matches!(l.content.as_ref(), Content::Text { .. }))
+                        .map(|l| l.id.clone())
+                });
+                // TypeTool's `beginTextGesture` edits the text under the click instead of
+                // adding another layer; the topmost live text wins.
+                let target = named.or_else(|| {
+                    point.and_then(|p| {
+                        let p = geometry::to_document(&self.history.document, &self.viewport, p);
+                        geometry::hit_layers(&self.history.document, p)
+                            .into_iter()
+                            .find(|l| matches!(l.content.as_ref(), Content::Text { .. }))
+                            .map(|l| l.id.clone())
+                    })
+                });
+                if let Some(id) = target {
+                    self.single_selection(Some(id));
+                    self.text_edit_requests += 1;
+                }
+            }
             Command::FeatherSelection { amount } => {
                 // `confirmSelectionAmount`'s 1...250 range for Feather, then
                 // `featherSelection(by:)`: stacked feathers combine like the blurs they are.
@@ -1470,6 +1562,13 @@ impl Editor {
                     }
                     return Ok(());
                 }
+                // Cmd/Ctrl-click walks the layers whose bounds contain the point, top to
+                // bottom and back around. Upstream's Cmd-click re-picks the topmost layer;
+                // cycling is a local extension so a full-canvas layer cannot bury the stack.
+                if modifiers.meta || modifiers.control {
+                    self.pick_under(p);
+                    return Ok(());
+                }
                 if !hit
                     .as_ref()
                     .is_some_and(|id| self.selection.ids.contains(id))
@@ -1497,6 +1596,17 @@ impl Editor {
                 return Ok(());
             }
             if self.tool == Tool::Text {
+                // TypeTool's `beginTextGesture`: a click on live text edits it.
+                let existing = geometry::hit_layers(&self.history.document, p)
+                    .into_iter()
+                    .find(|l| matches!(l.content.as_ref(), Content::Text { .. }))
+                    .map(|l| l.id.clone());
+                if let Some(id) = existing {
+                    self.single_selection(Some(id));
+                    self.text_edit_requests += 1;
+                    self.tool = Tool::Move;
+                    return Ok(());
+                }
                 let mut l = Layer::new(
                     "Text",
                     800.min(self.history.document.width),
@@ -1751,6 +1861,8 @@ impl Editor {
                         pixel_selection::finish(&self.history.document, before.as_ref(), draft)?;
                 }
             }
+            // Property drags are driven by slider commands, not the canvas pointer.
+            Gesture::Property => {}
         }
         self.gesture = Some(gesture);
         if phase == Phase::Up {
