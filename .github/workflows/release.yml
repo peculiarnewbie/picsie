@@ -11,10 +11,13 @@ jobs:
       fail-fast: false
       matrix:
         include:
+          # Namespace runner profile; the Namespace GitHub App must be installed on this repository.
           - target: linux-x64
-            runner: blacksmith-4vcpu-ubuntu-2404
+            runner: namespace-profile-peculiarnewbie
+          # Namespace profiles are bound to one OS. Create a Windows profile in the Namespace
+          # dashboard and swap this label to use it here too.
           - target: windows-x64
-            runner: blacksmith-4vcpu-windows-2025
+            runner: windows-latest
     runs-on: ${{ matrix.runner }}
     steps:
       - uses: actions/checkout@v4

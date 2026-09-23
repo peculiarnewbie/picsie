@@ -120,7 +120,7 @@ The earlier screenshot pass caught and fixed font-dependent tool icons, inconsis
 
 ## Release
 
-Releases are built by [Blacksmith](https://www.blacksmith.sh) GitHub Actions runners on Linux and Windows (`blacksmith-4vcpu-ubuntu-2404` and `blacksmith-4vcpu-windows-2025`); the Blacksmith GitHub App must be installed on this repository.
+Releases are built by GitHub Actions: Linux on the [Namespace](https://namespace.so) runner profile `namespace-profile-peculiarnewbie`, Windows on the GitHub-hosted `windows-latest` runner (Namespace profiles are bound to one OS; a Windows profile can replace it in [release.yml](.github/workflows/release.yml)). The Namespace GitHub App must be installed on this repository.
 
 1. Bump `version` in `package.json` and add a `## x.y.z - YYYY-MM-DD` section to [CHANGELOG.md](CHANGELOG.md). The changelog section becomes the release notes and appcast description.
 2. Tag the release `v<version>` and push the tag. The release workflow refuses tags that do not match `package.json`.

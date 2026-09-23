@@ -4,8 +4,8 @@ permissions:
   contents: read
 jobs:
   architecture-and-tests:
-    # Blacksmith runners; the Blacksmith GitHub App must be installed on this repository.
-    runs-on: blacksmith-4vcpu-ubuntu-2404
+    # Namespace runner profile; the Namespace GitHub App must be installed on this repository.
+    runs-on: namespace-profile-peculiarnewbie
     steps:
       - uses: actions/checkout@v4
       - uses: actions/setup-node@v4
