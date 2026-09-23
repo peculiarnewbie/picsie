@@ -111,6 +111,9 @@ export class Editor {
   get pixelSelectionBounds() {
     return this.state.pixelSelectionBounds;
   }
+  get pixelSelectionFeather() {
+    return this.state.pixelSelectionFeather;
+  }
   get marqueeKind() {
     return this.state.marqueeKind;
   }
@@ -198,6 +201,9 @@ export class Editor {
   }
   setSelectionMode(mode: PixelSelectionMode) {
     this.dispatch({ type: "setSelectionMode", mode });
+  }
+  featherSelection(amount: number) {
+    this.dispatch({ type: "featherSelection", amount });
   }
   deselectPixels() {
     this.dispatch({ type: "deselectPixels" });

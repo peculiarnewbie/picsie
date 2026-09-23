@@ -439,6 +439,7 @@ impl Renderer {
             ),
             "Cannot read layer pixels"
         );
+        let coverage = selection_coverage(selection)?;
         for y in 0..height {
             for x in 0..width {
                 let world = geometry::to_world(layer, Point::new(x as f64 + 0.5, y as f64 + 0.5));
@@ -447,9 +448,10 @@ impl Renderer {
                     && world.x < selection.width as f64
                     && world.y < selection.height as f64
                 {
-                    let coverage = selection.at(world.x as u32, world.y as u32);
+                    let value = coverage[world.y as u32 as usize * selection.width as usize
+                        + world.x as u32 as usize];
                     let alpha = &mut pixels[(y * width + x) * 4 + 3];
-                    *alpha = (*alpha as u16 * (255 - coverage as u16) / 255) as u8;
+                    *alpha = (*alpha as u16 * (255 - value as u16) / 255) as u8;
                 }
             }
         }
@@ -512,17 +514,21 @@ impl Renderer {
             None,
         );
         if let Some(selection) = pixel_selection
-            && let Some(bounds) = &selection.bounds
+            && let Some(bounds) = selection.coverage_bounds()
         {
+            // Feathered edges fade past the stored bounds, as upstream's clip region does.
+            let coverage = selection_coverage(selection)?;
             let width = bounds.width as usize;
             let height = bounds.height as usize;
             let mut rgba = vec![0u8; width * height * 4];
             for y in 0..height {
                 for x in 0..width {
-                    let coverage = selection.at(bounds.x + x as u32, bounds.y + y as u32);
+                    let value = coverage[(bounds.y as usize + y) * selection.width as usize
+                        + bounds.x as usize
+                        + x];
                     let at = (y * width + x) * 4;
                     rgba[at..at + 3].copy_from_slice(&[75, 179, 221]);
-                    rgba[at + 3] = (coverage as u16 * 48 / 255) as u8;
+                    rgba[at + 3] = (value as u16 * 48 / 255) as u8;
                 }
             }
             let info = sk::ImageInfo::new(
@@ -693,6 +699,49 @@ impl Renderer {
         );
         Ok(pixel)
     }
+}
+/// `DocumentSelection.coverage()` from the pinned Compositor: grayscale coverage at document
+/// resolution, softened by `feather / 2` where the edge fades either side of the outline.
+/// CoreImage's `clampedToExtent().applyingGaussianBlur(...)` is replaced by Skia's blur with
+/// `TileMode::Clamp`, which smears the edge pixels the same way before the crop.
+pub fn selection_coverage(selection: &PixelSelection) -> Result<Arc<Vec<u8>>> {
+    if selection.feather <= 0. {
+        return Ok(selection.pixels.clone());
+    }
+    let (width, height) = (selection.width as usize, selection.height as usize);
+    let alpha = sk::ImageInfo::new(
+        (selection.width as i32, selection.height as i32),
+        sk::ColorType::Alpha8,
+        sk::AlphaType::Premul,
+        None,
+    );
+    let image = sk::images::raster_from_data(
+        &alpha,
+        sk::Data::new_copy(selection.pixels.as_slice()),
+        width,
+    )
+    .ok_or_else(|| anyhow!("Cannot create selection coverage"))?;
+    let sigma = (selection.feather / 2.) as f32;
+    let filter = sk::image_filters::blur((sigma, sigma), sk::TileMode::Clamp, None, None)
+        .ok_or_else(|| anyhow!("Cannot soften selection coverage"))?;
+    let mut soft = Paint::default();
+    soft.set_image_filter(filter);
+    let mut surface = surface(selection.width, selection.height)?;
+    surface.canvas().draw_image(&image, (0., 0.), Some(&soft));
+    let mut rgba = vec![0u8; width * height * 4];
+    let info = sk::ImageInfo::new(
+        (selection.width as i32, selection.height as i32),
+        sk::ColorType::RGBA8888,
+        sk::AlphaType::Unpremul,
+        None,
+    );
+    ensure!(
+        surface.read_pixels(&info, &mut rgba, width * 4, (0, 0)),
+        "Cannot read selection coverage"
+    );
+    Ok(Arc::new(
+        rgba.chunks_exact(4).map(|pixel| pixel[3]).collect(),
+    ))
 }
 pub fn clear_selected_pixels(layer: &Layer, selection: &PixelSelection) -> Result<Image> {
     Renderer::default().clear_layer_selection(layer, selection)

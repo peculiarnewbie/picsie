@@ -146,6 +146,7 @@ export type Command =
   | { type: "deselectPixels" }
   | { type: "selectAllPixels" }
   | { type: "clearSelectedPixels" }
+  | { type: "featherSelection"; amount: number }
   | { type: "addMask"; base: MaskMode }
   | { type: "setPaintTarget"; target: PaintTarget }
   | { type: "setMaskMode"; mode: MaskMode }
@@ -172,6 +173,7 @@ export type EditorState = {
   cropRatio: CropRatio;
   layerRows: Array<LayerRow>;
   pixelSelectionBounds: SelectionBounds | null;
+  pixelSelectionFeather: number | null;
   marqueeKind: MarqueeKind;
   selectionMode: PixelSelectionMode;
 };

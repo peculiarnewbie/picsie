@@ -26,6 +26,7 @@ struct EditorState {
     crop_ratio: CropRatio,
     layer_rows: Vec<LayerRow>,
     pixel_selection_bounds: Option<picsie_core::pixel_selection::SelectionBounds>,
+    pixel_selection_feather: Option<f64>,
     marquee_kind: picsie_core::pixel_selection::MarqueeKind,
     selection_mode: picsie_core::pixel_selection::PixelSelectionMode,
 }

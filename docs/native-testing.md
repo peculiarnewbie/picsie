@@ -143,3 +143,22 @@ Unverified: macOS/Windows execution and signing, remote CI, and direct GPU textu
 QuickGUI 0.1.6 rejects a picker configured for both files and directories on Linux. The toolbar and File menu now offer separate **Open** and **Open .comp** actions. The first uses a file picker for `.picsie` and `.electropic`; the second uses a directory picker for `.comp` packages.
 
 The rebuilt Linux app was run on an isolated X11 display with the GTK file portal. A saved `.picsie` file opened in a second editor window. A `.comp` directory saved through the UI reopened through **Open .comp**; the folder picker required entering the package directory before selecting it. At the 960 × 640 minimum size, both Open actions remained visible and aligned. See the [five-flow UX tour](ux-tour.md) for the new captures. `npm run check`, `npm test`, and `npm run build` passed.
+
+## Selection feather pass — 2026-09-23
+
+The Select → Modify → Feather port was verified in the packaged Linux app on the same isolated X11 display, driven with actual pointer and keyboard input:
+
+- Drew an opaque rectangle and dragged a rectangular marquee over it. The marquee tool header shows the new **Feather px** amount and **Feather** action alongside the mode, Clear pixels, and Deselect controls.
+- Entered 14 in the amount field and clicked Feather. The selection overlay's edge faded instead of ending hard.
+- Clicked **Clear pixels**. The cleared hole has a soft edge revealing the background; a pixel row across the real window capture ramps from the coral fill to the background over about 20 screen pixels (≈ 28 document pixels at 71% zoom), consistent with a 14-pixel feather.
+- Resized to 960 × 640. Every header control stays visible and aligned; the document name wraps at the minimum width.
+
+![Feather controls and a crisp selection](screenshots/feather-controls.png)
+
+![Feathered overlay edge](screenshots/feather-overlay.png)
+
+![Cleared pixels with a soft edge](screenshots/feather-clear.png)
+
+![Compact marquee header at 960 × 640](screenshots/feather-compact-header.png)
+
+The session captures live in ignored `artifacts/feather-pass/`, including the close-up and compact crops. `npm run check`, `npm test`, `npm run test:bun`, and `npm run build` pass; the translated `SelectionFeatherTests` fixture and labeled local regressions run in the Rust suite, and `tests/native.test.ts` checks the softened alpha falloff through the actual addon.

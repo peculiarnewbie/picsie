@@ -26,12 +26,17 @@ pub struct SelectionBounds {
     pub width: u32,
     pub height: u32,
 }
+/// Grayscale coverage at document resolution standing in for Compositor's `DocumentSelection`
+/// path. `feather` carries the same metadata as upstream: the stored coverage stays crisp and
+/// `render::selection_coverage` softens it by `feather / 2` whenever edits or the overlay read it.
 #[derive(Clone, Debug)]
 pub struct PixelSelection {
     pub width: u32,
     pub height: u32,
     pub pixels: Arc<Vec<u8>>,
     pub bounds: Option<SelectionBounds>,
+    /// How far the edge fades, in document pixels. 0 is a hard edge.
+    pub feather: f64,
 }
 impl PixelSelection {
     pub fn at(&self, x: u32, y: u32) -> u8 {
@@ -43,6 +48,23 @@ impl PixelSelection {
             && (p.x as u32) < self.width
             && (p.y as u32) < self.height
             && self.at(p.x as u32, p.y as u32) > 0
+    }
+    /// The region `SelectionClip` covers: upstream `coverageBounds` (four Gaussian standard
+    /// deviations past the outline, so `ceil(feather * 2)`) plus `clip`'s one-pixel
+    /// antialias allowance, clipped to the canvas as `clip` does.
+    pub fn coverage_bounds(&self) -> Option<SelectionBounds> {
+        let bounds = self.bounds.as_ref()?;
+        let grow = (self.feather * 2.).ceil() as i64 + 1;
+        let x0 = (bounds.x as i64 - grow).clamp(0, self.width as i64);
+        let y0 = (bounds.y as i64 - grow).clamp(0, self.height as i64);
+        let x1 = (bounds.x as i64 + bounds.width as i64 + grow).clamp(0, self.width as i64);
+        let y1 = (bounds.y as i64 + bounds.height as i64 + grow).clamp(0, self.height as i64);
+        (x1 > x0 && y1 > y0).then(|| SelectionBounds {
+            x: x0 as u32,
+            y: y0 as u32,
+            width: (x1 - x0) as u32,
+            height: (y1 - y0) as u32,
+        })
     }
 }
 #[derive(Clone, Debug)]
@@ -190,7 +212,7 @@ pub fn finish(
             }
         }
     }
-    let bounds = (maxx > minx && maxy > miny).then_some(SelectionBounds {
+    let bounds = (maxx > minx && maxy > miny).then(|| SelectionBounds {
         x: minx,
         y: miny,
         width: maxx - minx,
@@ -201,5 +223,7 @@ pub fn finish(
         height: doc.height,
         pixels: Arc::new(pixels),
         bounds,
+        // Upstream `applySelection` keeps only `antialiased`, so a new outline is hard-edged.
+        feather: 0.,
     }))
 }

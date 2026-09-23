@@ -157,6 +157,9 @@ pub enum Command {
     DeselectPixels,
     SelectAllPixels,
     ClearSelectedPixels,
+    FeatherSelection {
+        amount: u32,
+    },
     AddMask {
         base: MaskMode,
     },
@@ -350,7 +353,7 @@ impl Editor {
         self.paint_target = PaintTarget::Content;
     }
     pub fn snapshot(&self) -> serde_json::Value {
-        serde_json::json!({"document":self.history.document.metadata(),"history":self.history.info(),"selection":self.selection,"paintTarget":self.paint_target,"maskMode":self.mask_mode,"tool":self.tool,"color":self.color,"brushSize":self.brush_size,"brushOpacity":self.brush_opacity,"viewport":self.viewport,"cropRect":self.crop_rect,"cropRatio":self.crop_ratio,"layerRows":self.layer_rows(),"pixelSelectionBounds":self.pixel_selection.as_ref().and_then(|v|v.bounds.clone()),"marqueeKind":self.marquee_kind,"selectionMode":self.selection_mode})
+        serde_json::json!({"document":self.history.document.metadata(),"history":self.history.info(),"selection":self.selection,"paintTarget":self.paint_target,"maskMode":self.mask_mode,"tool":self.tool,"color":self.color,"brushSize":self.brush_size,"brushOpacity":self.brush_opacity,"viewport":self.viewport,"cropRect":self.crop_rect,"cropRatio":self.crop_ratio,"layerRows":self.layer_rows(),"pixelSelectionBounds":self.pixel_selection.as_ref().and_then(|v|v.bounds.clone()),"pixelSelectionFeather":self.pixel_selection.as_ref().map(|v|v.feather),"marqueeKind":self.marquee_kind,"selectionMode":self.selection_mode})
     }
     fn layer_rows(&self) -> Vec<LayerRow> {
         fn visit(
@@ -1237,7 +1240,31 @@ impl Editor {
                         width: doc.width,
                         height: doc.height,
                     }),
+                    feather: 0.,
                 });
+            }
+            Command::FeatherSelection { amount } => {
+                // `confirmSelectionAmount`'s 1...250 range for Feather, then
+                // `featherSelection(by:)`: stacked feathers combine like the blurs they are.
+                ensure!(
+                    (1..=250).contains(&amount),
+                    "Feather must be between 1 and 250 pixels"
+                );
+                // `canModifySelection` needs a non-empty selection and no outline in progress.
+                if self.selection_draft().is_some() {
+                    return Ok(());
+                }
+                if let Some(current) = &self.pixel_selection
+                    && current.bounds.is_some()
+                {
+                    let mut next = current.clone();
+                    // Two soft edges together spread a little less than their sum, as blurs do.
+                    let softened = (current.feather * current.feather
+                        + f64::from(amount) * f64::from(amount))
+                    .sqrt();
+                    next.feather = 250f64.min(softened);
+                    self.pixel_selection = Some(next);
+                }
             }
             Command::ClearSelectedPixels => {
                 self.finish_gesture();

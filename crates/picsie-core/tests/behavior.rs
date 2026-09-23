@@ -220,6 +220,127 @@ fn compositor_pixel_marquee_lasso_and_clear() {
     assert!(e.pixel_selection.is_none());
 }
 
+/// Adapted from Compositor SelectionFeatherTests: feather softens the selection itself, so
+/// everything clipped by it fades at the edge. Upstream ends the scenario with
+/// `fillSelection(with: .foreground)`; Fill is outside the local command subset, so the
+/// end-to-end half clears the feathered selection from an opaque layer and inspects the
+/// same alpha falloff on the layer pixels.
+#[test]
+fn compositor_feather_softens_the_selection_and_what_it_clips() {
+    let mut e = Editor::new(Document::new("Feather", 60, 20).unwrap()).unwrap();
+    e.viewport = Viewport {
+        width: 60.,
+        height: 20.,
+        zoom: 1.,
+        pan: Point::default(),
+    };
+    cmd(&mut e, json!({"type":"addPaintLayer"}));
+    cmd(&mut e, json!({"type":"selectAllPixels"}));
+    cmd(&mut e, json!({"type":"featherSelection","amount":6}));
+    let selection = e.pixel_selection.as_ref().unwrap();
+    assert!(
+        selection.bounds.is_some(),
+        "the selection cannot be modified"
+    );
+    assert!(
+        selection.feather > 0.,
+        "featherSelection left the selection hard-edged"
+    );
+    // Coverage across a vertical edge of the selection, to see whether it fades.
+    cmd(&mut e, json!({"type":"setTool","tool":"marquee"}));
+    pointer(&mut e, Phase::Down, 20., 0.);
+    pointer(&mut e, Phase::Up, 40., 20.);
+    cmd(&mut e, json!({"type":"featherSelection","amount":6}));
+    let coverage = selection_coverage(e.pixel_selection.as_ref().unwrap()).unwrap();
+    let row = 20 / 2;
+    let values: Vec<u8> = (0..60).map(|x| coverage[row * 60 + x]).collect();
+    let fading = values
+        .iter()
+        .filter(|value| **value > 8 && **value < 247)
+        .count();
+    assert!(fading >= 4, "the clip has no soft edge: {values:?}");
+
+    // End to end: clear the feathered selection and look across its edge on the layer itself.
+    cmd(&mut e, json!({"type":"addGradient"}));
+    cmd(&mut e, json!({"type":"clearSelectedPixels"}));
+    let alphas: Vec<u8> = (0..60)
+        .map(|x| pix(&e.history.document, x as f64 + 0.5, 10.5)[3])
+        .collect();
+    let soft = alphas
+        .iter()
+        .filter(|alpha| **alpha > 8 && **alpha < 247)
+        .count();
+    assert!(soft >= 4, "the cleared pixels have a hard edge: {alphas:?}");
+}
+
+/// Additional local regression: stacked feathers combine like the blurs they represent, clamp
+/// at 250 as upstream's `min(250, softened)` does, and a fresh outline is hard-edged because
+/// `applySelection` keeps only `antialiased`.
+#[test]
+fn feather_stacks_clamps_and_resets_with_a_new_outline() {
+    let mut e = editor(vec![layer("red")]);
+    cmd(&mut e, json!({"type":"selectAllPixels"}));
+    cmd(&mut e, json!({"type":"featherSelection","amount":6}));
+    cmd(&mut e, json!({"type":"featherSelection","amount":8}));
+    assert_eq!(e.pixel_selection.as_ref().unwrap().feather, 10.);
+    cmd(&mut e, json!({"type":"featherSelection","amount":200}));
+    cmd(&mut e, json!({"type":"featherSelection","amount":200}));
+    assert_eq!(e.pixel_selection.as_ref().unwrap().feather, 250.);
+    cmd(&mut e, json!({"type":"setTool","tool":"marquee"}));
+    pointer(&mut e, Phase::Down, 10., 10.);
+    pointer(&mut e, Phase::Up, 40., 40.);
+    assert_eq!(e.pixel_selection.as_ref().unwrap().feather, 0.);
+}
+
+/// Additional local regression: `canModifySelection` refuses feathering without a non-empty
+/// selection or with an outline in progress, and the bridge keeps `confirmSelectionAmount`'s
+/// 1...250 range for Feather.
+#[test]
+fn feather_requires_a_selection_and_validates_its_amount() {
+    let mut e = editor(vec![layer("red")]);
+    assert!(
+        e.command(serde_json::from_value(json!({"type":"featherSelection","amount":0})).unwrap())
+            .is_err()
+    );
+    assert!(
+        e.command(serde_json::from_value(json!({"type":"featherSelection","amount":251})).unwrap())
+            .is_err()
+    );
+    cmd(&mut e, json!({"type":"featherSelection","amount":6}));
+    assert!(e.pixel_selection.is_none());
+    // An explicit empty selection touches nothing and has no edge to soften.
+    cmd(&mut e, json!({"type":"setTool","tool":"lasso"}));
+    pointer(&mut e, Phase::Down, 10., 10.);
+    pointer(&mut e, Phase::Up, 10., 10.);
+    assert!(e.pixel_selection.as_ref().unwrap().bounds.is_none());
+    cmd(&mut e, json!({"type":"featherSelection","amount":6}));
+    assert_eq!(e.pixel_selection.as_ref().unwrap().feather, 0.);
+    // An outline in progress keeps its draft; the feather is refused.
+    cmd(&mut e, json!({"type":"selectAllPixels"}));
+    pointer(&mut e, Phase::Down, 10., 10.);
+    cmd(&mut e, json!({"type":"featherSelection","amount":6}));
+    assert!(e.selection_draft().is_some());
+    assert_eq!(e.pixel_selection.as_ref().unwrap().feather, 0.);
+    pointer(&mut e, Phase::Up, 40., 40.);
+}
+
+/// Additional local regression: `clampedToExtent` keeps a feathered Select All fully covering
+/// the canvas edges instead of fading into the outside.
+#[test]
+fn feathered_select_all_keeps_edges_clamped() {
+    let mut e = editor(vec![layer("red")]);
+    cmd(&mut e, json!({"type":"selectAllPixels"}));
+    cmd(&mut e, json!({"type":"featherSelection","amount":6}));
+    let coverage = selection_coverage(e.pixel_selection.as_ref().unwrap()).unwrap();
+    assert!(
+        coverage[0] >= 250,
+        "corner coverage fell to {}",
+        coverage[0]
+    );
+    assert!(coverage[499 * 500 + 499] >= 250);
+    assert!(coverage[250 * 500 + 250] >= 250);
+}
+
 /// Adapted from MaskTransformTests: linked placement follows translation and rotation;
 /// unlinked placement remains at its document coordinates.
 #[test]

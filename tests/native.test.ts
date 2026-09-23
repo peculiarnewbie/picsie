@@ -145,6 +145,44 @@ test("native folder, pixel selection, crop, and Compositor package commands roun
     }
   }));
 
+test("feathered selections soften what they clip across the real addon", async () =>
+  temporary(async (dir) => {
+    const e = session();
+    try {
+      e.viewport = { width: 200, height: 160, zoom: 1, pan: { x: 0, y: 0 } };
+      e.setTool("rectangle");
+      e.setColor("#ff0000");
+      e.pointer("down", { x: 10, y: 10 });
+      e.pointer("up", { x: 150, y: 150 });
+      e.setTool("marquee");
+      e.featherSelection(6);
+      assert.equal(e.pixelSelectionFeather, null);
+      e.pointer("down", { x: 40, y: 40 });
+      e.pointer("up", { x: 100, y: 100 });
+      assert.equal(e.pixelSelectionFeather, 0);
+      e.featherSelection(6);
+      e.featherSelection(8);
+      assert.equal(e.pixelSelectionFeather, 10);
+      assert.throws(() => e.featherSelection(251), /between 1 and 250/);
+      e.clearSelectedPixels();
+      const png = join(dir, "feathered.png");
+      await e.export(png, "png");
+      assert.deepEqual(await pixel(png, 70, 70), [0, 0, 0, 0]);
+      assert.deepEqual(await pixel(png, 14, 70), [255, 0, 0, 255]);
+      const soft: number[] = [];
+      for (let x = 28; x < 52; x++) soft.push((await pixel(png, x, 70))[3] ?? -1);
+      assert.ok(
+        soft.filter((alpha) => alpha > 8 && alpha < 247).length >= 4,
+        `the cleared pixels have a hard edge: ${soft}`,
+      );
+      e.deselectPixels();
+      e.featherSelection(6);
+      assert.equal(e.pixelSelectionFeather, null);
+    } finally {
+      e.close();
+    }
+  }));
+
 test("file import is atomic, owns its assets, and metadata excludes all raster data", async () =>
   temporary(async (dir) => {
     const e = session();

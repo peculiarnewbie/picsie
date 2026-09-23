@@ -73,6 +73,14 @@ export function Shell(props: {
   const [newName, setNewName] = createSignal("Untitled");
   const [newWidth, setNewWidth] = createSignal("1200");
   const [newHeight, setNewHeight] = createSignal("800");
+  // Compositor's `selectionFeatherAmount`: the tool header applies this amount directly.
+  const [featherAmount, setFeatherAmount] = createSignal(2);
+  const commitFeather = (value: string) => {
+    const parsed = Number(value.trim());
+    setFeatherAmount(
+      Number.isFinite(parsed) ? Math.min(250, Math.max(1, Math.round(parsed))) : 2,
+    );
+  };
   let stage: NativeNode | undefined;
   let shiftPressed = false;
   let altPressed = false;
@@ -603,6 +611,20 @@ export function Shell(props: {
                     <For each={[{ id: "replace", label: "New" }, { id: "add", label: "Add" }, { id: "subtract", label: "Subtract" }] as const}>
                       {(mode) => <Action label={mode.label} active={state().selectionMode === mode.id} onClick={() => act(() => editor.setSelectionMode(mode.id))} />}
                     </For>
+                    <View style={{ ...row, gap: 5, width: 132 }}>
+                      <Field
+                        inline
+                        label="Feather px"
+                        value={featherAmount()}
+                        onCommit={commitFeather}
+                      />
+                    </View>
+                    <Action
+                      label="Feather"
+                      tooltip="Fade the edge of the selection by this many pixels"
+                      disabled={!state().pixelSelectionBounds || busy()}
+                      onClick={() => act(() => editor.featherSelection(featherAmount()))}
+                    />
                     <Action label="Clear pixels" disabled={!state().pixelSelectionBounds || !state().selected} onClick={() => act(() => editor.clearSelectedPixels())} />
                     <Action label="Deselect" disabled={!state().pixelSelectionBounds} onClick={() => act(() => editor.deselectPixels())} />
                   </View>
