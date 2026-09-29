@@ -133,7 +133,10 @@ test("native folder, pixel selection, crop, and Compositor package commands roun
       const reopened = await Editor.open(project);
       try {
         assert.equal(reopened.document.layers.length, e.document.layers.length);
-        assert.equal(reopened.document.layers.find((layer) => layer.id === child)?.parentId, folder);
+        assert.equal(
+          reopened.document.layers.find((layer) => layer.id === child)?.parentId,
+          folder,
+        );
         const second = join(dir, "reopened.png");
         await reopened.export(second, "png");
         assert.deepEqual(await readFile(second), await readFile(png));
@@ -182,6 +185,105 @@ test("feathered selections soften what they clip across the real addon", async (
       e.close();
     }
   }));
+
+test("pixel selection history restores coverage, feather and edits through the actual addon", async () =>
+  temporary(async (dir) => {
+    const e = session();
+    try {
+      e.viewport = { width: 200, height: 160, zoom: 1, pan: { x: 0, y: 0 } };
+      e.setTool("rectangle");
+      e.setColor("#ff0000");
+      e.pointer("down", { x: 10, y: 10 });
+      e.pointer("up", { x: 150, y: 150 });
+      const count = e.history.undoCount;
+      e.setTool("marquee");
+      e.pointer("down", { x: 40, y: 40 });
+      for (let x = 41; x < 100; x++) e.pointer("move", { x, y: x });
+      e.pointer("up", { x: 100, y: 100 });
+      const bounds = { x: 40, y: 40, width: 60, height: 60 };
+      assert.deepEqual(e.pixelSelectionBounds, bounds);
+      assert.equal(e.history.undoCount, count + 1);
+      assert.equal(e.history.undoLabel, "Rectangular Marquee");
+      e.featherSelection(6);
+      e.clearSelectedPixels();
+      const png = join(dir, "cleared.png");
+      await e.export(png, "png");
+      const cleared = await readFile(png);
+      assert.deepEqual(await pixel(png, 70, 70), [0, 0, 0, 0]);
+      const alpha = (await pixel(png, 40, 70))[3]!;
+      assert.ok(alpha > 8 && alpha < 247);
+      e.deselectPixels();
+      e.undo();
+      assert.deepEqual(e.pixelSelectionBounds, bounds);
+      assert.equal(e.pixelSelectionFeather, 6);
+      e.undo();
+      await e.export(png, "png");
+      assert.deepEqual(await pixel(png, 70, 70), [255, 0, 0, 255]);
+      e.undo();
+      assert.equal(e.pixelSelectionFeather, 0);
+      // The bridge flushes a queued move before the Escape command. Cancellation
+      // must keep both the completed selection and the pending redo branch.
+      e.pointer("down", { x: 110, y: 110 });
+      e.pointer("move", { x: 130, y: 130 });
+      e.cancelPixelSelection();
+      e.pointer("up", { x: 130, y: 130 });
+      assert.deepEqual(e.pixelSelectionBounds, bounds);
+      assert.equal(e.history.canRedo, true);
+      e.redo();
+      e.redo();
+      await e.export(png, "png");
+      assert.deepEqual(await readFile(png), cleared);
+      e.redo();
+      assert.equal(e.pixelSelectionBounds, null);
+      const beforeNoop = e.history.undoCount;
+      e.deselectPixels();
+      assert.equal(e.history.undoCount, beforeNoop);
+      e.undo();
+      e.cancelPixelSelection();
+      assert.equal(e.pixelSelectionBounds, null);
+      assert.equal(e.history.canRedo, false);
+      assert.ok(!JSON.stringify(e.document).includes('"pixels"'));
+    } finally {
+      e.close();
+    }
+  }));
+
+test("async canvas resize and crop restore selection atomically on undo", async () => {
+  const e = session();
+  try {
+    e.viewport = { width: 200, height: 160, zoom: 1, pan: { x: 0, y: 0 } };
+    e.selectAllPixels();
+    e.featherSelection(6);
+    const bounds = e.pixelSelectionBounds;
+    const count = e.history.undoCount;
+    await e.resizeCanvas({ width: 100, height: 80, anchor: 4 });
+    assert.equal(e.pixelSelectionBounds, null);
+    assert.equal(e.history.undoCount, count + 1);
+    e.undo();
+    assert.equal(e.document.width, 200);
+    assert.deepEqual(e.pixelSelectionBounds, bounds);
+    assert.equal(e.pixelSelectionFeather, 6);
+    e.redo();
+    assert.equal(e.document.width, 100);
+    assert.equal(e.pixelSelectionBounds, null);
+    e.undo();
+    e.viewport = { width: 200, height: 160, zoom: 1, pan: { x: 0, y: 0 } };
+    e.setTool("crop");
+    e.pointer("down", { x: 200, y: 160 });
+    e.pointer("up", { x: 120, y: 120 });
+    e.commitCrop();
+    assert.equal(e.document.width, 120);
+    assert.equal(e.pixelSelectionBounds, null);
+    e.undo();
+    assert.deepEqual(e.pixelSelectionBounds, bounds);
+    assert.equal(e.pixelSelectionFeather, 6);
+    e.redo();
+    assert.equal(e.document.width, 120);
+    assert.equal(e.pixelSelectionBounds, null);
+  } finally {
+    e.close();
+  }
+});
 
 test("text editing and slider edits cross the bridge as typed commands", async () =>
   temporary(async (dir) => {
@@ -378,6 +480,152 @@ test("Rust validates untrusted commands and malformed projects without losing th
       await writeFile(invalid, '{"version":999}');
       await assert.rejects(Editor.open(invalid), /Invalid Picsie/);
       assert.deepEqual(e.document, before);
+    } finally {
+      e.close();
+    }
+  }));
+
+test("selection fill, inverse, expand and contract preserve native coverage and undo", async () =>
+  temporary(async (dir) => {
+    const e = session();
+    try {
+      e.viewport = { width: 200, height: 160, zoom: 1, pan: { x: 0, y: 0 } };
+      e.addPaintLayer();
+      e.setTool("marquee");
+      e.pointer("down", { x: 40, y: 40 });
+      e.pointer("up", { x: 60, y: 60 });
+      e.expandSelection(5);
+      assert.deepEqual(e.pixelSelectionBounds, { x: 35, y: 35, width: 30, height: 30 });
+      e.contractSelection(8);
+      assert.deepEqual(e.pixelSelectionBounds, { x: 43, y: 43, width: 14, height: 14 });
+      e.featherSelection(3);
+      e.setColor("#ff0000");
+      e.fillSelection();
+      const output = join(dir, "selection-ops.png");
+      await e.export(output, "png");
+      assert.equal((await pixel(output, 50, 50))[3], 255);
+      assert.ok((await pixel(output, 42, 50))[3]! > 0);
+      e.undo();
+      await e.export(output, "png");
+      assert.deepEqual(await pixel(output, 50, 50), [0, 0, 0, 0]);
+      e.redo();
+      e.selectAllPixels();
+      e.invertSelection();
+      assert.equal(e.hasPixelSelection, true);
+      assert.equal(e.pixelSelectionBounds, null);
+      assert.equal(e.canEditPixels, false);
+      const count = e.history.undoCount;
+      e.fillSelection();
+      e.clearSelectedPixels();
+      assert.equal(e.history.undoCount, count);
+      assert.equal(e.document.layers.length, 1);
+      e.invertSelection();
+      assert.deepEqual(e.pixelSelectionBounds, { x: 0, y: 0, width: 200, height: 160 });
+    } finally {
+      e.close();
+    }
+  }));
+
+test("native brush tips cap opacity, Shift joins endpoints, and raster assets reopen", async () =>
+  temporary(async (dir) => {
+    const e = session();
+    try {
+      e.viewport = { width: 200, height: 160, zoom: 1, pan: { x: 0, y: 0 } };
+      e.setTool("brush");
+      e.setColor("#ff0000");
+      e.brushSize = 20;
+      e.brushHardness = 1;
+      e.brushSmoothing = 0;
+      e.brushOpacity = 0.5;
+      e.pointer("down", { x: 20, y: 40 });
+      e.pointer("move", { x: 150, y: 40 });
+      e.pointer("move", { x: 20, y: 40 });
+      e.pointer("up", { x: 150, y: 40 });
+      assert.equal(e.history.undoCount, 1);
+      const output = join(dir, "brush-tip.png");
+      await e.export(output, "png");
+      assert.equal((await pixel(output, 80, 40))[3], 128);
+      e.pointer("down", { x: 150, y: 120 }, { shift: true });
+      e.pointer("up", { x: 150, y: 120 }, { shift: true });
+      await e.export(output, "png");
+      assert.equal((await pixel(output, 150, 80))[3], 128);
+      e.undo();
+      await e.export(output, "png");
+      assert.equal((await pixel(output, 150, 80))[3], 0);
+      e.redo();
+      e.brushHardness = 0.35;
+      e.brushSmoothing = 20;
+      assert.equal(e.brushHardness, 0.35);
+      assert.equal(e.brushSmoothing, 20);
+      const project = join(dir, "brush-tip.picsie");
+      await e.save(project);
+      const reopened = await Editor.open(project);
+      try {
+        await reopened.export(output, "png");
+        assert.equal((await pixel(output, 150, 80))[3], 128);
+      } finally {
+        reopened.close();
+      }
+      assert.ok(!JSON.stringify(e.document).includes("base64"));
+    } finally {
+      e.close();
+    }
+  }));
+
+test("native clipping, folder mask paint, package persistence and source deletion agree", async () =>
+  temporary(async (dir) => {
+    const e = session();
+    try {
+      e.viewport = { width: 200, height: 160, zoom: 1, pan: { x: 0, y: 0 } };
+      e.setTool("brush");
+      e.setColor("#000000");
+      e.brushSize = 80;
+      e.brushOpacity = 0.5;
+      e.pointer("down", { x: 80, y: 80 });
+      e.pointer("up", { x: 80, y: 80 });
+      const base = e.selectedId!;
+      e.addPaintLayer();
+      e.setColor("#ff0000");
+      e.fillSelection();
+      const top = e.selectedId!;
+      assert.equal(e.canToggleClipping, true);
+      e.toggleClippingMask();
+      assert.equal(e.selected?.maskSourceId, base);
+      const output = join(dir, "clipped.png");
+      await e.export(output, "png");
+      assert.deepEqual(await pixel(output, 80, 80), [255, 0, 0, 128]);
+      assert.equal((await pixel(output, 10, 10))[3], 0);
+      e.select(base, "toggle");
+      e.groupSelected();
+      const folder = e.selectedId!;
+      e.addMask();
+      e.brushOpacity = 1;
+      e.brushSize = 10;
+      e.pointer("down", { x: 80, y: 80 });
+      e.pointer("up", { x: 80, y: 80 });
+      await e.export(output, "png");
+      assert.equal((await pixel(output, 80, 80))[3], 0);
+      for (const extension of ["picsie", "comp"]) {
+        const path = join(dir, `clipped.${extension}`);
+        await e.save(path);
+        const reopened = await Editor.open(path);
+        try {
+          assert.equal(reopened.document.layers.find((l) => l.id === top)?.maskSourceId, base);
+          assert.ok(reopened.document.layers.find((l) => l.id === folder)?.mask);
+          await reopened.export(output, "png");
+          assert.equal((await pixel(output, 80, 80))[3], 0);
+        } finally {
+          reopened.close();
+        }
+      }
+      e.resetMask("reveal");
+      e.select(base);
+      e.remove();
+      assert.equal(e.document.layers.find((l) => l.id === top)?.maskSourceId, undefined);
+      await e.export(output, "png");
+      assert.deepEqual(await pixel(output, 80, 80), [255, 0, 0, 128]);
+      e.undo();
+      assert.equal(e.document.layers.find((l) => l.id === top)?.maskSourceId, base);
     } finally {
       e.close();
     }

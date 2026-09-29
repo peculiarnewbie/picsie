@@ -52,7 +52,7 @@ pub enum Content {
     },
     Image {
         #[ts(skip)]
-        data: Arc<str>,
+        data: crate::asset::ImageAsset,
     },
 }
 #[derive(Clone, Copy, Debug, PartialEq, Serialize, Deserialize, TS)]
@@ -314,6 +314,9 @@ pub struct Layer {
     #[serde(default, skip_serializing_if = "Option::is_none")]
     #[ts(optional)]
     pub parent_id: Option<String>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    #[ts(optional)]
+    pub mask_source_id: Option<String>,
     pub name: String,
     pub visible: bool,
     pub locked: bool,
@@ -391,6 +394,7 @@ impl Layer {
         Self {
             id: id(),
             parent_id: None,
+            mask_source_id: None,
             name: name.into(),
             visible: true,
             locked: false,
@@ -440,12 +444,11 @@ impl Layer {
             Content::Paint => (),
             Content::Group => ensure!(
                 self.strokes.is_empty()
-                    && self.mask.is_none()
                     && self.blend == Blend::SourceOver
                     && self.brightness == 1.
                     && self.saturation == 1.
                     && self.blur == 0.,
-                "Folders support only visibility and opacity"
+                "Folders support visibility, opacity, and raster masks"
             ),
             Content::Shape { color, .. } => ensure!(color_valid(color), "Invalid color"),
             Content::Gradient { from, to } => ensure!(
@@ -461,14 +464,7 @@ impl Layer {
                 text.chars().count() <= 20000 && color_valid(color) && range(*font_size, 1., 1000.),
                 "Invalid text"
             ),
-            Content::Image { data } => ensure!(
-                data.len() <= 90_000_000
-                    && data.starts_with("data:image/png;base64,")
-                    && data[22..]
-                        .bytes()
-                        .all(|b| b.is_ascii_alphanumeric() || b == b'+' || b == b'/' || b == b'='),
-                "Invalid image asset"
-            ),
+            Content::Image { data } => data.validate()?,
         }
         ensure!(
             self.strokes.len() <= 10000
@@ -597,7 +593,7 @@ impl Document {
                 parent = folder.parent_id.as_deref();
             }
         }
-        Ok(())
+        crate::live_mask::validate(self)
     }
     /// Compositor LayerHierarchy.entries: depth-first sibling order, bottom to top.
     pub fn ordered_layers(&self) -> Vec<&Layer> {

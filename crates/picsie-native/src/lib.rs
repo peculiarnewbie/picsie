@@ -106,7 +106,7 @@ impl NativeEditor {
             } else {
                 None
             },
-            pixel_selection: editor.pixel_selection.clone(),
+            pixel_selection: editor.history.pixel_selection.clone(),
             selection_draft: editor.selection_draft(),
         };
         Ok(AsyncTask::new(task))
@@ -361,8 +361,7 @@ impl Task for CanvasTask {
             return Err(error("Document changed during canvas resize; please retry"));
         }
         if document != e.history.document {
-            e.edit("Canvas Size", document, None).map_err(error)?;
-            e.fit();
+            e.edit_canvas("Canvas Size", document).map_err(error)?;
         }
         Ok(e.snapshot().to_string())
     }

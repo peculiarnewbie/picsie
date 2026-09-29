@@ -224,6 +224,8 @@ impl Renderer {
                 && Arc::ptr_eq(&old.content, &l.content)
                 && old.strokes == l.strokes
                 && old.mask == l.mask
+                && (l.mask.as_ref().is_none_or(|m| m.placement.is_none())
+                    || MaskPlacement::of(old) == MaskPlacement::of(l))
         }) {
             return Ok(image.clone());
         }
@@ -302,11 +304,7 @@ impl Renderer {
                 c.restore();
             }
             Content::Image { data } => {
-                let bytes = STANDARD.decode(
-                    data.strip_prefix("data:image/png;base64,")
-                        .ok_or_else(|| anyhow!("Invalid PNG asset"))?,
-                )?;
-                let image = decode(&bytes)?;
+                let image = data.image()?;
                 c.draw_image_rect(image, None, rect(l.width, l.height), &Paint::default());
             }
         }
@@ -345,77 +343,254 @@ impl Renderer {
         }
         Ok(image)
     }
-    pub fn render(&mut self, doc: &Document) -> Result<Surface> {
-        let mut s = surface(doc.width, doc.height)?;
-        let c = s.canvas();
-        self.cache
-            .retain(|(l, _)| doc.layers.iter().any(|v| v.id == l.id));
-        for l in doc.ordered_layers() {
-            let (visible, opacity) = doc.effective(l);
-            if !visible || opacity == 0. || matches!(l.content.as_ref(), Content::Group) {
-                continue;
-            }
-            let image = self.layer_surface(l)?;
-            let mut p = Paint::default();
-            p.set_anti_alias(true)
-                .set_alpha((opacity * 255.).round() as u8)
-                .set_blend_mode(blend(l.blend));
-            let sat = l.saturation as f32;
-            let b = l.brightness as f32;
-            let r = 0.213 * (1. - sat);
-            let g = 0.715 * (1. - sat);
-            let blue = 0.072 * (1. - sat);
-            p.set_color_filter(sk::color_filters::matrix_row_major(
-                &[
-                    (r + sat) * b,
-                    g * b,
-                    blue * b,
-                    0.,
-                    0.,
-                    r * b,
-                    (g + sat) * b,
-                    blue * b,
-                    0.,
-                    0.,
-                    r * b,
-                    g * b,
-                    (blue + sat) * b,
-                    0.,
-                    0.,
-                    0.,
+    fn draw_own(&mut self, doc: &Document, l: &Layer, c: &Canvas, mode: BlendMode) -> Result<()> {
+        let opacity = doc.effective(l).1;
+        let image = self.layer_surface(l)?;
+        let mut p = Paint::default();
+        p.set_anti_alias(true)
+            .set_alpha((opacity * 255.).round() as u8)
+            .set_blend_mode(mode);
+        let sat = l.saturation as f32;
+        let b = l.brightness as f32;
+        let r = 0.213 * (1. - sat);
+        let g = 0.715 * (1. - sat);
+        let blue = 0.072 * (1. - sat);
+        p.set_color_filter(sk::color_filters::matrix_row_major(
+            &[
+                (r + sat) * b,
+                g * b,
+                blue * b,
+                0.,
+                0.,
+                r * b,
+                (g + sat) * b,
+                blue * b,
+                0.,
+                0.,
+                r * b,
+                g * b,
+                (blue + sat) * b,
+                0.,
+                0.,
+                0.,
+                0.,
+                0.,
+                1.,
+                0.,
+            ],
+            None,
+        ));
+        if l.blur > 0. {
+            p.set_image_filter(sk::image_filters::blur(
+                (l.blur as f32, l.blur as f32),
+                None,
+                None,
+                None,
+            ));
+        }
+        c.save();
+        transform(c, l);
+        c.draw_image_with_sampling_options(
+            &image,
+            (0., 0.),
+            sk::SamplingOptions::new(
+                if l.sampling == Sampling::Nearest {
+                    sk::FilterMode::Nearest
+                } else {
+                    sk::FilterMode::Linear
+                },
+                sk::MipmapMode::None,
+            ),
+            Some(&p),
+        );
+        c.restore();
+        Ok(())
+    }
+    /// LiveMaskRenderer.coverage: source alpha is independent of visibility and RGB.
+    /// Resolve a dependency chain iteratively to keep scratch memory bounded.
+    pub fn live_coverage(&mut self, doc: &Document, source: &str) -> Result<Vec<u8>> {
+        self.coverage_in(doc, source, None)
+    }
+    fn coverage_in(
+        &mut self,
+        doc: &Document,
+        source: &str,
+        target: Option<&Layer>,
+    ) -> Result<Vec<u8>> {
+        let (width, height) = target
+            .map(|l| (l.width, l.height))
+            .unwrap_or((doc.width, doc.height));
+        let mut chain = Vec::new();
+        let mut current = Some(source);
+        while let Some(id) = current {
+            ensure!(
+                chain.len() < 256 && !chain.iter().any(|l: &&Layer| l.id == id),
+                "Invalid live mask graph"
+            );
+            let layer = doc
+                .layers
+                .iter()
+                .find(|l| l.id == id)
+                .ok_or_else(|| anyhow!("Missing live mask source"))?;
+            chain.push(layer);
+            current = layer.mask_source_id.as_deref();
+        }
+        let mut coverage = vec![255u8; width as usize * height as usize];
+        for layer in chain.into_iter().rev() {
+            let mut pixels = surface(width, height)?;
+            if let Some(target) = target {
+                let origin = geometry::to_local(target, Point::new(0., 0.));
+                let x = geometry::to_local(target, Point::new(1., 0.));
+                let y = geometry::to_local(target, Point::new(0., 1.));
+                pixels.canvas().concat(&sk::Matrix::new_all(
+                    (x.x - origin.x) as f32,
+                    (y.x - origin.x) as f32,
+                    origin.x as f32,
+                    (x.y - origin.y) as f32,
+                    (y.y - origin.y) as f32,
+                    origin.y as f32,
                     0.,
                     0.,
                     1.,
-                    0.,
-                ],
-                None,
-            ));
-            if l.blur > 0. {
-                p.set_image_filter(sk::image_filters::blur(
-                    (l.blur as f32, l.blur as f32),
-                    None,
-                    None,
-                    None,
                 ));
             }
+            self.draw_own(doc, layer, pixels.canvas(), BlendMode::SrcOver)?;
+            let own = rgba_pixels(&pixels.image_snapshot())?;
+            for (alpha, pixel) in coverage.iter_mut().zip(own.chunks_exact(4)) {
+                *alpha = ((*alpha as u16 * pixel[3] as u16 + 127) / 255) as u8;
+            }
+        }
+        Ok(coverage)
+    }
+    fn clip_folders(&mut self, doc: &Document, layer: &Layer, c: &Canvas) -> Result<()> {
+        let mut parent = layer.parent_id.as_deref();
+        while let Some(id) = parent {
+            let folder = doc
+                .layers
+                .iter()
+                .find(|l| l.id == id)
+                .ok_or_else(|| anyhow!("Missing folder"))?;
+            if let Some(mask) = &folder.mask
+                && mask.enabled
+            {
+                let image = mask_surface(mask, folder)?.image_snapshot();
+                let matrix = c.local_to_device();
+                transform(c, folder);
+                let shader = image
+                    .to_shader(
+                        (sk::TileMode::Decal, sk::TileMode::Decal),
+                        sk::SamplingOptions::new(sk::FilterMode::Linear, sk::MipmapMode::None),
+                        None,
+                    )
+                    .ok_or_else(|| anyhow!("Cannot clip folder mask"))?;
+                c.clip_shader(shader, None);
+                c.set_matrix(&matrix);
+            }
+            parent = folder.parent_id.as_deref();
+        }
+        Ok(())
+    }
+    pub fn render(&mut self, doc: &Document) -> Result<Surface> {
+        let mut s = surface(doc.width, doc.height)?;
+        self.cache
+            .retain(|(l, _)| doc.layers.iter().any(|v| v.id == l.id));
+        let layers: Vec<_> = doc
+            .ordered_layers()
+            .into_iter()
+            .filter(|l| doc.effective(l).0 && !matches!(l.content.as_ref(), Content::Group))
+            .collect();
+        let mut index = 0;
+        while index < layers.len() {
+            let layer = layers[index];
+            let c = s.canvas();
             c.save();
-            transform(c, l);
-            c.draw_image_with_sampling_options(
-                &image,
-                (0., 0.),
-                sk::SamplingOptions::new(
-                    if l.sampling == Sampling::Nearest {
-                        sk::FilterMode::Nearest
-                    } else {
-                        sk::FilterMode::Linear
-                    },
-                    sk::MipmapMode::None,
-                ),
-                Some(&p),
-            );
+            self.clip_folders(doc, layer, c)?;
+            let mut end = index + 1;
+            if layer.mask_source_id.is_none() {
+                while end < layers.len()
+                    && layers[end].mask_source_id.as_deref() == Some(&layer.id)
+                    && layers[end].parent_id == layer.parent_id
+                {
+                    end += 1;
+                }
+            }
+            if end > index + 1 {
+                // LiveMaskRenderer.drawComposite: blend colors on an opaque base, then
+                // restore its original alpha once. Repeated source-over thickens soft edges.
+                let mut base = surface(doc.width, doc.height)?;
+                self.draw_own(doc, layer, base.canvas(), BlendMode::SrcOver)?;
+                let mut pixels = rgba_pixels(&base.image_snapshot())?;
+                let coverage: Vec<_> = pixels
+                    .chunks_exact_mut(4)
+                    .map(|p| {
+                        let a = p[3];
+                        p[3] = 255;
+                        a
+                    })
+                    .collect();
+                base.canvas().clear(Color::TRANSPARENT);
+                base.canvas().draw_image(
+                    rgba_image(doc.width, doc.height, &pixels)?,
+                    (0., 0.),
+                    None,
+                );
+                for child in &layers[index + 1..end] {
+                    self.draw_own(doc, child, base.canvas(), blend(child.blend))?;
+                }
+                pixels = rgba_pixels(&base.image_snapshot())?;
+                for (pixel, alpha) in pixels.chunks_exact_mut(4).zip(coverage) {
+                    pixel[3] = alpha;
+                }
+                let mut p = Paint::default();
+                p.set_blend_mode(blend(layer.blend));
+                c.draw_image(
+                    rgba_image(doc.width, doc.height, &pixels)?,
+                    (0., 0.),
+                    Some(&p),
+                );
+            } else {
+                if let Some(source) = &layer.mask_source_id {
+                    let coverage = self.live_coverage(doc, source)?;
+                    let image = alpha_image(doc.width, doc.height, &coverage)?;
+                    let shader = image
+                        .to_shader(
+                            (sk::TileMode::Decal, sk::TileMode::Decal),
+                            sk::SamplingOptions::default(),
+                            None,
+                        )
+                        .ok_or_else(|| anyhow!("Cannot clip live mask"))?;
+                    c.clip_shader(shader, None);
+                }
+                self.draw_own(doc, layer, c, blend(layer.blend))?;
+            }
             c.restore();
+            index = end;
         }
         Ok(s)
+    }
+    /// Bake only the dependency into target pixels; preserve its raster mask and appearance.
+    pub fn bake_live_mask(&mut self, doc: &Document, layer: &Layer) -> Result<Layer> {
+        let Some(source) = &layer.mask_source_id else {
+            return Ok(layer.clone());
+        };
+        // LiveMaskBaker renders dependencies in the target's source grid, including
+        // recoverable pixels outside the canvas, with its inverse pixel-to-document map.
+        let coverage = self.coverage_in(doc, source, Some(layer))?;
+        let mut bare = layer.clone();
+        bare.mask = None;
+        let mut pixels = rgba_pixels(&self.layer_surface(&bare)?)?;
+        for (pixel, alpha) in pixels.chunks_exact_mut(4).zip(coverage) {
+            pixel[3] = ((pixel[3] as u16 * alpha as u16 + 127) / 255) as u8;
+        }
+        let mut result = layer.clone();
+        result.content = Arc::new(native_content(rgba_image(
+            layer.width,
+            layer.height,
+            &pixels,
+        )?));
+        result.strokes.clear();
+        result.mask_source_id = None;
+        Ok(result)
     }
     /// Destructive pixel edit: materialize the editable layer, then remove document-space
     /// selection coverage. The separate layer mask stays attached to the resulting image.
@@ -753,6 +928,197 @@ pub fn selection_coverage(selection: &PixelSelection) -> Result<Arc<Vec<u8>>> {
 pub fn clear_selected_pixels(layer: &Layer, selection: &PixelSelection) -> Result<Image> {
     Renderer::default().clear_layer_selection(layer, selection)
 }
+pub fn native_content(image: Image) -> Content {
+    Content::Image {
+        data: crate::asset::ImageAsset::Raster(Arc::new(image)),
+    }
+}
+pub fn rgba_pixels(image: &Image) -> Result<Vec<u8>> {
+    let info = sk::ImageInfo::new(
+        (image.width(), image.height()),
+        sk::ColorType::RGBA8888,
+        sk::AlphaType::Unpremul,
+        None,
+    );
+    let mut pixels = vec![0; image.width() as usize * image.height() as usize * 4];
+    ensure!(
+        image.read_pixels(
+            &info,
+            &mut pixels,
+            image.width() as usize * 4,
+            (0, 0),
+            sk::image::CachingHint::Disallow
+        ),
+        "Cannot read native image"
+    );
+    Ok(pixels)
+}
+pub fn rgba_image(width: u32, height: u32, pixels: &[u8]) -> Result<Image> {
+    dimensions(width, height)?;
+    let info = sk::ImageInfo::new(
+        (width as i32, height as i32),
+        sk::ColorType::RGBA8888,
+        sk::AlphaType::Unpremul,
+        None,
+    );
+    sk::images::raster_from_data(&info, sk::Data::new_copy(pixels), width as usize * 4)
+        .ok_or_else(|| anyhow!("Cannot create native image"))
+}
+/// Preserve the source's pixel grid while extending it to a document-space edit region.
+/// BrushStroke.init / paintTransform, adapted to Picsie's source dimensions and scale.
+pub fn expanded_layer(layer: &Layer, area: Rect) -> Result<(Layer, i32, i32)> {
+    let points = [
+        (area.left, area.top),
+        (area.right, area.top),
+        (area.right, area.bottom),
+        (area.left, area.bottom),
+    ]
+    .map(|(x, y)| geometry::to_local(layer, Point::new(x as f64, y as f64)));
+    let left = points.iter().map(|p| p.x.floor()).fold(0., f64::min) as i32;
+    let top = points.iter().map(|p| p.y.floor()).fold(0., f64::min) as i32;
+    let right = points
+        .iter()
+        .map(|p| p.x.ceil())
+        .fold(layer.width as f64, f64::max) as i32;
+    let bottom = points
+        .iter()
+        .map(|p| p.y.ceil())
+        .fold(layer.height as f64, f64::max) as i32;
+    let (width, height) = ((right - left) as u32, (bottom - top) as u32);
+    dimensions(width, height)?;
+    let center = geometry::to_world(
+        layer,
+        Point::new((left + right) as f64 / 2., (top + bottom) as f64 / 2.),
+    );
+    let mut result = layer.clone();
+    result.width = width;
+    result.height = height;
+    result.x = center.x - width as f64 * layer.scale_x / 2.;
+    result.y = center.y - height as f64 * layer.scale_y / 2.;
+    if let Some(mask) = &mut result.mask {
+        let mask = Arc::make_mut(mask);
+        let mut placement = mask.placement.unwrap_or(MaskPlacement::of(layer));
+        placement.scale_x *= layer.width as f64 / width as f64;
+        placement.scale_y *= layer.height as f64 / height as f64;
+        mask.placement = Some(placement);
+    }
+    Ok((result, -left, -top))
+}
+/// SelectionEdits.fillSelection / BrushStroke.fill: solid source-over, clipped in document
+/// coordinates, with no selection covering the canvas and an empty selection touching nothing.
+pub fn fill_selected_pixels(
+    layer: &Layer,
+    selection: Option<&PixelSelection>,
+    doc: &Document,
+    value: &str,
+    is_mask: bool,
+    mode: MaskMode,
+) -> Result<Layer> {
+    if !is_mask
+        && selection.is_none()
+        && let Content::Text {
+            text,
+            font_size,
+            font_family,
+            ..
+        } = layer.content.as_ref()
+    {
+        let mut next = layer.clone();
+        next.content = Arc::new(Content::Text {
+            text: text.clone(),
+            font_size: *font_size,
+            font_family: *font_family,
+            color: value.into(),
+        });
+        return Ok(next);
+    }
+    let coverage = selection.map(selection_coverage).transpose()?;
+    if is_mask {
+        let Some(mask) = &layer.mask else {
+            return Ok(layer.clone());
+        };
+        if !mask.enabled {
+            return Ok(layer.clone());
+        }
+        let mut raster = rasterize_mask(mask, layer)?;
+        let placed = mask
+            .placement
+            .map(|p| p.as_layer(layer))
+            .unwrap_or_else(|| layer.clone());
+        let pixels = Arc::make_mut(&mut raster.pixels);
+        for y in 0..layer.height {
+            for x in 0..layer.width {
+                let world = geometry::to_world(&placed, Point::new(x as f64 + 0.5, y as f64 + 0.5));
+                let amount = edit_coverage(doc, coverage.as_deref().map(Vec::as_slice), world);
+                let index = (y * layer.width + x) as usize;
+                let target = if mode == MaskMode::Reveal { 255 } else { 0 };
+                pixels[index] =
+                    ((pixels[index] as u32 * (255 - amount as u32) + target * amount as u32 + 127)
+                        / 255) as u8;
+            }
+        }
+        let mut next = layer.clone();
+        let mut mask = mask.as_ref().clone();
+        mask.raster = Some(Arc::new(raster));
+        mask.strokes.clear();
+        next.mask = Some(Arc::new(mask));
+        return Ok(next);
+    }
+    let area = selection
+        .and_then(PixelSelection::coverage_bounds)
+        .map(|b| Rect::from_xywh(b.x as f32, b.y as f32, b.width as f32, b.height as f32))
+        .unwrap_or(rect(doc.width, doc.height));
+    let (mut next, dx, dy) = expanded_layer(layer, area)?;
+    let mut unmasked = layer.clone();
+    unmasked.mask = None;
+    let source = Renderer::default().layer_surface(&unmasked)?;
+    let mut output = surface(next.width, next.height)?;
+    output
+        .canvas()
+        .draw_image(&source, (dx as f32, dy as f32), None);
+    let mut pixels = rgba_pixels(&output.image_snapshot())?;
+    let fill = color(value);
+    for y in 0..next.height {
+        for x in 0..next.width {
+            let world = geometry::to_world(&next, Point::new(x as f64 + 0.5, y as f64 + 0.5));
+            let amount =
+                edit_coverage(doc, coverage.as_deref().map(Vec::as_slice), world) as f64 / 255.;
+            let pixel = &mut pixels[((y * next.width + x) * 4) as usize..][..4];
+            composite_pixel(pixel, [fill.r(), fill.g(), fill.b()], amount, false);
+        }
+    }
+    next.content = Arc::new(native_content(rgba_image(
+        next.width,
+        next.height,
+        &pixels,
+    )?));
+    next.strokes.clear();
+    Ok(next)
+}
+pub fn edit_coverage(doc: &Document, coverage: Option<&[u8]>, point: Point) -> u8 {
+    if point.x < 0. || point.y < 0. || point.x >= doc.width as f64 || point.y >= doc.height as f64 {
+        return 0;
+    }
+    coverage.map_or(255, |c| {
+        c[(point.y as u32 * doc.width + point.x as u32) as usize]
+    })
+}
+pub fn composite_pixel(pixel: &mut [u8], color: [u8; 3], amount: f64, erase: bool) {
+    let alpha = pixel[3] as f64 / 255.;
+    if erase {
+        pixel[3] = (alpha * (1. - amount) * 255.).round() as u8;
+        return;
+    }
+    let combined = amount + alpha * (1. - amount);
+    if combined > 0. {
+        for i in 0..3 {
+            pixel[i] = ((color[i] as f64 * amount + pixel[i] as f64 * alpha * (1. - amount))
+                / combined)
+                .round() as u8;
+        }
+    }
+    pixel[3] = (combined * 255.).round() as u8;
+}
 pub fn decode(bytes: &[u8]) -> Result<Image> {
     let data = sk::Data::new_copy(bytes);
     let codec = sk::Codec::from_data(data).ok_or_else(|| anyhow!("Invalid image data"))?;
@@ -802,4 +1168,15 @@ pub fn frame_bytes(s: &mut Surface) -> Result<Vec<u8>> {
     tiff::encoder::TiffEncoder::new(&mut output)?
         .write_image::<tiff::encoder::colortype::RGBA8>(w as u32, h as u32, &pixels)?;
     Ok(output.into_inner())
+}
+
+fn alpha_image(width: u32, height: u32, pixels: &[u8]) -> Result<Image> {
+    let info = sk::ImageInfo::new(
+        (width as i32, height as i32),
+        sk::ColorType::Alpha8,
+        sk::AlphaType::Premul,
+        None,
+    );
+    sk::images::raster_from_data(&info, sk::Data::new_copy(pixels), width as usize)
+        .ok_or_else(|| anyhow!("Cannot create coverage image"))
 }

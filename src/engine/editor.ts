@@ -93,6 +93,30 @@ export class Editor {
   set brushSize(size: number) {
     this.dispatch({ type: "setBrush", size, opacity: this.brushOpacity });
   }
+  get brushHardness() {
+    return this.state.brushHardness;
+  }
+  set brushHardness(hardness: number) {
+    this.dispatch({ type: "setBrushTip", hardness, smoothing: this.brushSmoothing });
+  }
+  get brushSmoothing() {
+    return this.state.brushSmoothing;
+  }
+  set brushSmoothing(smoothing: number) {
+    this.dispatch({ type: "setBrushTip", hardness: this.brushHardness, smoothing });
+  }
+  get hasPixelSelection() {
+    return this.state.hasPixelSelection;
+  }
+  get canEditPixels() {
+    return this.state.canEditPixels;
+  }
+  get maskSourceIds() {
+    return this.state.maskSourceIds;
+  }
+  get canToggleClipping() {
+    return this.state.canToggleClipping;
+  }
   get brushOpacity() {
     return this.state.brushOpacity;
   }
@@ -214,11 +238,32 @@ export class Editor {
   beginPropertyEdit(label: string) {
     this.dispatch({ type: "beginPropertyEdit", label });
   }
+  fillSelection() {
+    this.dispatch({ type: "fillSelection" });
+  }
+  invertSelection() {
+    this.dispatch({ type: "invertSelection" });
+  }
+  expandSelection(amount: number) {
+    this.dispatch({ type: "expandSelection", amount });
+  }
+  contractSelection(amount: number) {
+    this.dispatch({ type: "contractSelection", amount });
+  }
+  toggleClippingMask() {
+    this.dispatch({ type: "toggleClippingMask" });
+  }
+  linkMask(sourceId: string) {
+    this.dispatch({ type: "linkMask", sourceId });
+  }
   featherSelection(amount: number) {
     this.dispatch({ type: "featherSelection", amount });
   }
   deselectPixels() {
     this.dispatch({ type: "deselectPixels" });
+  }
+  cancelPixelSelection() {
+    this.dispatch({ type: "cancelPixelSelection" });
   }
   selectAllPixels() {
     this.dispatch({ type: "selectAllPixels" });

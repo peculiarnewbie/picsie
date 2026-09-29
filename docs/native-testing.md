@@ -1,5 +1,13 @@
 # Native interaction checks
 
+## Pixel selection history — 2026-09-29
+
+The rebuilt native development app ran on an isolated 1280 × 860 Xvfb display with Mesa software Vulkan. Actual pointer/keyboard checks verified a marquee's Undo/Redo, Feather's crisp/soft coverage restoration through the toolbar buttons, Escape canceling an unfinished outline while retaining the previous feathered selection, and Escape-to-deselect followed by keyboard Undo. The selection header and history controls were inspected at 1280 × 860 and 960 × 640. Captures and the driver remain under ignored `artifacts/selection-history/`; no project was saved during this check.
+
+`npm run check:architecture`, `npm run check`, `npm test`, and `npm run test:bun` pass: 55 Rust tests, 7 architecture guard tests, 19 Node tests, and 16 Bun addon tests. The new integration cases also verify cleared PNG pixels after undo/redo and selection restoration across asynchronous canvas resizing and crop. The [source map](compositor-port.md#pixel-selection-history-port) distinguishes translated fixtures from additional local tests. macOS and Windows interaction were not exercised in this pass.
+
+## Earlier checks
+
 These captures come from the packaged Linux QuickGUI application, driven with pointer and keyboard events on an isolated X11 display. The environment used Xvfb, Mesa software Vulkan, and the GTK desktop portal for native file dialogs. They are actual window captures.
 
 The final layout uses shared SVG icons, centered button content, explicit text line heights, equally sized input columns, and fixed-height layer rows. Select popups declare their own colors, row sizing, and placement. Fields reserve their label and input height so dialog buttons stay inside the popup.
@@ -180,3 +188,15 @@ Text editing, the inspector, the color picker, layer dragging, and click-through
 | Middle-click the canvas where layers overlap | Selection cycles through every layer under the pointer |
 
 The drag fix is worth recording: QuickGUI's captured-pointer release event does not report the drag total in `delta`, so drops silently vanished; displacement now comes from `localPosition − localOrigin`. `npm run check`, `npm test`, and `npm run test:bun` pass.
+
+
+## Four-item functionality pass (2026-09-29)
+
+The pinned functionality pass in [the source map](compositor-port.md#selection-operations-software-brush-and-clipping-port) was exercised in the actual QuickGUI app under Xvfb with Mesa's software Vulkan driver. Temporary scripts, projects, and screenshots are under ignored `artifacts/reference-features/`; nothing from GIMP's UX was used.
+
+- Created a marquee, entered a 30px amount, expanded it with rounded corners, filled the selected area, undid/redid Fill, contracted the outline, and inverted it. The initial inspection found a zero-width amount field; it was changed to the existing full-width Field variant and rechecked. The selection inspector fits at 1280×860 and 960×640.
+- Edited diameter, opacity, hardness, and smoothing, then painted a soft 50%-opacity stroke. Painted a hard Hide stroke into a folder mask; only the folder's descendant was concealed and the layers beneath remained visible. Brush and mask controls were inspected at both window sizes. The document title is omitted from the compact tool header to keep controls on one line.
+- Added and filled a new child layer, used **Clip to layer below**, and observed its color constrained to the underlying image's alpha, including the existing soft brush edge and folder-mask cutout. Undo restored the full fill; redo restored clipping. The source picker listed eligible sources and displayed the active source.
+- Inspected `06-filled.png`, `11-selection-compact.png`, `19-soft-stroke.png`, `25-folder-mask-painted.png`, `33-clipped.png`, `36-source-picker.png`, and the final `40-final-mask-compact.png`. The screenshots record real native pointer/keyboard interaction, not synthetic UI renders.
+
+Automated checks for this pass: `npm run check:architecture`, `npm run check`, `npm test`, and `npm run test:bun`. The final suite contains 73 Rust tests, 7 architecture tests, 22 Node tests (19 actual-addon tests plus 3 color-control tests), and 19 Bun addon tests. New checks cover selection operations/history, feathered fill, stroke opacity/spacing/curves/tail replacement, transformed brush diameter, mask nesting, hidden live sources, cycle rejection, source deletion including recoverable off-canvas pixels, multi-layer duplication, and `.picsie`/`.comp` round-trips. Upstream AppKit/Metal tests were not run; CPU rasterization/performance differences are recorded in the source map.

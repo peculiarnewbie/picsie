@@ -83,7 +83,8 @@ fn compositor_folder_hierarchy_opacity_collapse_and_cycles() {
     let child = e.history.document.layers[0].id.clone();
     cmd(&mut e, json!({"type":"addGroup"}));
     let folder = e.selected_id().unwrap().to_owned();
-    e.select(Some(child.clone()), SelectionMode::Replace);
+    e.select(Some(child.clone()), SelectionMode::Replace)
+        .unwrap();
     cmd(&mut e, json!({"type":"moveToGroup","parentId":folder}));
     assert_eq!(
         e.history
@@ -96,7 +97,8 @@ fn compositor_folder_hierarchy_opacity_collapse_and_cycles() {
             .as_deref(),
         Some(folder.as_str())
     );
-    e.select(Some(folder.clone()), SelectionMode::Replace);
+    e.select(Some(folder.clone()), SelectionMode::Replace)
+        .unwrap();
     cmd(
         &mut e,
         json!({"type":"updateLayer","patch":{"opacity":0.5}}),
@@ -106,7 +108,8 @@ fn compositor_folder_hierarchy_opacity_collapse_and_cycles() {
     assert_eq!(e.snapshot()["layerRows"].as_array().unwrap().len(), 1);
     cmd(&mut e, json!({"type":"toggleGroupExpansion","id":folder}));
     assert_eq!(e.snapshot()["layerRows"][1]["depth"], 1);
-    e.select(Some(child.clone()), SelectionMode::Toggle);
+    e.select(Some(child.clone()), SelectionMode::Toggle)
+        .unwrap();
     cmd(&mut e, json!({"type":"groupSelected"}));
     let wrapper = e.selected_id().unwrap().to_owned();
     let d = &e.history.document;
@@ -128,7 +131,8 @@ fn compositor_folder_hierarchy_opacity_collapse_and_cycles() {
             .as_deref(),
         Some(folder.as_str())
     );
-    e.select(Some(wrapper.clone()), SelectionMode::Replace);
+    e.select(Some(wrapper.clone()), SelectionMode::Replace)
+        .unwrap();
     assert!(
         e.command(serde_json::from_value(json!({"type":"moveToGroup","parentId":folder})).unwrap())
             .is_err()
@@ -143,7 +147,8 @@ fn compositor_folder_hierarchy_opacity_collapse_and_cycles() {
             .parent_id,
         None
     );
-    e.select(Some(folder.clone()), SelectionMode::Replace);
+    e.select(Some(folder.clone()), SelectionMode::Replace)
+        .unwrap();
     cmd(
         &mut e,
         json!({"type":"updateLayer","patch":{"visible":false}}),
@@ -157,9 +162,10 @@ fn compositor_folder_duplicate_keeps_subtree_and_reorder_uses_siblings() {
     let a = e.history.document.layers[0].id.clone();
     cmd(&mut e, json!({"type":"addGroup"}));
     let folder = e.selected_id().unwrap().to_owned();
-    e.select(Some(a), SelectionMode::Replace);
+    e.select(Some(a), SelectionMode::Replace).unwrap();
     cmd(&mut e, json!({"type":"moveToGroup","parentId":folder}));
-    e.select(Some(folder.clone()), SelectionMode::Replace);
+    e.select(Some(folder.clone()), SelectionMode::Replace)
+        .unwrap();
     cmd(&mut e, json!({"type":"duplicate"}));
     let copy = e.selected_id().unwrap().to_owned();
     assert_ne!(copy, folder);
@@ -196,17 +202,17 @@ fn compositor_pixel_marquee_lasso_and_clear() {
     pointer(&mut e, Phase::Down, 0., 0.);
     pointer(&mut e, Phase::Move, 40., 40.);
     pointer(&mut e, Phase::Up, 40., 40.);
-    let selected = e.pixel_selection.as_ref().unwrap();
+    let selected = e.history.pixel_selection.as_ref().unwrap();
     assert_eq!(selected.at(10, 10), 255);
     assert_eq!(selected.at(50, 10), 0);
     cmd(&mut e, json!({"type":"setSelectionMode","mode":"add"}));
     pointer(&mut e, Phase::Down, 40., 0.);
     pointer(&mut e, Phase::Up, 80., 40.);
-    assert_eq!(e.pixel_selection.as_ref().unwrap().at(60, 10), 255);
+    assert_eq!(e.history.pixel_selection.as_ref().unwrap().at(60, 10), 255);
     cmd(&mut e, json!({"type":"setSelectionMode","mode":"subtract"}));
     pointer(&mut e, Phase::Down, 20., 20.);
     pointer(&mut e, Phase::Up, 60., 50.);
-    assert_eq!(e.pixel_selection.as_ref().unwrap().at(30, 30), 0);
+    assert_eq!(e.history.pixel_selection.as_ref().unwrap().at(30, 30), 0);
     cmd(&mut e, json!({"type":"clearSelectedPixels"}));
     assert_eq!(pix(&e.history.document, 10., 10.), [0; 4]);
     assert_eq!(pix(&e.history.document, 30., 30.), [255, 0, 0, 255]);
@@ -219,19 +225,21 @@ fn compositor_pixel_marquee_lasso_and_clear() {
     pointer(&mut e, Phase::Move, 0., 30.);
     pointer(&mut e, Phase::Up, 0., 30.);
     assert!(
-        e.pixel_selection
+        e.history
+            .pixel_selection
             .as_ref()
             .unwrap()
             .contains(Point::new(5., 5.))
     );
     assert!(
-        !e.pixel_selection
+        !e.history
+            .pixel_selection
             .as_ref()
             .unwrap()
             .contains(Point::new(25., 25.))
     );
     cmd(&mut e, json!({"type":"deselectPixels"}));
-    assert!(e.pixel_selection.is_none());
+    assert!(e.history.pixel_selection.is_none());
 }
 
 /// Adapted from Compositor TypeToolTests and TypeTool.textImage: box text word-wraps at the
@@ -383,7 +391,7 @@ fn compositor_feather_softens_the_selection_and_what_it_clips() {
     cmd(&mut e, json!({"type":"addPaintLayer"}));
     cmd(&mut e, json!({"type":"selectAllPixels"}));
     cmd(&mut e, json!({"type":"featherSelection","amount":6}));
-    let selection = e.pixel_selection.as_ref().unwrap();
+    let selection = e.history.pixel_selection.as_ref().unwrap();
     assert!(
         selection.bounds.is_some(),
         "the selection cannot be modified"
@@ -397,7 +405,7 @@ fn compositor_feather_softens_the_selection_and_what_it_clips() {
     pointer(&mut e, Phase::Down, 20., 0.);
     pointer(&mut e, Phase::Up, 40., 20.);
     cmd(&mut e, json!({"type":"featherSelection","amount":6}));
-    let coverage = selection_coverage(e.pixel_selection.as_ref().unwrap()).unwrap();
+    let coverage = selection_coverage(e.history.pixel_selection.as_ref().unwrap()).unwrap();
     let row = 20 / 2;
     let values: Vec<u8> = (0..60).map(|x| coverage[row * 60 + x]).collect();
     let fading = values
@@ -428,14 +436,14 @@ fn feather_stacks_clamps_and_resets_with_a_new_outline() {
     cmd(&mut e, json!({"type":"selectAllPixels"}));
     cmd(&mut e, json!({"type":"featherSelection","amount":6}));
     cmd(&mut e, json!({"type":"featherSelection","amount":8}));
-    assert_eq!(e.pixel_selection.as_ref().unwrap().feather, 10.);
+    assert_eq!(e.history.pixel_selection.as_ref().unwrap().feather, 10.);
     cmd(&mut e, json!({"type":"featherSelection","amount":200}));
     cmd(&mut e, json!({"type":"featherSelection","amount":200}));
-    assert_eq!(e.pixel_selection.as_ref().unwrap().feather, 250.);
+    assert_eq!(e.history.pixel_selection.as_ref().unwrap().feather, 250.);
     cmd(&mut e, json!({"type":"setTool","tool":"marquee"}));
     pointer(&mut e, Phase::Down, 10., 10.);
     pointer(&mut e, Phase::Up, 40., 40.);
-    assert_eq!(e.pixel_selection.as_ref().unwrap().feather, 0.);
+    assert_eq!(e.history.pixel_selection.as_ref().unwrap().feather, 0.);
 }
 
 /// Additional local regression: `canModifySelection` refuses feathering without a non-empty
@@ -453,20 +461,20 @@ fn feather_requires_a_selection_and_validates_its_amount() {
             .is_err()
     );
     cmd(&mut e, json!({"type":"featherSelection","amount":6}));
-    assert!(e.pixel_selection.is_none());
+    assert!(e.history.pixel_selection.is_none());
     // An explicit empty selection touches nothing and has no edge to soften.
-    cmd(&mut e, json!({"type":"setTool","tool":"lasso"}));
-    pointer(&mut e, Phase::Down, 10., 10.);
-    pointer(&mut e, Phase::Up, 10., 10.);
-    assert!(e.pixel_selection.as_ref().unwrap().bounds.is_none());
+    cmd(&mut e, json!({"type":"setTool","tool":"marquee"}));
+    pointer(&mut e, Phase::Down, 510., 510.);
+    pointer(&mut e, Phase::Up, 540., 540.);
+    assert!(e.history.pixel_selection.as_ref().unwrap().bounds.is_none());
     cmd(&mut e, json!({"type":"featherSelection","amount":6}));
-    assert_eq!(e.pixel_selection.as_ref().unwrap().feather, 0.);
+    assert_eq!(e.history.pixel_selection.as_ref().unwrap().feather, 0.);
     // An outline in progress keeps its draft; the feather is refused.
     cmd(&mut e, json!({"type":"selectAllPixels"}));
     pointer(&mut e, Phase::Down, 10., 10.);
     cmd(&mut e, json!({"type":"featherSelection","amount":6}));
     assert!(e.selection_draft().is_some());
-    assert_eq!(e.pixel_selection.as_ref().unwrap().feather, 0.);
+    assert_eq!(e.history.pixel_selection.as_ref().unwrap().feather, 0.);
     pointer(&mut e, Phase::Up, 40., 40.);
 }
 
@@ -477,7 +485,7 @@ fn feathered_select_all_keeps_edges_clamped() {
     let mut e = editor(vec![layer("red")]);
     cmd(&mut e, json!({"type":"selectAllPixels"}));
     cmd(&mut e, json!({"type":"featherSelection","amount":6}));
-    let coverage = selection_coverage(e.pixel_selection.as_ref().unwrap()).unwrap();
+    let coverage = selection_coverage(e.history.pixel_selection.as_ref().unwrap()).unwrap();
     assert!(
         coverage[0] >= 250,
         "corner coverage fell to {}",
@@ -823,7 +831,7 @@ fn shape_creation_reverse_drag_and_cancellation() {
     assert_eq!(e.history.document.layers.len(), 1);
 }
 #[test]
-fn paint_autocreates_layer_and_records_local_coordinates() {
+fn paint_autocreates_layer_and_keeps_document_coordinates() {
     let mut e = editor(vec![]);
     cmd(&mut e, json!({"type":"setTool","tool":"brush"}));
     cmd(&mut e, json!({"type":"setColor","color":"#ff0000"}));
@@ -831,7 +839,11 @@ fn paint_autocreates_layer_and_records_local_coordinates() {
     pointer(&mut e, Phase::Down, 10., 10.);
     pointer(&mut e, Phase::Move, 20., 10.);
     pointer(&mut e, Phase::Up, 30., 10.);
-    assert_eq!(e.selected().unwrap().strokes.len(), 1);
+    assert!(e.selected().unwrap().strokes.is_empty());
+    assert!(matches!(
+        e.selected().unwrap().content.as_ref(),
+        Content::Image { .. }
+    ));
     assert_eq!(pix(&e.history.document, 20., 10.), [255, 0, 0, 255]);
     undo(&mut e);
     assert!(e.history.document.layers.is_empty());
@@ -846,10 +858,8 @@ fn paint_autocreates_layer_and_records_local_coordinates() {
     cmd(&mut e, json!({"type":"setTool","tool":"brush"}));
     pointer(&mut e, Phase::Down, 40., 40.);
     pointer(&mut e, Phase::Up, 40., 40.);
-    assert_eq!(
-        e.selected().unwrap().strokes[0].points[0],
-        Point::new(10., 10.)
-    );
+    assert_eq!(pix(&e.history.document, 40., 40.)[3], 255);
+    assert_eq!(pix(&e.history.document, 65., 40.)[3], 0);
 }
 #[test]
 fn locks_refuse_paint_delete_and_property_changes() {
@@ -877,13 +887,18 @@ fn range_selection_preserves_anchor_and_canvas_shift_toggles() {
         .map(|i| moved_layer(&i.to_string(), 20. + 120. * i as f64))
         .collect();
     let mut e = editor(layers.clone());
-    e.select(Some(layers[1].id.clone()), SelectionMode::Replace);
-    e.select(Some(layers[3].id.clone()), SelectionMode::Range);
+    e.select(Some(layers[1].id.clone()), SelectionMode::Replace)
+        .unwrap();
+    e.select(Some(layers[3].id.clone()), SelectionMode::Range)
+        .unwrap();
     assert_eq!(e.selection.ids.len(), 3);
-    e.select(Some(layers[2].id.clone()), SelectionMode::Range);
+    e.select(Some(layers[2].id.clone()), SelectionMode::Range)
+        .unwrap();
     assert_eq!(e.selection.ids.len(), 2);
-    e.select(Some(layers[0].id.clone()), SelectionMode::Toggle);
-    e.select(Some(layers[1].id.clone()), SelectionMode::Toggle);
+    e.select(Some(layers[0].id.clone()), SelectionMode::Toggle)
+        .unwrap();
+    e.select(Some(layers[1].id.clone()), SelectionMode::Toggle)
+        .unwrap();
     assert_eq!(
         e.selected_layers()
             .iter()
@@ -974,8 +989,10 @@ fn duplication_is_in_place_ordered_unlocked_and_deletion_skips_locked() {
 fn reordering_forms_stable_block_and_layer_limit_is_atomic() {
     let layers: Vec<_> = ["A", "B", "C", "D", "E"].iter().map(|n| layer(n)).collect();
     let mut e = editor(layers.clone());
-    e.select(Some(layers[1].id.clone()), SelectionMode::Replace);
-    e.select(Some(layers[3].id.clone()), SelectionMode::Toggle);
+    e.select(Some(layers[1].id.clone()), SelectionMode::Replace)
+        .unwrap();
+    e.select(Some(layers[3].id.clone()), SelectionMode::Toggle)
+        .unwrap();
     cmd(
         &mut e,
         json!({"type":"reorderTo","targetId":layers[4].id,"side":"above"}),
@@ -1084,7 +1101,8 @@ fn pointer_rotation_and_resize_cancel_restores_original() {
 fn compositor_insertion_and_duplication_preserve_assets_and_transforms() {
     let originals: Vec<_> = ["1", "2", "3"].iter().map(|n| layer(n)).collect();
     let mut e = editor(originals.clone());
-    e.select(Some(originals[0].id.clone()), SelectionMode::Replace);
+    e.select(Some(originals[0].id.clone()), SelectionMode::Replace)
+        .unwrap();
     e.add_layers(vec![layer("4")]).unwrap();
     assert_eq!(
         e.history
@@ -1139,7 +1157,7 @@ fn masks_hide_reveal_disable_remove_and_opacity_preserve_original_pixels() {
     cmd(&mut e, json!({"type":"setBrush","size":30,"opacity":0.5}));
     pointer(&mut e, Phase::Down, 40., 30.);
     pointer(&mut e, Phase::Up, 40., 30.);
-    assert_eq!(pix(&e.history.document, 40., 30.), [255, 0, 0, 127]);
+    assert_eq!(pix(&e.history.document, 40., 30.), [255, 0, 0, 128]);
 }
 
 // Compositor LayerMaskTests: uniform masks stay 1×1 until painted; mask pixels and
@@ -1241,8 +1259,19 @@ fn mask_reset_eraser_cancel_locks_groups_and_extreme_coordinates() {
         } else {
             cmd(&mut e, json!({"type":"setTool","tool":"brush"}));
         }
-        pointer(&mut e, Phase::Down, 100., 100.);
-        pointer(&mut e, Phase::Up, 100., 100.);
+        let before = e.history.document.clone();
+        let down = e.pointer(PointerSample {
+            phase: Phase::Down,
+            point: Point::new(100., 100.),
+            modifiers: Modifiers::default(),
+        });
+        if mask {
+            down.unwrap();
+            pointer(&mut e, Phase::Up, 100., 100.);
+        } else {
+            assert!(down.is_err());
+            assert_eq!(e.history.document, before);
+        }
         e.history.document.validate().unwrap();
     }
     let mut e = editor(vec![layer("A"), layer("B")]);
@@ -1471,11 +1500,14 @@ fn canceled_gestures_preserve_redo_and_group_range_anchor() {
         moved_layer("C", 260.),
     ];
     let mut e = editor(layers.clone());
-    e.select(Some(layers[0].id.clone()), SelectionMode::Replace);
-    e.select(Some(layers[1].id.clone()), SelectionMode::Toggle);
+    e.select(Some(layers[0].id.clone()), SelectionMode::Replace)
+        .unwrap();
+    e.select(Some(layers[1].id.clone()), SelectionMode::Toggle)
+        .unwrap();
     let before = e.selection.clone();
     cmd(&mut e, json!({"type":"duplicate"}));
-    e.select(Some(layers[2].id.clone()), SelectionMode::Replace);
+    e.select(Some(layers[2].id.clone()), SelectionMode::Replace)
+        .unwrap();
     undo(&mut e);
     assert_eq!(e.selection, before);
     pointer(&mut e, Phase::Down, 50., 100.);
@@ -1483,7 +1515,8 @@ fn canceled_gestures_preserve_redo_and_group_range_anchor() {
     pointer(&mut e, Phase::Cancel, 60., 110.);
     assert!(e.history.info().can_redo);
     assert_eq!(e.selection, before);
-    e.select(Some(layers[2].id.clone()), SelectionMode::Range);
+    e.select(Some(layers[2].id.clone()), SelectionMode::Range)
+        .unwrap();
     assert_eq!(
         e.selection.ids,
         [layers[1].id.clone(), layers[2].id.clone()]

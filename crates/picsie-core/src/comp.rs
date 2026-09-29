@@ -301,8 +301,7 @@ pub fn open(path: &Path) -> Result<Document> {
             "Compositor layer name exceeds Picsie's limit"
         );
         ensure!(
-            item.mask_source_id.is_none()
-                && item.adjustment.is_none()
+            item.adjustment.is_none()
                 && item.shape.is_none()
                 && item.effects.is_none()
                 && item.text.is_none(),
@@ -311,10 +310,6 @@ pub fn open(path: &Path) -> Result<Document> {
         ensure!(
             !item.is_group.unwrap_or(false) || item.image_file.is_none(),
             "Folder cannot have an image asset"
-        );
-        ensure!(
-            !item.is_group.unwrap_or(false) || item.mask_file.is_none(),
-            "Folder masks are not yet supported"
         );
         let normalized = uuid(&item.id)?;
         let image = if let Some(name) = &item.image_file {
@@ -336,10 +331,11 @@ pub fn open(path: &Path) -> Result<Document> {
             Content::Group
         } else if let Some((bytes, _, _)) = &image {
             Content::Image {
-                data: Arc::from(format!(
+                data: format!(
                     "data:image/png;base64,{}",
                     base64::engine::general_purpose::STANDARD.encode(bytes)
-                )),
+                )
+                .into(),
             }
         } else {
             Content::Paint
@@ -347,6 +343,11 @@ pub fn open(path: &Path) -> Result<Document> {
         let mut layer = Layer::new(&item.name, width, height, content);
         layer.id = normalized;
         layer.parent_id = item.parent_id.as_deref().map(uuid).transpose()?;
+        layer.mask_source_id = item.mask_source_id.as_deref().map(uuid).transpose()?;
+        ensure!(
+            layer.mask_source_id.is_none() || manifest.version >= 5,
+            "Live masks require Compositor version 5"
+        );
         layer.visible = item.is_visible;
         layer.x = item.transform.origin.x;
         layer.y = item.transform.origin.y;
@@ -430,10 +431,6 @@ pub fn save(path: &Path, doc: &Document) -> Result<()> {
     let mut records = Vec::new();
     for layer in &doc.layers {
         let group = matches!(layer.content.as_ref(), Content::Group);
-        ensure!(
-            !group || layer.mask.is_none(),
-            "Folder masks are not yet supported in .comp export"
-        );
         let has_image = !group
             && (!matches!(layer.content.as_ref(), Content::Paint) || !layer.strokes.is_empty());
         let image_file = if has_image {
@@ -487,7 +484,11 @@ pub fn save(path: &Path, doc: &Document) -> Result<()> {
                 .and_then(|m| m.placement)
                 .map(|p| Transform::for_mask(layer, p)),
             mask_linked: layer.mask.as_ref().map(|m| m.linked),
-            mask_source_id: None,
+            mask_source_id: layer
+                .mask_source_id
+                .as_deref()
+                .map(|v| uuid::Uuid::parse_str(v).map(|id| id.to_string().to_uppercase()))
+                .transpose()?,
             adjustment: None,
             shape: None,
             effects: None,

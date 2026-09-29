@@ -1,8 +1,9 @@
 //! DocumentSelection / DragBox / LassoDraft coverage translated from the pinned Compositor.
 //! MIT © 2026 Wonder Assembly LLC. Raster union is an adaptation for the Rust surface model.
 use crate::model::{Document, Point};
-use anyhow::{Result, ensure};
+use anyhow::{Result, anyhow, ensure};
 use serde::{Deserialize, Serialize};
+use skia_safe::{self as sk, Path, PathOp};
 use std::sync::Arc;
 use ts_rs::TS;
 
@@ -29,11 +30,13 @@ pub struct SelectionBounds {
 /// Grayscale coverage at document resolution standing in for Compositor's `DocumentSelection`
 /// path. `feather` carries the same metadata as upstream: the stored coverage stays crisp and
 /// `render::selection_coverage` softens it by `feather / 2` whenever edits or the overlay read it.
-#[derive(Clone, Debug)]
+#[derive(Clone, Debug, PartialEq)]
 pub struct PixelSelection {
     pub width: u32,
     pub height: u32,
     pub pixels: Arc<Vec<u8>>,
+    /// Upstream document-space outline; raster coverage is a derived cache.
+    pub outline: Path,
     pub bounds: Option<SelectionBounds>,
     /// How far the edge fades, in document pixels. 0 is a hard edge.
     pub feather: f64,
@@ -126,104 +129,157 @@ impl SelectionDraft {
             .then_some((x0, y0, x1, y1))
     }
 }
-fn inside(draft: &SelectionDraft, x: f64, y: f64, bounds: (f64, f64, f64, f64)) -> bool {
-    if let Some(kind) = draft.marquee {
-        let (x0, y0, x1, y1) = bounds;
-        return match kind {
-            MarqueeKind::Rectangle => x >= x0 && x < x1 && y >= y0 && y < y1,
-            MarqueeKind::Ellipse => {
-                let cx = (x0 + x1) / 2.;
-                let cy = (y0 + y1) / 2.;
-                let rx = (x1 - x0) / 2.;
-                let ry = (y1 - y0) / 2.;
-                ((x - cx) / rx).powi(2) + ((y - cy) / ry).powi(2) <= 1.
-            }
-        };
-    }
-    let mut hit = false;
-    let mut prev = *draft.points.last().unwrap();
-    for point in &draft.points {
-        if (point.y > y) != (prev.y > y)
-            && x < (prev.x - point.x) * (y - point.y) / (prev.y - point.y) + point.x
-        {
-            hit = !hit;
-        }
-        prev = *point;
-    }
-    hit
-}
-/// Four samples per pixel retain antialiased edges; an explicit empty raster touches nothing.
+/// Selection.swift::applySelection / finishLasso; Skia path operations replace CGPath.
 pub fn finish(
     doc: &Document,
     old: Option<&PixelSelection>,
     draft: &SelectionDraft,
 ) -> Result<Option<PixelSelection>> {
-    let bounds = draft.bounds();
-    if bounds.is_none() && draft.mode != PixelSelectionMode::Replace {
-        return Ok(old.cloned());
-    }
-    let mut pixels = if draft.mode == PixelSelectionMode::Replace {
-        vec![0; doc.width as usize * doc.height as usize]
-    } else {
-        old.map(|v| v.pixels.as_ref().clone())
-            .unwrap_or_else(|| vec![0; doc.width as usize * doc.height as usize])
+    let Some((x0, y0, x1, y1)) = draft.bounds() else {
+        return Ok(if draft.mode == PixelSelectionMode::Replace {
+            None
+        } else {
+            old.cloned()
+        });
     };
-    if let Some(bounds) = bounds {
-        let (x0, y0, x1, y1) = bounds;
-        ensure!(
-            x0.is_finite() && y0.is_finite() && x1.is_finite() && y1.is_finite(),
-            "Invalid selection outline"
-        );
-        let left = (x0.floor() as i64 - 1).clamp(0, doc.width as i64) as usize;
-        let top = (y0.floor() as i64 - 1).clamp(0, doc.height as i64) as usize;
-        let right = (x1.ceil() as i64 + 1).clamp(0, doc.width as i64) as usize;
-        let bottom = (y1.ceil() as i64 + 1).clamp(0, doc.height as i64) as usize;
-        for y in top..bottom {
-            for x in left..right {
-                let coverage = [(0.25, 0.25), (0.75, 0.25), (0.25, 0.75), (0.75, 0.75)]
-                    .iter()
-                    .filter(|(sx, sy)| inside(draft, x as f64 + sx, y as f64 + sy, bounds))
-                    .count() as u16
-                    * 255
-                    / 4;
-                let at = y * doc.width as usize + x;
-                let prior = pixels[at] as u16;
-                pixels[at] = match draft.mode {
-                    PixelSelectionMode::Replace => coverage as u8,
-                    PixelSelectionMode::Add => {
-                        (prior + coverage - prior * coverage / 255).min(255) as u8
-                    }
-                    PixelSelectionMode::Subtract => (prior * (255 - coverage) / 255) as u8,
-                };
+    ensure!(
+        [x0, y0, x1, y1].iter().all(|v| v.is_finite()),
+        "Invalid selection outline"
+    );
+    if old.is_none() && draft.mode == PixelSelectionMode::Subtract {
+        return Ok(None);
+    }
+    let mut path = sk::PathBuilder::new();
+    let rect = sk::Rect::new(x0 as f32, y0 as f32, x1 as f32, y1 as f32);
+    match draft.marquee {
+        Some(MarqueeKind::Rectangle) => {
+            path.add_rect(rect, None, None);
+        }
+        Some(MarqueeKind::Ellipse) => {
+            path.add_oval(rect, None, None);
+        }
+        None => {
+            path.move_to((draft.points[0].x as f32, draft.points[0].y as f32));
+            for p in &draft.points[1..] {
+                path.line_to((p.x as f32, p.y as f32));
             }
+            path.close();
         }
     }
-    let mut minx = doc.width;
-    let mut miny = doc.height;
-    let mut maxx = 0;
-    let mut maxy = 0;
-    for y in 0..doc.height {
-        for x in 0..doc.width {
-            if pixels[y as usize * doc.width as usize + x as usize] != 0 {
+    let clipped = operation(
+        &path.detach(),
+        &canvas_path(doc.width, doc.height),
+        PathOp::Intersect,
+    )?;
+    let result = match (draft.mode, old) {
+        (PixelSelectionMode::Add, Some(old)) => operation(&old.outline, &clipped, PathOp::Union)?,
+        (PixelSelectionMode::Subtract, Some(old)) => {
+            operation(&old.outline, &clipped, PathOp::Difference)?
+        }
+        _ => clipped,
+    };
+    Ok(Some(PixelSelection::from_path(
+        doc.width, doc.height, result, 0.,
+    )?))
+}
+fn operation(a: &Path, b: &Path, op: PathOp) -> Result<Path> {
+    a.op(b, op)
+        .ok_or_else(|| anyhow!("Cannot combine selection outlines"))
+}
+fn canvas_path(width: u32, height: u32) -> Path {
+    Path::rect(sk::Rect::from_wh(width as f32, height as f32), None)
+}
+impl PixelSelection {
+    pub fn all(width: u32, height: u32) -> Result<Self> {
+        Self::from_path(width, height, canvas_path(width, height), 0.)
+    }
+    pub fn inverted(&self) -> Result<Self> {
+        Self::from_path(
+            self.width,
+            self.height,
+            operation(
+                &canvas_path(self.width, self.height),
+                &self.outline,
+                PathOp::Difference,
+            )?,
+            self.feather,
+        )
+    }
+    /// Selection.swift::resizeSelection: union/subtract a round stroked band, then clip.
+    pub fn resized(&self, delta: f64) -> Result<Self> {
+        ensure!(
+            delta.is_finite() && delta.abs() >= 1. && delta.abs() <= 500.,
+            "Selection amount must be between 1 and 500 pixels"
+        );
+        let mut paint = sk::Paint::default();
+        paint
+            .set_style(sk::paint::Style::Stroke)
+            .set_stroke_width((delta.abs() * 2.) as f32)
+            .set_stroke_cap(sk::paint::Cap::Round)
+            .set_stroke_join(sk::paint::Join::Round);
+        let mut band = sk::PathBuilder::new();
+        ensure!(
+            sk::path_utils::fill_path_with_paint(&self.outline, &paint, &mut band, None, None),
+            "Cannot resize selection outline"
+        );
+        let result = operation(
+            &self.outline,
+            &band.detach(),
+            if delta > 0. {
+                PathOp::Union
+            } else {
+                PathOp::Difference
+            },
+        )?;
+        let result = operation(
+            &result,
+            &canvas_path(self.width, self.height),
+            PathOp::Intersect,
+        )?;
+        Self::from_path(self.width, self.height, result, self.feather)
+    }
+    pub fn from_path(width: u32, height: u32, outline: Path, feather: f64) -> Result<Self> {
+        crate::model::dimensions(width, height)?;
+        let info = sk::ImageInfo::new(
+            (width as i32, height as i32),
+            sk::ColorType::Alpha8,
+            sk::AlphaType::Premul,
+            None,
+        );
+        let mut surface = sk::surfaces::raster(&info, None, None)
+            .ok_or_else(|| anyhow!("Cannot allocate selection coverage"))?;
+        let mut paint = sk::Paint::default();
+        paint.set_anti_alias(true).set_color(sk::Color::WHITE);
+        surface.canvas().draw_path(&outline, &paint);
+        let mut pixels = vec![0u8; width as usize * height as usize];
+        ensure!(
+            surface.read_pixels(&info, &mut pixels, width as usize, (0, 0)),
+            "Cannot read selection coverage"
+        );
+        let (mut minx, mut miny, mut maxx, mut maxy) = (width, height, 0, 0);
+        for (i, value) in pixels.iter().enumerate() {
+            if *value > 0 {
+                let x = i as u32 % width;
+                let y = i as u32 / width;
                 minx = minx.min(x);
                 miny = miny.min(y);
                 maxx = maxx.max(x + 1);
                 maxy = maxy.max(y + 1);
             }
         }
+        let bounds = (maxx > minx && maxy > miny).then_some(SelectionBounds {
+            x: minx,
+            y: miny,
+            width: maxx.saturating_sub(minx),
+            height: maxy.saturating_sub(miny),
+        });
+        Ok(Self {
+            width,
+            height,
+            pixels: Arc::new(pixels),
+            outline,
+            bounds,
+            feather,
+        })
     }
-    let bounds = (maxx > minx && maxy > miny).then(|| SelectionBounds {
-        x: minx,
-        y: miny,
-        width: maxx - minx,
-        height: maxy - miny,
-    });
-    Ok(Some(PixelSelection {
-        width: doc.width,
-        height: doc.height,
-        pixels: Arc::new(pixels),
-        bounds,
-        // Upstream `applySelection` keeps only `antialiased`, so a new outline is hard-edged.
-        feather: 0.,
-    }))
 }

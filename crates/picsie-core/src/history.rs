@@ -1,6 +1,7 @@
 //! Compositor DocumentHistory.swift, MIT © 2026 Wonder Assembly LLC.
 //! Snapshots share immutable assets. Selection is extended to the existing multi-layer UI.
 use crate::model::{Content, Document, id};
+use crate::pixel_selection::PixelSelection;
 use serde::{Deserialize, Serialize};
 use std::{collections::HashSet, sync::Arc};
 use ts_rs::TS;
@@ -15,6 +16,7 @@ pub struct Selection {
 struct Snapshot {
     document: Document,
     selection: Selection,
+    pixel_selection: Option<PixelSelection>,
     revision: String,
 }
 #[derive(Clone)]
@@ -25,6 +27,8 @@ struct Entry {
 }
 pub struct History {
     pub document: Document,
+    /// Session-only coverage, captured alongside the document like upstream's document selection.
+    pub pixel_selection: Option<PixelSelection>,
     past: Vec<Entry>,
     future: Vec<Entry>,
     pub revision: String,
@@ -54,6 +58,7 @@ impl History {
         let revision = id();
         Self {
             document,
+            pixel_selection: None,
             past: vec![],
             future: vec![],
             saved_revision: Some(revision.clone()),
@@ -92,6 +97,7 @@ impl History {
             self.pending = Some(Snapshot {
                 document: self.document.clone(),
                 selection,
+                pixel_selection: self.pixel_selection.clone(),
                 revision: self.revision.clone(),
             });
             self.pending_label = label.into();
@@ -113,8 +119,9 @@ impl History {
         let Some(before) = self.pending.take() else {
             return;
         };
-        if before.document == self.document {
+        if before.document == self.document && before.pixel_selection == self.pixel_selection {
             self.document = before.document;
+            self.pixel_selection = before.pixel_selection;
             return;
         }
         self.revision = id();
@@ -124,6 +131,7 @@ impl History {
             after: Snapshot {
                 document: self.document.clone(),
                 selection,
+                pixel_selection: self.pixel_selection.clone(),
                 revision: self.revision.clone(),
             },
         });
@@ -134,6 +142,7 @@ impl History {
         self.depth = 0;
         self.pending.take().map(|s| {
             self.document = s.document;
+            self.pixel_selection = s.pixel_selection;
             self.revision = s.revision;
             s.selection
         })
@@ -158,6 +167,7 @@ impl History {
     }
     fn restore(&mut self, s: Snapshot) -> Selection {
         self.document = s.document;
+        self.pixel_selection = s.pixel_selection;
         self.revision = s.revision;
         self.trim();
         s.selection
@@ -169,7 +179,7 @@ impl History {
                 .flat_map(|l| {
                     let mut a = vec![];
                     if let Content::Image { data } = l.content.as_ref() {
-                        a.push((data.as_ptr() as usize, data.len()));
+                        a.push(data.storage());
                     }
                     for s in &l.strokes {
                         a.push((Arc::as_ptr(s) as usize, 64 + s.points.len() * 16));
@@ -190,12 +200,26 @@ impl History {
             .into_iter()
             .map(|(id, _)| id)
             .collect();
+        let mut seen_outlines = HashSet::new();
+        if let Some(selection) = &self.pixel_selection {
+            seen.insert(Arc::as_ptr(&selection.pixels) as usize);
+            seen_outlines.insert(selection.outline.generation_id());
+        }
         let mut bytes = 0;
         for e in self.past.iter().chain(&self.future) {
             for s in [&e.before, &e.after] {
                 for (id, len) in assets(&s.document) {
                     if seen.insert(id) {
                         bytes += len;
+                    }
+                }
+                // Count unique retained outlines and coverage, excluding the live selection.
+                if let Some(selection) = &s.pixel_selection {
+                    if seen.insert(Arc::as_ptr(&selection.pixels) as usize) {
+                        bytes += selection.pixels.len();
+                    }
+                    if seen_outlines.insert(selection.outline.generation_id()) {
+                        bytes += selection.outline.approximate_bytes_used();
                     }
                 }
             }

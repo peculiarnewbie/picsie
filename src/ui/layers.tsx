@@ -97,7 +97,11 @@ export function LayersPanel(props: {
           disabled={props.busy}
           onClick={() => props.act(() => state().addGradient())}
         />
-        <Action label="Folder" disabled={props.busy} onClick={() => props.act(() => state().addGroup())} />
+        <Action
+          label="Folder"
+          disabled={props.busy}
+          onClick={() => props.act(() => state().addGroup())}
+        />
         <Text style={{ color: colors.muted, fontSize: 11 }}>{state().document.layers.length}</Text>
       </View>
       <Text style={{ color: colors.muted, fontSize: 10, lineHeight: "14px" }}>
@@ -199,7 +203,12 @@ export function LayersPanel(props: {
                     rememberModifiers(event);
                     // The core's own multi-click count starts text editing on a second press.
                     const mouse = mouseEventFromEvent(event);
-                    if (mouse && (mouse.clickCount ?? 0) >= 2 && layer().content.kind === "text" && !props.busy)
+                    if (
+                      mouse &&
+                      (mouse.clickCount ?? 0) >= 2 &&
+                      layer().content.kind === "text" &&
+                      !props.busy
+                    )
                       props.act(() => state().editText({ id }));
                   }}
                   onKeyDown={rememberModifiers}
@@ -216,17 +225,20 @@ export function LayersPanel(props: {
                     color: colors.text,
                   }}
                 >
+                  <Show when={layer().maskSourceId}>
+                    <Text style={{ color: colors.accent, fontSize: 13 }}>↳</Text>
+                  </Show>
                   <Icon
                     name={
                       layer().content.kind === "group"
                         ? "layers"
                         : layer().content.kind === "text"
-                        ? "text"
-                        : layer().content.kind === "image"
-                          ? "image"
-                          : layer().content.kind === "paint"
-                            ? "brush"
-                            : "layers"
+                          ? "text"
+                          : layer().content.kind === "image"
+                            ? "image"
+                            : layer().content.kind === "paint"
+                              ? "brush"
+                              : "layers"
                     }
                     size={16}
                     color={colors.accent}
@@ -285,7 +297,11 @@ export function LayersPanel(props: {
         </Show>
       </View>
       <View style={{ ...row, gap: 5 }}>
-        <Action label="Group" disabled={props.busy || !state().selectedIds.length} onClick={() => props.act(() => state().groupSelected())} />
+        <Action
+          label="Group"
+          disabled={props.busy || !state().selectedIds.length}
+          onClick={() => props.act(() => state().groupSelected())}
+        />
         <Action
           label="Raise layers"
           icon="up"
@@ -318,9 +334,23 @@ export function LayersPanel(props: {
       </View>
       <Show when={state().selectedIds.length > 0}>
         <View style={{ ...row, gap: 4, flexWrap: "wrap" }}>
-          <Action label="Out of folder" disabled={props.busy || !state().selectedLayers.some((layer) => layer.parentId)} onClick={() => props.act(() => state().moveToGroup())} />
-          <For each={state().document.layers.filter((layer) => layer.content.kind === "group" && !state().isSelected(layer.id))}>
-            {(folder) => <Action label={`Into ${folder.name}`} disabled={props.busy} onClick={() => props.act(() => state().moveToGroup(folder.id))} />}
+          <Action
+            label="Out of folder"
+            disabled={props.busy || !state().selectedLayers.some((layer) => layer.parentId)}
+            onClick={() => props.act(() => state().moveToGroup())}
+          />
+          <For
+            each={state().document.layers.filter(
+              (layer) => layer.content.kind === "group" && !state().isSelected(layer.id),
+            )}
+          >
+            {(folder) => (
+              <Action
+                label={`Into ${folder.name}`}
+                disabled={props.busy}
+                onClick={() => props.act(() => state().moveToGroup(folder.id))}
+              />
+            )}
           </For>
         </View>
       </Show>

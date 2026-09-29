@@ -40,6 +40,7 @@ import {
 import { Icon } from "./icons.tsx";
 import { ColorPickerDialog } from "./color-picker.tsx";
 import { LayersPanel } from "./layers.tsx";
+import { SelectionPanel } from "./selection.tsx";
 import { MaskPanel } from "./mask.tsx";
 import { CanvasSizeDialog } from "./canvas-size.tsx";
 import { registerCloseGuard } from "./lifecycle.ts";
@@ -75,14 +76,6 @@ export function Shell(props: {
   const [newName, setNewName] = createSignal("Untitled");
   const [newWidth, setNewWidth] = createSignal("1200");
   const [newHeight, setNewHeight] = createSignal("800");
-  // Compositor's `selectionFeatherAmount`: the tool header applies this amount directly.
-  const [featherAmount, setFeatherAmount] = createSignal(2);
-  const commitFeather = (value: string) => {
-    const parsed = Number(value.trim());
-    setFeatherAmount(
-      Number.isFinite(parsed) ? Math.min(250, Math.max(1, Math.round(parsed))) : 2,
-    );
-  };
   let stage: NativeNode | undefined;
   let shiftPressed = false;
   let altPressed = false;
@@ -186,8 +179,14 @@ export function Shell(props: {
     await editor.save(destination);
     setPath(destination);
     changed();
-    const flattened = destination.endsWith(".comp") && doc.layers.some((layer) => ["shape", "gradient", "text"].includes(layer.content.kind));
-    setNotice(flattened ? "Saved .comp package; live shapes, gradients, and text were rasterized" : `Saved ${doc.name}`);
+    const flattened =
+      destination.endsWith(".comp") &&
+      doc.layers.some((layer) => ["shape", "gradient", "text"].includes(layer.content.kind));
+    setNotice(
+      flattened
+        ? "Saved .comp package; live shapes, gradients, and text were rasterized"
+        : `Saved ${doc.name}`,
+    );
     return true;
   }
   async function saveCompositor(): Promise<void> {
@@ -197,12 +196,20 @@ export function Shell(props: {
       filters: [{ name: "Compositor package", extensions: ["comp"] }],
     });
     if (result.canceled || !result.filePath) return;
-    const destination = result.filePath.toLowerCase().endsWith(".comp") ? result.filePath : `${result.filePath}.comp`;
+    const destination = result.filePath.toLowerCase().endsWith(".comp")
+      ? result.filePath
+      : `${result.filePath}.comp`;
     await editor.save(destination);
     setPath(destination);
     changed();
-    const flattened = editor.document.layers.some((layer) => ["shape", "gradient", "text"].includes(layer.content.kind));
-    setNotice(flattened ? "Saved .comp package; live shapes, gradients, and text were rasterized" : "Saved .comp package");
+    const flattened = editor.document.layers.some((layer) =>
+      ["shape", "gradient", "text"].includes(layer.content.kind),
+    );
+    setNotice(
+      flattened
+        ? "Saved .comp package; live shapes, gradients, and text were rasterized"
+        : "Saved .comp package",
+    );
   }
   async function importPaths(paths: readonly string[]) {
     await editor.importImages(paths);
@@ -221,9 +228,7 @@ export function Shell(props: {
     const result = await NativeDialog.showOpenDialog(window, {
       title: "Open project",
       properties: ["openFile"],
-      filters: [
-        { name: "Picsie and legacy projects", extensions: ["picsie", "electropic"] },
-      ],
+      filters: [{ name: "Picsie and legacy projects", extensions: ["picsie", "electropic"] }],
     });
     const file = result.filePaths[0];
     if (!result.canceled && file) props.openWindow(await Editor.open(file), file);
@@ -404,6 +409,23 @@ export function Shell(props: {
         ],
       },
       {
+        label: "Select",
+        items: [
+          { label: "All Pixels", click: () => act(() => editor.selectAllPixels()) },
+          {
+            label: "Deselect",
+            accelerator: "CmdOrCtrl+D",
+            click: () => act(() => editor.deselectPixels()),
+          },
+          {
+            label: "Inverse",
+            accelerator: "CmdOrCtrl+Shift+I",
+            click: () => act(() => editor.invertSelection()),
+          },
+          { label: "Fill with Foreground", click: () => act(() => editor.fillSelection()) },
+        ],
+      },
+      {
         label: "Image",
         items: [
           {
@@ -420,6 +442,11 @@ export function Shell(props: {
             label: "New Paint Layer",
             accelerator: "CmdOrCtrl+Shift+N",
             click: () => act(() => editor.addPaintLayer()),
+          },
+          {
+            label: "Create / Release Clipping Mask",
+            accelerator: "CmdOrCtrl+Alt+G",
+            click: () => act(() => editor.toggleClippingMask()),
           },
           { label: "New Gradient Layer", click: () => act(() => editor.addGradient()) },
           {
@@ -487,6 +514,9 @@ export function Shell(props: {
           if (key.alt) await exportImage(key.shift ? "jpeg" : "png");
           else await save(key.shift);
         });
+      else if (letter === "i" && key.shift) act(() => editor.invertSelection());
+      else if (letter === "d") act(() => editor.deselectPixels());
+      else if (letter === "g" && key.alt) act(() => editor.toggleClippingMask());
       else if (letter === "0") editor.fit();
       else if (letter === "1") editor.zoom(1);
       else if (letter === "=" || letter === "+") editor.zoom(editor.viewport.zoom * 1.25);
@@ -503,14 +533,15 @@ export function Shell(props: {
     }
     if (key.key === "Escape") {
       if (editor.tool === "crop") editor.cancelCrop();
-      else if (editor.tool === "marquee" || editor.tool === "lasso") editor.deselectPixels();
+      else if (editor.tool === "marquee" || editor.tool === "lasso") editor.cancelPixelSelection();
       else editor.cancelGesture();
     }
     if (key.key === "Enter" && editor.tool === "crop") editor.commitCrop();
     if (key.key.toLowerCase() === "x" && editor.paintTarget === "mask")
       editor.setMaskMode(editor.maskMode === "hide" ? "reveal" : "hide");
     if (key.key === "Delete" || key.key === "Backspace") {
-      if (editor.pixelSelectionBounds) editor.clearSelectedPixels();
+      if (editor.hasPixelSelection) editor.clearSelectedPixels();
+      else if (editor.paintTarget === "mask") editor.removeMask();
       else editor.remove();
     }
     if (key.key === "[") {
@@ -518,7 +549,7 @@ export function Shell(props: {
       editor.notify();
     }
     if (key.key === "]") {
-      editor.brushSize = Math.min(1000, editor.brushSize + 5);
+      editor.brushSize = Math.min(2000, editor.brushSize + 5);
       editor.notify();
     }
     const layer = editor.selected,
@@ -533,7 +564,10 @@ export function Shell(props: {
     if (busy()) return;
     const pointer = capturedPointerFromEvent(event);
     // Middle-click cycles the layers under the pointer (Ctrl/Cmd-click too, when tracked).
-    if (pointer.phase === "down" && (pointer.button === "middle" || controlPressed || metaPressed)) {
+    if (
+      pointer.phase === "down" &&
+      (pointer.button === "middle" || controlPressed || metaPressed)
+    ) {
       act(() => editor.pickUnder(pointer.localPosition));
       return;
     }
@@ -677,44 +711,67 @@ export function Shell(props: {
             <Show
               when={state().tool === "crop"}
               fallback={
-                <Show when={state().tool === "marquee" || state().tool === "lasso"} fallback={<Text style={{ color: colors.muted, fontSize: 11 }}>V move · B brush · M marquee · L lasso · C crop</Text>}>
+                <Show
+                  when={state().tool === "marquee" || state().tool === "lasso"}
+                  fallback={
+                    <Text style={{ color: colors.muted, fontSize: 11 }}>
+                      V move · B brush · M marquee · L lasso · C crop
+                    </Text>
+                  }
+                >
                   <View style={{ ...row, gap: 5 }}>
                     <Show when={state().tool === "marquee"}>
-                      <Action label="Rectangle" active={state().marqueeKind === "rectangle"} onClick={() => act(() => editor.setMarqueeKind("rectangle"))} />
-                      <Action label="Ellipse" active={state().marqueeKind === "ellipse"} onClick={() => act(() => editor.setMarqueeKind("ellipse"))} />
-                    </Show>
-                    <For each={[{ id: "replace", label: "New" }, { id: "add", label: "Add" }, { id: "subtract", label: "Subtract" }] as const}>
-                      {(mode) => <Action label={mode.label} active={state().selectionMode === mode.id} onClick={() => act(() => editor.setSelectionMode(mode.id))} />}
-                    </For>
-                    <View style={{ ...row, gap: 5, width: 132 }}>
-                      <Field
-                        inline
-                        label="Feather px"
-                        value={featherAmount()}
-                        onCommit={commitFeather}
+                      <Action
+                        label="Rectangle"
+                        active={state().marqueeKind === "rectangle"}
+                        onClick={() => act(() => editor.setMarqueeKind("rectangle"))}
                       />
-                    </View>
-                    <Action
-                      label="Feather"
-                      tooltip="Fade the edge of the selection by this many pixels"
-                      disabled={!state().pixelSelectionBounds || busy()}
-                      onClick={() => act(() => editor.featherSelection(featherAmount()))}
-                    />
-                    <Action label="Clear pixels" disabled={!state().pixelSelectionBounds || !state().selected} onClick={() => act(() => editor.clearSelectedPixels())} />
-                    <Action label="Deselect" disabled={!state().pixelSelectionBounds} onClick={() => act(() => editor.deselectPixels())} />
+                      <Action
+                        label="Ellipse"
+                        active={state().marqueeKind === "ellipse"}
+                        onClick={() => act(() => editor.setMarqueeKind("ellipse"))}
+                      />
+                    </Show>
+                    <For
+                      each={
+                        [
+                          { id: "replace", label: "New" },
+                          { id: "add", label: "Add" },
+                          { id: "subtract", label: "Subtract" },
+                        ] as const
+                      }
+                    >
+                      {(mode) => (
+                        <Action
+                          label={mode.label}
+                          active={state().selectionMode === mode.id}
+                          onClick={() => act(() => editor.setSelectionMode(mode.id))}
+                        />
+                      )}
+                    </For>
                   </View>
                 </Show>
               }
             >
               <View style={{ ...row, gap: 4 }}>
-                <For each={[
-                  { id: "free", label: "Free" },
-                  { id: "original", label: "Original" },
-                  { id: "square", label: "1:1" },
-                  { id: "fourThree", label: "4:3" },
-                  { id: "sixteenNine", label: "16:9" },
-                ] as const}>
-                  {(ratio) => <Action label={ratio.label} active={state().cropRatio === ratio.id} onClick={() => act(() => editor.setCropRatio(ratio.id))} />}
+                <For
+                  each={
+                    [
+                      { id: "free", label: "Free" },
+                      { id: "original", label: "Original" },
+                      { id: "square", label: "1:1" },
+                      { id: "fourThree", label: "4:3" },
+                      { id: "sixteenNine", label: "16:9" },
+                    ] as const
+                  }
+                >
+                  {(ratio) => (
+                    <Action
+                      label={ratio.label}
+                      active={state().cropRatio === ratio.id}
+                      onClick={() => act(() => editor.setCropRatio(ratio.id))}
+                    />
+                  )}
                 </For>
                 <Action label="Apply" primary onClick={() => act(() => editor.commitCrop())} />
                 <Action label="Cancel" onClick={() => act(() => editor.cancelCrop())} />
@@ -722,26 +779,46 @@ export function Shell(props: {
             </Show>
           }
         >
-          <View style={{ ...row, width: 245 }}>
+          <View style={{ ...row, width: 510 }}>
             <Field
               inline
               label="Size (px)"
               value={state().brushSize}
               onCommit={(v) =>
                 act(() => {
-                  editor.brushSize = Math.max(1, Math.min(1000, number(v)));
+                  editor.brushSize = Math.max(1, Math.min(2000, number(v)));
                   editor.notify();
                 })
               }
             />
             <Field
               inline
-              label="Flow (%)"
+              label="Opacity (%)"
               value={Math.round(state().brushOpacity * 100)}
               onCommit={(v) =>
                 act(() => {
                   editor.brushOpacity = Math.max(0, Math.min(1, number(v) / 100));
                   editor.notify();
+                })
+              }
+            />
+            <Field
+              inline
+              label="Hardness (%)"
+              value={Math.round(state().brushHardness * 100)}
+              onCommit={(v) =>
+                act(() => {
+                  editor.brushHardness = Math.max(0, Math.min(1, number(v) / 100));
+                })
+              }
+            />
+            <Field
+              inline
+              label="Smoothing"
+              value={state().brushSmoothing}
+              onCommit={(v) =>
+                act(() => {
+                  editor.brushSmoothing = Math.max(0, Math.min(100, number(v)));
                 })
               }
             />
@@ -777,10 +854,12 @@ export function Shell(props: {
           disabled={!state().history.canRedo || busy()}
           onClick={() => act(() => editor.redo())}
         />
-        <Text style={{ fontSize: 11, color: colors.muted, marginLeft: 10 }}>
-          {state().document.name}
-          {state().history.dirty ? " •" : ""}
-        </Text>
+        <Show when={state().viewport.width >= 700}>
+          <Text style={{ fontSize: 11, color: colors.muted, marginLeft: 10, whiteSpace: "nowrap" }}>
+            {state().document.name}
+            {state().history.dirty ? " •" : ""}
+          </Text>
+        </Show>
       </View>
       <View style={{ ...row, alignItems: "stretch", gap: 0, flexGrow: 1, minHeight: 0 }}>
         <View
@@ -903,7 +982,11 @@ export function Shell(props: {
               <Button
                 ariaLabel="Choose foreground color"
                 tooltip="Open the color picker"
-                onClick={() => openPicker("Foreground", state().color, (hex) => act(() => editor.setColor(`#${hex}`)))}
+                onClick={() =>
+                  openPicker("Foreground", state().color, (hex) =>
+                    act(() => editor.setColor(`#${hex}`)),
+                  )
+                }
                 style={{
                   width: 33,
                   height: 33,
@@ -938,7 +1021,19 @@ export function Shell(props: {
                 )}
               </For>
             </View>
+            <Action
+              label="Fill with foreground"
+              disabled={busy() || !state().canEditPixels}
+              onClick={() => act(() => editor.fillSelection())}
+            />
           </Section>
+          <Show
+            when={
+              state().tool === "marquee" || state().tool === "lasso" || state().hasPixelSelection
+            }
+          >
+            <SelectionPanel editor={state} busy={busy()} act={act} />
+          </Show>
           <LayersPanel editor={state} busy={busy()} act={act} />
           <Show when={state().selectedIds.length === 1 ? selected() : undefined}>
             {(layer) => (
@@ -1000,185 +1095,189 @@ export function Shell(props: {
                     />
                   </View>
                 </Section>
-                <Show when={layer().content.kind !== "group"}>
                 <MaskPanel editor={state} busy={busy()} act={act} />
-                <Section title="Transform">
-                  <View style={fieldRow}>
-                    <Field
-                      label="X"
-                      value={Math.round(layer().x)}
-                      onCommit={(v) => numeric("x", v)}
-                      disabled={layer().locked}
-                    />
-                    <Field
-                      label="Y"
-                      value={Math.round(layer().y)}
-                      onCommit={(v) => numeric("y", v)}
-                      disabled={layer().locked}
-                    />
-                  </View>
-                  <View style={fieldRow}>
-                    <Field
-                      label="Width"
-                      value={Math.round(layer().width * layer().scaleX)}
-                      onCommit={(v) =>
-                        act(() => editor.updateLayer({ scaleX: number(v) / layer().width }))
-                      }
-                      disabled={layer().locked}
-                    />
-                    <Field
-                      label="Height"
-                      value={Math.round(layer().height * layer().scaleY)}
-                      onCommit={(v) =>
-                        act(() => editor.updateLayer({ scaleY: number(v) / layer().height }))
-                      }
-                      disabled={layer().locked}
-                    />
-                  </View>
-                  <View style={fieldRow}>
-                    <Field
-                      label="Rotation °"
-                      value={Math.round(layer().rotation * 10) / 10}
-                      onCommit={(v) => numeric("rotation", v)}
-                      disabled={layer().locked}
-                    />
-                    <Action label="Flip X" onClick={() => patch({ flipX: !layer().flipX })} />
-                    <Action label="Flip Y" onClick={() => patch({ flipY: !layer().flipY })} />
-                  </View>
-                </Section>
-                <Show when={layer().content.kind === "text"}>
-                  <Section title="Text">
-                    <TextEditor
-                      value={textContent()?.text ?? ""}
-                      disabled={layer().locked || busy()}
-                      focus={textFocus}
-                      onInput={(text) => {
-                        const content = editor.selected?.content;
-                        if (content?.kind === "text")
-                          textEdit.input({ content: { ...content, text } });
-                      }}
-                      onDone={textEdit.commit}
-                    />
-                    <Field
-                      wide
-                      label="Font size"
-                      value={textContent()?.fontSize ?? 64}
-                      onCommit={(v) =>
-                        act(() => {
-                          const content = editor.selected?.content;
-                          if (content?.kind === "text")
-                            editor.updateLayer({ content: { ...content, fontSize: number(v) } });
-                        })
-                      }
-                      disabled={layer().locked}
-                    />
-                    <Select
-                      ariaLabel="Font family"
-                      appearance={pickerAppearance}
-                      value={textContent()?.fontFamily ?? "sans-serif"}
-                      items={{ "sans-serif": "Sans serif", serif: "Serif", monospace: "Monospace" }}
-                      onValueChange={(font) => {
-                        const content = editor.selected?.content;
-                        if (
-                          content?.kind === "text" &&
-                          (font === "sans-serif" || font === "serif" || font === "monospace")
-                        )
-                          patch({ content: { ...content, fontFamily: font } });
-                      }}
-                      style={{ ...inputStyle, ...row, justifyContent: "space-between" }}
-                    >
-                      <Select.Value>
-                        <Text>{textContent()?.fontFamily ?? "sans-serif"}</Text>
-                      </Select.Value>
-                      <Select.Icon>
-                        <Icon name="chevron" size={14} />
-                      </Select.Icon>
-                      <Select.Positioner side="top" align="start" sideOffset={4} />
-                    </Select>
-                  </Section>
-                </Show>
-                <Show
-                  when={
-                    layer().content.kind === "text" ||
-                    layer().content.kind === "shape" ||
-                    layer().content.kind === "gradient"
-                  }
-                >
-                  <Section title="Fill">
+                <Show when={layer().content.kind !== "group"}>
+                  <Section title="Transform">
                     <View style={fieldRow}>
-                      <Button
-                        ariaLabel={`Choose ${layer().name} color`}
-                        tooltip="Open the color picker"
-                        onClick={() => {
-                          const color = layerColor();
-                          if (color) openPicker(layer().name, color, commitLayerColor);
-                        }}
-                        style={{
-                          width: 33,
-                          height: 33,
-                          borderRadius: 6,
-                          bg: layerColor() ?? "#000000",
-                          borderWidth: 2,
-                          borderColor: "#edf0fc",
-                        }}
+                      <Field
+                        label="X"
+                        value={Math.round(layer().x)}
+                        onCommit={(v) => numeric("x", v)}
+                        disabled={layer().locked}
                       />
-                      <Action
-                        label="Use foreground color"
-                        onClick={() => {
-                          const content = editor.selected?.content;
-                          if (content?.kind === "shape" || content?.kind === "text")
-                            patch({ content: { ...content, color: editor.color } });
-                          if (content?.kind === "gradient")
-                            patch({ content: { ...content, from: editor.color } });
-                        }}
+                      <Field
+                        label="Y"
+                        value={Math.round(layer().y)}
+                        onCommit={(v) => numeric("y", v)}
+                        disabled={layer().locked}
                       />
                     </View>
-                    <Show when={layer().content.kind === "gradient"}>
-                      <Action
-                        label="Use foreground for end color"
-                        onClick={() => {
-                          const content = editor.selected?.content;
-                          if (content?.kind === "gradient")
-                            patch({ content: { ...content, to: editor.color } });
-                        }}
+                    <View style={fieldRow}>
+                      <Field
+                        label="Width"
+                        value={Math.round(layer().width * layer().scaleX)}
+                        onCommit={(v) =>
+                          act(() => editor.updateLayer({ scaleX: number(v) / layer().width }))
+                        }
+                        disabled={layer().locked}
                       />
-                    </Show>
+                      <Field
+                        label="Height"
+                        value={Math.round(layer().height * layer().scaleY)}
+                        onCommit={(v) =>
+                          act(() => editor.updateLayer({ scaleY: number(v) / layer().height }))
+                        }
+                        disabled={layer().locked}
+                      />
+                    </View>
+                    <View style={fieldRow}>
+                      <Field
+                        label="Rotation °"
+                        value={Math.round(layer().rotation * 10) / 10}
+                        onCommit={(v) => numeric("rotation", v)}
+                        disabled={layer().locked}
+                      />
+                      <Action label="Flip X" onClick={() => patch({ flipX: !layer().flipX })} />
+                      <Action label="Flip Y" onClick={() => patch({ flipY: !layer().flipY })} />
+                    </View>
                   </Section>
-                </Show>
-                <Section title="Adjustments">
-                  <SliderField
-                    label="Brightness"
-                    unit="%"
-                    value={() => Math.round(layer().brightness * 100)}
-                    min={0}
-                    max={300}
-                    disabled={layer().locked}
-                    onInput={(value) => brightnessEdit.input({ brightness: value / 100 })}
-                    onCommit={brightnessEdit.commit}
-                  />
-                  <SliderField
-                    label="Saturation"
-                    unit="%"
-                    value={() => Math.round(layer().saturation * 100)}
-                    min={0}
-                    max={300}
-                    disabled={layer().locked}
-                    onInput={(value) => saturationEdit.input({ saturation: value / 100 })}
-                    onCommit={saturationEdit.commit}
-                  />
-                  <SliderField
-                    label="Gaussian blur"
-                    unit="px"
-                    value={() => layer().blur}
-                    display={(value) => String(Math.round(value * 10) / 10)}
-                    min={0}
-                    max={100}
-                    step={0.5}
-                    disabled={layer().locked}
-                    onInput={(value) => blurEdit.input({ blur: value })}
-                    onCommit={blurEdit.commit}
-                  />
-                </Section>
+                  <Show when={layer().content.kind === "text"}>
+                    <Section title="Text">
+                      <TextEditor
+                        value={textContent()?.text ?? ""}
+                        disabled={layer().locked || busy()}
+                        focus={textFocus}
+                        onInput={(text) => {
+                          const content = editor.selected?.content;
+                          if (content?.kind === "text")
+                            textEdit.input({ content: { ...content, text } });
+                        }}
+                        onDone={textEdit.commit}
+                      />
+                      <Field
+                        wide
+                        label="Font size"
+                        value={textContent()?.fontSize ?? 64}
+                        onCommit={(v) =>
+                          act(() => {
+                            const content = editor.selected?.content;
+                            if (content?.kind === "text")
+                              editor.updateLayer({ content: { ...content, fontSize: number(v) } });
+                          })
+                        }
+                        disabled={layer().locked}
+                      />
+                      <Select
+                        ariaLabel="Font family"
+                        appearance={pickerAppearance}
+                        value={textContent()?.fontFamily ?? "sans-serif"}
+                        items={{
+                          "sans-serif": "Sans serif",
+                          serif: "Serif",
+                          monospace: "Monospace",
+                        }}
+                        onValueChange={(font) => {
+                          const content = editor.selected?.content;
+                          if (
+                            content?.kind === "text" &&
+                            (font === "sans-serif" || font === "serif" || font === "monospace")
+                          )
+                            patch({ content: { ...content, fontFamily: font } });
+                        }}
+                        style={{ ...inputStyle, ...row, justifyContent: "space-between" }}
+                      >
+                        <Select.Value>
+                          <Text>{textContent()?.fontFamily ?? "sans-serif"}</Text>
+                        </Select.Value>
+                        <Select.Icon>
+                          <Icon name="chevron" size={14} />
+                        </Select.Icon>
+                        <Select.Positioner side="top" align="start" sideOffset={4} />
+                      </Select>
+                    </Section>
+                  </Show>
+                  <Show
+                    when={
+                      layer().content.kind === "text" ||
+                      layer().content.kind === "shape" ||
+                      layer().content.kind === "gradient"
+                    }
+                  >
+                    <Section title="Fill">
+                      <View style={fieldRow}>
+                        <Button
+                          ariaLabel={`Choose ${layer().name} color`}
+                          tooltip="Open the color picker"
+                          onClick={() => {
+                            const color = layerColor();
+                            if (color) openPicker(layer().name, color, commitLayerColor);
+                          }}
+                          style={{
+                            width: 33,
+                            height: 33,
+                            borderRadius: 6,
+                            bg: layerColor() ?? "#000000",
+                            borderWidth: 2,
+                            borderColor: "#edf0fc",
+                          }}
+                        />
+                        <Action
+                          label="Use foreground color"
+                          onClick={() => {
+                            const content = editor.selected?.content;
+                            if (content?.kind === "shape" || content?.kind === "text")
+                              patch({ content: { ...content, color: editor.color } });
+                            if (content?.kind === "gradient")
+                              patch({ content: { ...content, from: editor.color } });
+                          }}
+                        />
+                      </View>
+                      <Show when={layer().content.kind === "gradient"}>
+                        <Action
+                          label="Use foreground for end color"
+                          onClick={() => {
+                            const content = editor.selected?.content;
+                            if (content?.kind === "gradient")
+                              patch({ content: { ...content, to: editor.color } });
+                          }}
+                        />
+                      </Show>
+                    </Section>
+                  </Show>
+                  <Section title="Adjustments">
+                    <SliderField
+                      label="Brightness"
+                      unit="%"
+                      value={() => Math.round(layer().brightness * 100)}
+                      min={0}
+                      max={300}
+                      disabled={layer().locked}
+                      onInput={(value) => brightnessEdit.input({ brightness: value / 100 })}
+                      onCommit={brightnessEdit.commit}
+                    />
+                    <SliderField
+                      label="Saturation"
+                      unit="%"
+                      value={() => Math.round(layer().saturation * 100)}
+                      min={0}
+                      max={300}
+                      disabled={layer().locked}
+                      onInput={(value) => saturationEdit.input({ saturation: value / 100 })}
+                      onCommit={saturationEdit.commit}
+                    />
+                    <SliderField
+                      label="Gaussian blur"
+                      unit="px"
+                      value={() => layer().blur}
+                      display={(value) => String(Math.round(value * 10) / 10)}
+                      min={0}
+                      max={100}
+                      step={0.5}
+                      disabled={layer().locked}
+                      onInput={(value) => blurEdit.input({ blur: value })}
+                      onCommit={blurEdit.commit}
+                    />
+                  </Section>
                 </Show>
               </>
             )}

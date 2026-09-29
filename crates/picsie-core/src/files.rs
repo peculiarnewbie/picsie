@@ -26,9 +26,7 @@ pub fn parse_project(text: &str) -> Result<Document> {
     doc.validate()?;
     for l in &doc.layers {
         if let Content::Image { data } = l.content.as_ref() {
-            use base64::Engine;
-            let bytes = base64::engine::general_purpose::STANDARD.decode(&data[22..])?;
-            render::decode(&bytes)?;
+            data.image()?;
         }
     }
     Ok(doc)

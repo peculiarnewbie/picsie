@@ -46,6 +46,7 @@ export type MaskPlacement = {
 export type Layer = {
   id: string;
   parentId?: string;
+  maskSourceId?: string;
   name: string;
   visible: boolean;
   locked: boolean;
@@ -125,6 +126,7 @@ export type Command =
   | { type: "setViewport"; viewport: Viewport }
   | { type: "setColor"; color: string }
   | { type: "setBrush"; size: number; opacity: number }
+  | { type: "setBrushTip"; hardness: number; smoothing: number }
   | { type: "updateLayer"; patch: Partial<Layer> }
   | { type: "addPaintLayer" }
   | { type: "addGradient" }
@@ -144,8 +146,13 @@ export type Command =
   | { type: "setMarqueeKind"; kind: MarqueeKind }
   | { type: "setSelectionMode"; mode: PixelSelectionMode }
   | { type: "deselectPixels" }
+  | { type: "cancelPixelSelection" }
   | { type: "selectAllPixels" }
   | { type: "clearSelectedPixels" }
+  | { type: "fillSelection" }
+  | { type: "invertSelection" }
+  | { type: "expandSelection"; amount: number }
+  | { type: "contractSelection"; amount: number }
   | { type: "featherSelection"; amount: number }
   | { type: "editText"; id?: string; point?: Point }
   | { type: "beginPropertyEdit"; label: string }
@@ -156,6 +163,8 @@ export type Command =
   | { type: "resetMask"; base: MaskMode }
   | { type: "removeMask" }
   | { type: "toggleMaskLink" }
+  | { type: "toggleClippingMask" }
+  | { type: "linkMask"; sourceId: string }
   | { type: "undo" }
   | { type: "redo" }
   | { type: "finishGesture" }
@@ -171,10 +180,16 @@ export type EditorState = {
   color: string;
   brushSize: number;
   brushOpacity: number;
+  brushHardness: number;
+  brushSmoothing: number;
   viewport: Viewport;
   cropRect: CropRect | null;
   cropRatio: CropRatio;
   layerRows: Array<LayerRow>;
+  hasPixelSelection: boolean;
+  canToggleClipping: boolean;
+  canEditPixels: boolean;
+  maskSourceIds: Array<string>;
   pixelSelectionBounds: SelectionBounds | null;
   pixelSelectionFeather: number | null;
   marqueeKind: MarqueeKind;
