@@ -350,36 +350,65 @@ impl Renderer {
         p.set_anti_alias(true)
             .set_alpha((opacity * 255.).round() as u8)
             .set_blend_mode(mode);
-        let sat = l.saturation as f32;
-        let b = l.brightness as f32;
-        let r = 0.213 * (1. - sat);
-        let g = 0.715 * (1. - sat);
-        let blue = 0.072 * (1. - sat);
-        p.set_color_filter(sk::color_filters::matrix_row_major(
-            &[
-                (r + sat) * b,
-                g * b,
-                blue * b,
-                0.,
-                0.,
-                r * b,
-                (g + sat) * b,
-                blue * b,
-                0.,
-                0.,
-                r * b,
-                g * b,
-                (blue + sat) * b,
-                0.,
-                0.,
-                0.,
-                0.,
-                0.,
-                1.,
-                0.,
-            ],
-            None,
-        ));
+        // The identity matrix forces Skia's floating-point color pipeline even for
+        // a plain opaque fill. Skip it only when drawing is an exact pixel copy:
+        // translucent/filtered/transformed draws must retain the old rounding.
+        let opaque_fill = match l.content.as_ref() {
+            Content::Gradient { from, to } => color(from).a() == 255 && color(to).a() == 255,
+            Content::Shape {
+                shape: Shape::Rectangle,
+                color: value,
+            } => color(value).a() == 255,
+            _ => false,
+        };
+        let direct_fill = opaque_fill
+            && opacity == 1.
+            && mode == BlendMode::SrcOver
+            && l.blur == 0.
+            && l.rotation == 0.
+            && l.scale_x == 1.
+            && l.scale_y == 1.
+            && !l.flip_x
+            && !l.flip_y
+            && l.x.fract() == 0.
+            && l.y.fract() == 0.
+            && l.mask.is_none()
+            && l.mask_source_id.is_none()
+            && l.parent_id.is_none()
+            && l.strokes.is_empty()
+            && c.local_to_device() == sk::M44::new_identity();
+        if l.saturation != 1. || l.brightness != 1. || !direct_fill {
+            let sat = l.saturation as f32;
+            let b = l.brightness as f32;
+            let r = 0.213 * (1. - sat);
+            let g = 0.715 * (1. - sat);
+            let blue = 0.072 * (1. - sat);
+            p.set_color_filter(sk::color_filters::matrix_row_major(
+                &[
+                    (r + sat) * b,
+                    g * b,
+                    blue * b,
+                    0.,
+                    0.,
+                    r * b,
+                    (g + sat) * b,
+                    blue * b,
+                    0.,
+                    0.,
+                    r * b,
+                    g * b,
+                    (blue + sat) * b,
+                    0.,
+                    0.,
+                    0.,
+                    0.,
+                    0.,
+                    1.,
+                    0.,
+                ],
+                None,
+            ));
+        }
         if l.blur > 0. {
             p.set_image_filter(sk::image_filters::blur(
                 (l.blur as f32, l.blur as f32),

@@ -5,6 +5,9 @@ builds of both complete applications using the same current `picsie-core`, not t
 small initial GPUI experiment. No editor behavior or application scheduling was
 changed for this comparison.
 
+A subsequent [bounded optimization pass](desktop-optimization.md) records fresh
+GPUI before/after measurements and addresses the idle CPU regression identified here.
+
 On this workload, GPUI reduces visible input latency and memory use, starts faster
 with warm caches, and presents more updates during a drag. Idle CPU is higher.
 The isolated transport improvement is larger than the application-wide gain.

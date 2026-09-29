@@ -32,7 +32,7 @@ use std::{
     collections::{HashMap, HashSet},
     path::PathBuf,
     sync::{Arc, Mutex},
-    time::{Duration, Instant},
+    time::Instant,
 };
 
 #[derive(Clone)]
@@ -151,11 +151,9 @@ impl Desktop {
             )
         })
         .collect();
+        let wakeups = engine.wakeups.clone();
         let pump = cx.spawn_in(window, async move |this, cx| {
-            loop {
-                cx.background_executor()
-                    .timer(Duration::from_millis(8))
-                    .await;
+            while wakeups.recv().await.is_ok() {
                 if this
                     .update_in(cx, |this, window, cx| this.receive(window, cx))
                     .is_err()

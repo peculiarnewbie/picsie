@@ -20,6 +20,8 @@ QuickGUI application remains available through `npm run dev`. See the
 [parity record](../../docs/gpui-ui-parity.md) for scope and verification.
 See the [performance comparison](../../docs/desktop-performance.md) for measured
 startup, input latency, memory, and frame transport against QuickGUI.
+The [optimization follow-up](../../docs/desktop-optimization.md) measures the
+worker notification change and the renderer's opaque-fill fast path.
 
 ## Ownership
 
@@ -28,6 +30,9 @@ owns the existing `picsie-core::Editor` and `Renderer`, including all commands,
 history, pixel buffers, imports, project saves, and exports. Requests execute in
 order. Pointer samples and file completions are reliable; only preview delivery
 is coalesced into a bounded latest-frame mailbox.
+The worker wakes the UI through a bounded asynchronous notification channel after
+publishing a frame or completion. There is no idle mailbox polling; redundant
+wake notifications can coalesce without dropping pointer input or file results.
 
 ```text
 Rust editor → CPU Skia preview → BGRA memory → GPUI RenderImage → GPU upload

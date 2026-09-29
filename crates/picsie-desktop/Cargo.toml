@@ -10,6 +10,7 @@ license = "MIT"
 
 [dependencies]
 anyhow = "1"
+async-channel = "2"
 gpui-kit = "=0.7.0"
 image = { version = "0.25", default-features = false, features = ["tiff"] }
 picsie-core = { path = "../picsie-core" }

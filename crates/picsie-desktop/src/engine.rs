@@ -75,6 +75,8 @@ pub struct Engine {
     sender: mpsc::Sender<Request>,
     pub events: mpsc::Receiver<Completion>,
     pub latest: Arc<Mutex<Option<Result<Frame, String>>>>,
+    /// A single pending wake covers all unread frames and reliable completions.
+    pub wakeups: async_channel::Receiver<()>,
     sequence: u64,
 }
 pub fn preview(editor: &Editor, renderer: &mut Renderer) -> Result<skia_safe::Surface> {
@@ -245,6 +247,7 @@ impl Engine {
     pub fn start(document: Document) -> Self {
         let (sender, receiver) = mpsc::channel::<Request>();
         let (events_tx, events) = mpsc::channel();
+        let (wake, wakeups) = async_channel::bounded(1);
         let latest = Arc::new(Mutex::new(None));
         let output = latest.clone();
         std::thread::Builder::new()
@@ -254,6 +257,7 @@ impl Engine {
                     Ok(editor) => editor,
                     Err(error) => {
                         *output.lock().unwrap() = Some(Err(error.to_string()));
+                        let _ = wake.try_send(());
                         return;
                     }
                 };
@@ -283,6 +287,8 @@ impl Engine {
                                     *output.lock().unwrap() = Some(Err(error.to_string()));
                                 }
                             }
+                            // Completion is observable without waiting for the next preview.
+                            let _ = wake.try_send(());
                         }
                     }
                     let command_ms = started.elapsed().as_secs_f64() * 1000.;
@@ -306,6 +312,9 @@ impl Engine {
                     })()
                     .map_err(|e| e.to_string());
                     *output.lock().unwrap() = Some(result);
+                    // Notify after publishing. A full channel means the UI is already due
+                    // to drain both queues; only redundant wakes may be coalesced.
+                    let _ = wake.try_send(());
                 }
             })
             .expect("start engine worker");
@@ -313,6 +322,7 @@ impl Engine {
             sender,
             events,
             latest,
+            wakeups,
             sequence: 0,
         }
     }
@@ -367,6 +377,71 @@ mod tests {
         let event = complete(worker, sequence);
         assert!(matches!(event.result, Ok(Outcome::Barrier)));
         event.state
+    }
+    fn notifications(worker: &Engine) -> mpsc::Receiver<()> {
+        let wakeups = worker.wakeups.clone();
+        let (sender, receiver) = mpsc::channel();
+        std::thread::spawn(move || {
+            while wakeups.recv_blocking().is_ok() {
+                if sender.send(()).is_err() {
+                    break;
+                }
+            }
+        });
+        receiver
+    }
+    #[test]
+    fn notifications_deliver_frames_and_failures_then_sleep_and_disconnect() {
+        let mut worker = worker();
+        let wakeups = notifications(&worker);
+        let directory = tempfile::tempdir().unwrap();
+        let missing = directory.path().join("missing/document.picsie");
+        let sequences: Vec<_> = (0..20)
+            .map(|_| worker.request(Operation::Save(missing.clone())))
+            .collect();
+        let mut completed = Vec::new();
+        let mut frame_sequence = 0;
+        while completed.len() < sequences.len() || frame_sequence < sequences[19] {
+            wakeups
+                .recv_timeout(Duration::from_secs(15))
+                .expect("worker must wake its consumer");
+            for event in worker.events.try_iter() {
+                assert!(event.result.is_err());
+                completed.push(event.sequence);
+            }
+            if let Some(frame) = worker.latest.lock().unwrap().take() {
+                frame_sequence = frame.unwrap().sequence;
+            }
+        }
+        assert_eq!(
+            completed, sequences,
+            "coalescing must retain every file failure"
+        );
+        // A completion and its frame may each have scheduled a wake. Drain any
+        // in-flight notification, then require the idle worker to stay silent.
+        let quiet_deadline = Instant::now() + Duration::from_secs(2);
+        loop {
+            match wakeups.recv_timeout(Duration::from_millis(50)) {
+                Ok(()) => assert!(Instant::now() < quiet_deadline, "idle worker keeps waking"),
+                Err(mpsc::RecvTimeoutError::Timeout) => break,
+                Err(error) => panic!("worker disconnected early: {error}"),
+            }
+        }
+        drop(worker);
+        assert!(matches!(
+            wakeups.recv_timeout(Duration::from_secs(15)),
+            Err(mpsc::RecvTimeoutError::Disconnected)
+        ));
+    }
+    #[test]
+    fn startup_failure_also_wakes_the_consumer() {
+        let mut document = Document::new("Invalid", 64, 48).unwrap();
+        document.width = 0;
+        let worker = Engine::start(document);
+        notifications(&worker)
+            .recv_timeout(Duration::from_secs(15))
+            .expect("startup failure wake");
+        assert!(worker.latest.lock().unwrap().take().unwrap().is_err());
     }
     #[test]
     fn queued_controls_resolve_against_latest_editor_state() {

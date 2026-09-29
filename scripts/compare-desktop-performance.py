@@ -1,4 +1,6 @@
-"""Compare release QuickGUI and GPUI applications through their actual X11 output.
+"""Compare two release desktop applications through their actual X11 output.
+
+Defaults compare QuickGUI with GPUI; named baselines support before/after runs.
 
 No app tracing or benchmark-only editor code is enabled. Requires Xvfb, xdotool,
 ImageMagick, libX11 and libXtst. Results stay under ignored artifacts/. The visible
@@ -11,6 +13,7 @@ import json
 import math
 import os
 from pathlib import Path
+import re
 import signal
 import statistics
 import subprocess
@@ -256,8 +259,10 @@ def run_one(name, binary, trial, args, env, out):
 
 def main():
     parser = argparse.ArgumentParser(description=__doc__)
-    parser.add_argument('--quickgui', type=Path, default=Path('dist/linux-x64/Picsie'))
-    parser.add_argument('--gpui', type=Path, default=Path('crates/picsie-desktop/target/release/picsie-desktop'))
+    parser.add_argument('--baseline', '--quickgui', type=Path, default=Path('dist/linux-x64/Picsie'))
+    parser.add_argument('--candidate', '--gpui', type=Path, default=Path('crates/picsie-desktop/target/release/picsie-desktop'))
+    parser.add_argument('--baseline-name', default='quickgui')
+    parser.add_argument('--candidate-name', default='gpui')
     parser.add_argument('--tools', type=Path)
     parser.add_argument('--output', type=Path, default=Path('artifacts/performance-comparison'))
     parser.add_argument('--display', default=':94')
@@ -265,6 +270,10 @@ def main():
     args = parser.parse_args()
     if args.trials < 1:
         parser.error('--trials must be at least 1')
+    if args.baseline_name == args.candidate_name or not all(
+        re.fullmatch(r'[a-zA-Z0-9_-]+', name) for name in [args.baseline_name, args.candidate_name]
+    ):
+        parser.error('application names must be distinct and use letters, digits, underscores or hyphens')
     out = args.output.resolve()
     out.mkdir(parents=True, exist_ok=True)
     env = {**os.environ, 'DISPLAY': args.display, 'WINIT_UNIX_BACKEND': 'x11',
@@ -278,7 +287,7 @@ def main():
         env['VK_DRIVER_FILES'] = str(tools/'share/vulkan/icd.d/lvp_icd.json')
     else:
         env['VK_DRIVER_FILES'] = str(next(Path('/usr/share/vulkan/icd.d').glob('lvp_icd*.json')))
-    applications = [('quickgui', args.quickgui.resolve()), ('gpui', args.gpui.resolve())]
+    applications = [(args.baseline_name, args.baseline.resolve()), (args.candidate_name, args.candidate.resolve())]
     results = []
     for trial in range(args.trials+1):
         for name, binary in applications if trial % 2 == 0 else reversed(applications):
@@ -302,6 +311,7 @@ def main():
               'scope': 'External input to changed X11 framebuffer; excludes physical GPU and screen scanout',
               'window': [1280, 860], 'viewport': [936, 734], 'trials': args.trials,
               'warmup': 'One complete discarded run per app; alternating measured launch order; warm caches',
+              'binaries': {name: str(binary) for name, binary in applications},
               'poll_interval_ms': 4, 'summary': summary, 'runs': results}
     (out/'application-results.json').write_text(json.dumps(report, indent=2)+'\n')
     print(json.dumps(summary, indent=2))

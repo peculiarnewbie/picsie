@@ -32,6 +32,8 @@ history, painting, masks, selections, compositing, codecs, and file operations u
 `picsie-core`. Text and slider previews retain one undo entry per editing session
 or drag. File requests run on the engine worker, after queued edits. Errors and
 file completions use a reliable channel independent of coalesced preview frames.
+Worker notifications wake the UI when those results arrive, without a periodic
+mailbox timer.
 
 The frame path is CPU Skia → BGRA memory → GPUI image upload. No JavaScript pixels,
 TIFF preview files, new image algorithms, or toolkit patches were introduced.
@@ -52,7 +54,8 @@ Verified on 2026-09-29:
 
 - Release build and all **55 native workflow checks** pass, including dropdown
   navigation without accidental canvas nudges, save-on-close, and quit cancellation.
-- `npm run check:desktop` and all **7 desktop Rust tests** pass.
+- `npm run check:desktop` and all **9 desktop Rust tests** pass, including worker
+  notification delivery, idle quiescence, shutdown, and startup failure.
 - `npm run check`, `npm test`, and `npm run test:bun` pass, covering the architecture
   guard, Rust engine, generated bridge contracts, and real Node/Bun addon integration.
 - Screenshots were inspected for the shell, mask and text inspectors, color and

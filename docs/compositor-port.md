@@ -142,3 +142,26 @@ GPUI version; the engine still validates opened files. Native menu availability
 follows the platform. The native preview replaces QuickGUI's TIFF publication
 with a BGRA memory upload, while image processing remains CPU Skia. Verification
 and remaining platform work are documented in [the parity record](gpui-ui-parity.md).
+
+## Bounded desktop optimization (2026-09-29)
+
+The desktop worker now signals frame/completion availability instead of polling
+every 8 ms. Pointer commands and completion events keep their existing reliable
+queues; only redundant wake notifications coalesce. This is toolkit scheduling,
+not an editor behavior change.
+
+Profiling identified the local Skia identity color matrix as a substantial cost
+even for neutral appearance settings. After reviewing the pinned `LayerRenderer.swift`,
+`ImageAdjustments.swift`, and appearance/adjustment tests, `render.rs` now omits that
+matrix only for opaque rectangle/gradient fills drawn as pixel-aligned copies,
+with full opacity, normal blending, no effects or masks, and no parent transform.
+Other cases keep the existing matrix: broadly removing it changes Skia's rounding
+on translucent pixels. This is a local backend optimization, not a new upstream
+algorithm or a change to adjustment semantics.
+
+`tests/render_equivalence.rs` adds local exact-pixel comparisons against the prior
+identity-matrix path across alpha ramps, sixteen blend modes, sampling modes,
+blur, transforms, and opaque/translucent fills. These are regression cases for
+the optimization, not additional translated upstream fixtures. The release
+`profile_preview` example times the composite, complete preview, and isolated
+demo layers to make the profiling reproducible.
