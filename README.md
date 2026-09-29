@@ -1,14 +1,23 @@
 # Picsie
 
-An experimental port of [Compositor](https://github.com/robbietilton/Compositor), using a TypeScript/[QuickGUI](https://quickgui.dev/docs/typescript) interface with a Rust engine. This is an initial compositing editor, not a feature-complete port.
+An experimental port of [Compositor](https://github.com/robbietilton/Compositor), with a Rust editor engine and a native GPUI Kit desktop UI. The TypeScript/[QuickGUI](https://quickgui.dev/docs/typescript) interface remains available as the UI parity reference. This is not a feature-complete Compositor port.
 
 **Architecture requirement: TypeScript/JavaScript is for UI and a thin native bridge only. All new engine and image-processing code must be Rust.** The [architecture decision](docs/architecture.md) defines ownership, enforcement, and migration. [AGENTS.md](AGENTS.md) makes it mandatory for future implementation work.
 
 The source of truth for editor behavior is Compositor, pinned to revision `609dbeae2ef68ef4fc82d67e4981a49852eb6e13`. The [source map and remaining deviations](docs/compositor-port.md) distinguish translated routines from the independently written prototype subsystems.
 
-The UI uses QuickGUI's native Solid renderer, windows, menus, dialogs, inputs, and captured pointer events. There is no browser or webview. The Rust engine owns editing state, history, geometry, Skia rendering, image codecs and project files. QuickGUI receives metadata and paths to native uncompressed frame buffers; pixels stay out of JavaScript.
+The reference UI uses QuickGUI's native Solid renderer, windows, menus, dialogs, inputs, and captured pointer events. There is no browser or webview. The Rust engine owns editing state, history, geometry, Skia rendering, image codecs and project files. QuickGUI receives metadata and paths to native uncompressed frame buffers; pixels stay out of JavaScript.
 
-## Run
+## Rust desktop UI
+
+The GPUI Kit desktop now implements the QuickGUI editor's UI and workflows against
+our existing Rust engine. Run `npm run dev:desktop` in a graphical session. The
+QuickGUI version remains available with `npm run dev`.
+
+See [desktop setup](crates/picsie-desktop/README.md) and the
+[UI parity record](docs/gpui-ui-parity.md) for controls, validation, and platform limits.
+
+## Run the QuickGUI reference
 
 QuickGUI currently recommends **macOS 14+, Bun 1.4+, and Xcode Command Line Tools**. Versions are pinned to QuickGUI 0.1.6, Solid 2.0.0-rc.8, and TypeScript 7.0.2; the Solid prerelease version matters.
 
@@ -39,15 +48,15 @@ Dev/build/test commands enforce the architecture policy. Production TypeScript i
 - PNG, JPEG, and WebP import, including dropping multiple files onto the canvas.
 - Layers with range and individual multi-selection, drag reordering, nested folders with collapse and inherited visibility/opacity, subtree duplication/deletion, visibility, locking, renaming, opacity, and 16 blend modes.
 - Resize using all eight edge/corner handles; drag the round handle to rotate. Shift preserves existing proportions during resizing and snaps rotation to 15°. The opposite edge/corner stays anchored, including on rotated or flipped layers. Alt/Option resizes from the center; crossing an anchor flips the content, following Compositor's transform algorithm.
-- Brush and eraser strokes on individual layers, including transformed layers. Brush size is in layer-local pixels. A stroke or drag is one undo step.
-- Non-destructive 8-bit grayscale layer masks with Hide/Reveal painting, flow control, enable/disable, reveal/hide all, linking, independent placement, and removal. Masks survive project saves and affect PNG/JPEG export.
+- Brush and eraser strokes on individual layers, including transformed layers. Brush size is in document pixels. Hardness, smoothing, curved interpolation, Shift-click lines, and whole-stroke opacity follow Compositor's software brush. A stroke or drag is one undo step.
+- Non-destructive 8-bit grayscale layer masks with Hide/Reveal painting, opacity control, enable/disable, reveal/hide all, linking, independent placement, and removal. Folder masks multiply every descendant's coverage. Live clipping links can use a lower sibling or another layer's alpha; soft edges retain the base alpha. Masks and links survive project saves and affect PNG/JPEG export.
 - Editable rectangles, ellipses, diagonal two-color gradients, and multiline text with three system font families.
 - Layer brightness, saturation, and Gaussian blur.
 - Pan, zoom, fit-to-window, and merged-color sampling.
 - Canvas Size with nine anchors, pixels/percent, relative dimensions, aspect-ratio lock, and transparent or colored extensions. Artwork keeps its original scale; content outside a smaller canvas remains recoverable.
-- Crop with eight handles, ratio presets, edge snapping, Apply/Cancel, and retained source pixels. Rectangular/elliptical marquee and freehand lasso support New/Add/Subtract selection, Select → Modify → Feather to soften selection edges, and clearing selected layer pixels.
+- Crop with eight handles, ratio presets, edge snapping, Apply/Cancel, and retained source pixels. Rectangular/elliptical marquee and freehand lasso support New/Add/Subtract selection, Select → Modify → Feather to soften selection edges, Fill, Invert, Expand, Contract, and clearing selected layer pixels. Completed selections and selection operations are undoable; Escape cancels an unfinished outline before deselecting.
 - Compositor-style undo/redo with selection restoration, nested transactions, saved revisions, and up to 100 entries within a 256 MB retained-asset budget. Native Save/Cancel/Discard prompts protect dirty windows and application quit.
-- Validated, self-contained `.picsie` JSON projects, with embedded PNG assets. Existing `.electropic` v1 projects also open. The supported raster/folder/mask subset of Compositor `.comp` packages opens and saves as directory packages with a manifest and PNG assets.
+- Validated, self-contained `.picsie` JSON projects, with embedded PNG assets. Existing `.electropic` v1 projects also open. The supported raster/folder/mask/clipping subset of Compositor `.comp` packages opens and saves as directory packages with a manifest and PNG assets.
 - Full-resolution PNG export preserving transparency, and JPEG export with a white background through **File → Export JPEG** on macOS or Ctrl+Alt+Shift+S on Linux.
 
 ## Basic workflow
@@ -62,7 +71,7 @@ For a visual walkthrough, see the [five-flow UX tour](docs/ux-tour.md) with step
 6. Use **Add mask** in the inspector, then **Hide** or **Reveal** in the toolbar. **X** swaps modes; Eraser reverses the current mode. **Layer pixels** returns to content painting. Removing or disabling a mask restores the original content.
    **Linked** in the mask panel controls whether the mask follows layer transforms. Select the mask and use Move to place an unlinked mask independently.
 7. Click the dimensions at the bottom left, or press **Ctrl/⌘+Alt+C**, to open **Canvas Size**. Choose the size and anchor; a colored extension is added as a separate bottom layer.
-8. Use **Folder**, **Group**, and **Into/Out of folder** in the layer panel to organize layers. Crop with **C**, drag a handle, then Apply. Select pixels with **M** or **L** and use **Clear pixels** or Delete.
+8. Use **Folder**, **Group**, and **Into/Out of folder** in the layer panel to organize layers. Crop with **C**, drag a handle, then Apply. Select pixels with **M** or **L**; the **Pixel selection** inspector offers Fill, Invert, Expand, Contract, Feather, and Clear. The **Clipping** inspector creates/releases a link or chooses its alpha source. Delete clears a selection; without one it removes the targeted mask or layer. Deleting a live source bakes its coverage into dependent layers and is undoable.
 9. Save an editable project, save a `.comp` package, or export the flattened result.
 
 Tool shortcuts work while the canvas has focus. Standard text shortcuts remain available in inputs.
@@ -74,6 +83,9 @@ Tool shortcuts work while the canvas has focus. Standard text shortcuts remain a
 | H / I               | Hand / Sample merged color         |
 | C / M / L           | Crop / Marquee / Lasso             |
 | [ / ]               | Brush size                         |
+| Shift-click with Brush | Line from previous stroke endpoint |
+| Ctrl/⌘+Shift+I / Ctrl/⌘+D | Invert / deselect pixels |
+| Ctrl/⌘+Alt+G | Create/release clipping mask |
 | Arrow / Shift+Arrow | Nudge 1 / 10 pixels                |
 | Delete / Escape     | Clear selected pixels or delete layer / Cancel gesture or selection |
 | ⌘N / ⌘O / ⇧⌘O       | New / Open project / Import images |
@@ -90,9 +102,9 @@ Use Ctrl in place of ⌘ on Linux, with the canvas focused. QuickGUI 0.1.6 does 
 
 This implementation follows Compositor's bottom-to-top layer model and compositing workflow. It reads and writes the supported `.comp` package subset described in the [source map](docs/compositor-port.md); it does not read PSD files.
 
-Still to port: folder masks and clipping relationships, polygonal lasso and wand/object selections, selection move/transform and undo history, healing and cloning, content-aware tools, perspective distortion, guides/rulers, adjustment layers/curves/levels, layer effects, richer text layout, tabs, and autosave/recovery. `.comp` import explicitly rejects those richer upstream records; `.comp` export rasterizes Picsie's live text, shapes, and gradients. Layer grips, buttons, and shortcuts reorder the selection. Resize and rotation operate on one layer at a time. Drag reordering does not yet auto-scroll the layer list. Canvas picking uses layer bounds, not per-pixel alpha; middle-click (or Ctrl/Cmd-click) cycles the layers under the pointer. Text word-wraps at its box width minus 12px padding and clips to its box; point text, box handles, and tracking/leading controls are not ported.
+Still to port: polygonal lasso and wand/object selections, selection move/transform, healing and cloning, content-aware tools, perspective distortion, guides/rulers, adjustment layers/curves/levels, layer effects, richer text layout, tabs, and autosave/recovery. `.comp` import explicitly rejects those richer upstream records; `.comp` export rasterizes Picsie's live text, shapes, and gradients. Layer grips, buttons, and shortcuts reorder the selection. Resize and rotation operate on one layer at a time. Drag reordering does not yet auto-scroll the layer list. Canvas picking uses layer bounds, not per-pixel alpha; middle-click (or Ctrl/Cmd-click) cycles the layers under the pointer. Text word-wraps at its box width minus 12px padding and clips to its box; point text, box handles, and tracking/leading controls are not ported.
 
-Canvas Size currently offers pixels and percent; physical-unit controls are not yet exposed. Retained history storage counts encoded PNG and grayscale mask assets and estimates vector-stroke payloads, rather than measuring all native allocations.
+Canvas Size currently offers pixels and percent; physical-unit controls are not yet exposed. The history budget counts encoded PNG assets, grayscale masks, unique retained pixel-selection buffers, and estimated vector-stroke storage. It does not measure all native allocations.
 
 The editor supports up to 100 layers, 8192 pixels per dimension, 24 megapixels per surface, and 96 MB per project/import file. These bounds keep this prototype usable; it is not intended for very large production files. Rust worker tasks render through Skia. QuickGUI displays uncompressed native TIFF resources; this still involves native copies and is not direct GPU texture sharing. Large images and dense painting can therefore lag. Pixel buffers are cached within a 96 MB budget, preview requests are coalesced, and idle windows do not continually render. Performance work should move to tiled rendering and direct texture updates before extending those limits.
 

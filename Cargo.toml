@@ -1,5 +1,6 @@
 [workspace]
 members = ["crates/picsie-core", "crates/picsie-native"]
+exclude = ["crates/picsie-desktop"]
 resolver = "2"
 
 [workspace.package]
@@ -9,4 +10,3 @@ license = "MIT"
 
 [profile.release]
 lto = "thin"
-

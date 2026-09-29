@@ -5,7 +5,8 @@ Reference: https://github.com/robbietilton/Compositor
 Pinned source revision: 609dbeae2ef68ef4fc82d67e4981a49852eb6e13
 
 Adapted transform routines, canvas resizing, document history, layer insertion/duplication
-behavior, and selected regression fixtures are identified in docs/compositor-port.md.
+behavior, selection operations, software brush stroke processing, folder masks, live clipping
+relationships, color-picker HSB/hex form logic, and selected regression fixtures are identified in docs/compositor-port.md.
 
 MIT License
 

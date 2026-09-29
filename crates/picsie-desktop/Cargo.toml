@@ -1,0 +1,30 @@
+[package]
+name = "picsie-desktop"
+version = "0.1.0"
+edition = "2024"
+publish = false
+license = "MIT"
+
+# Separate toolkit dependency graph; the QuickGUI workspace and Node addon remain available.
+[workspace]
+
+[dependencies]
+anyhow = "1"
+gpui-kit = "=0.7.0"
+image = { version = "0.25", default-features = false, features = ["tiff"] }
+picsie-core = { path = "../picsie-core" }
+serde_json = "1"
+skia-safe = { version = "0.153.3", features = ["textlayout"] }
+serde = { version = "1", features = ["derive"] }
+
+[profile.dev]
+opt-level = 1
+debug = 0
+incremental = false
+
+[profile.release]
+debug = 0
+lto = false
+
+[dev-dependencies]
+tempfile = "3"

@@ -1,6 +1,15 @@
-# UI in TypeScript, engine in Rust
+# Rust engine, native desktop UIs
 
 Accepted user requirement, 2026-09-23. Implemented for the existing editor features. This does not imply full Compositor feature parity.
+
+On 2026-09-29, after the successful experiment, the user authorized building a
+**Rust UI / GPUI Kit application with parity against the QuickGUI UI**. It lives in
+`crates/picsie-desktop`, calls the existing Rust engine directly, and has its own
+Cargo workspace and pinned toolkit lockfile. The desktop UI owns only presentation,
+forms, native dialogs, and input mapping; its engine worker owns editor state and
+all image/file work. The TypeScript rules below continue to govern the retained
+QuickGUI application. See [the experiment report](gpui-kit-experiment.md) and
+[the parity record](gpui-ui-parity.md).
 
 ## Ownership
 
@@ -28,7 +37,7 @@ flowchart LR
 
 `crates/picsie-core` has no dependency on JavaScript or QuickGUI. `crates/picsie-native` owns one engine per window and exposes Node-API through napi-rs. The addon is tested in Node and Bun. A static CommonJS loader lets Bun embed it in the packaged executable; no working-directory dependency or external JS engine fallback exists.
 
-Rust model/command types generate `src/engine/types.ts` through `ts-rs`. napi-rs generates `native-api.d.ts`, including async return contracts declared on the Rust exports. Regenerate with `npm run build:native`; do not hand-edit these files. Pointer moves are batched for up to 8 ms; down/up/cancel and subsequent commands flush queued samples. Each gesture commits one Rust history transaction.
+Rust model/command types generate `src/engine/types.ts` through `ts-rs`. napi-rs generates `native-api.d.ts`, including async return contracts declared on the Rust exports. Regenerate with `npm run build:native`; do not hand-edit these files. Pointer moves are batched for up to 8 ms; down/up/cancel and subsequent commands flush queued samples. Each completed editing gesture commits one Rust history transaction. History captures pixel-selection coverage and feather alongside document state; immutable coverage buffers are shared and counted once against the retained-history budget. Pixel selections remain session-only and are not serialized in the supported project formats.
 
 Rendering, image import, canvas resize, file parsing, saves, exports and color sampling run in Node-API worker tasks. A save carries its captured revision, so later edits remain dirty. Imports reject a changed document revision instead of applying stale decoded results. Closing a window releases its native owner, rejects outstanding results, and frees surfaces and frame resources after the last worker finishes. No image bytes or per-pixel calls cross JavaScript.
 
@@ -54,7 +63,7 @@ crates/picsie-core/tests/  Rust behavior and pinned Compositor fixtures
 tests/                        Actual-addon integration and old project fixtures
 ```
 
-`src/core/` has been removed. There are **zero legacy TypeScript engine exemptions**. New projects use `.picsie` files and the `picsie` format marker. Existing `.electropic` v1 projects remain readable and writable, retaining their original marker when saved. Their vector stroke masks and embedded PNG assets are preserved internally in Rust for compatibility. New masks use Rust-owned grayscale assets, and the Rust package adapter reads/writes the supported `.comp` raster/folder/mask subset. Upstream brush raster semantics and richer `.comp` features remain fidelity work; see [the source map](compositor-port.md).
+`src/core/` has been removed. There are **zero legacy TypeScript engine exemptions**. New projects use `.picsie` files and the `picsie` format marker. Existing `.electropic` v1 projects remain readable and writable, retaining their original marker when saved. Their vector stroke masks and embedded PNG assets are preserved internally in Rust for compatibility. New masks use Rust-owned grayscale assets, and the Rust package adapter reads/writes the supported `.comp` raster/folder/mask subset. New brush strokes follow the upstream software coverage path and retain immutable native images; they do not encode PNGs during painting or preview. Folder raster masks and live mask links round-trip through both formats. Tip rasterization, incremental source tile publishing, GPU brush coverage, and richer `.comp` features remain fidelity work; see [the source map](compositor-port.md).
 
 ## Enforcement
 

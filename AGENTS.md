@@ -1,10 +1,14 @@
 # Compositor port
 
-This project ports Robbie Tilton's Compositor to a TypeScript/QuickGUI UI and a Rust engine. The user explicitly wants as little independent invention as possible.
+This project ports Robbie Tilton's Compositor to a Rust engine and GPUI Kit UI, retaining the TypeScript/QuickGUI UI as the parity reference. The user explicitly wants as little independent invention as possible.
 
 ## Required architecture
 
-The user has explicitly chosen **TypeScript/JavaScript for UI only; Rust for the editor engine and image processing**. This is a requirement, not an optimization to defer until profiling. Read [docs/architecture.md](docs/architecture.md) before implementing features.
+The user has authorized migrating the UI to **Rust / GPUI Kit**, with UI and workflow parity
+against the existing QuickGUI application (2026-09-29). The new application is in
+`crates/picsie-desktop`; the QuickGUI application remains the parity reference. Rust owns
+the editor engine and image processing in both applications. Read [docs/architecture.md](docs/architecture.md)
+before implementing features. The TypeScript boundary below still applies to the legacy UI.
 
 - TypeScript owns views, controls, dialogs, shortcuts, transient form state, presentation, and the thin native bridge. Rust owns authoritative document/layer/mask state, editing commands, transforms, history, pixel buffers, brushes, filters, compositing, codecs, project persistence, and exports.
 - Put new engine implementations in Rust under `crates/`. Do not implement an engine feature in TypeScript first, add a JavaScript fallback, or move engine algorithms into UI/bridge helpers. Calling a native drawing library from a TypeScript engine does not satisfy this boundary.
@@ -15,10 +19,11 @@ The user has explicitly chosen **TypeScript/JavaScript for UI only; Rust for the
 
 ## Source fidelity and verification
 
+- GIMP is a secondary **functionality reference only**, explicitly never a UX reference. Use its engine code and tests to investigate capabilities and edge cases; keep Compositor authoritative for ported behavior, defaults, and workflows. See [docs/gimp-reference.md](docs/gimp-reference.md) for the external checkout, pinned revision, and source entry points.
 - Read the corresponding upstream implementation and tests before changing editor behavior. Translate the existing algorithm, data semantics, defaults, and workflows when feasible; use new code primarily to bridge QuickGUI, TypeScript, and the rendering backend.
 - Use the pinned revision and source map in [docs/compositor-port.md](docs/compositor-port.md). If the reference checkout is missing, obtain that revision of https://github.com/robbietilton/Compositor outside this repository. Do not silently switch reference revisions.
 - Port applicable upstream test fixtures alongside the implementation. Distinguish translated upstream fixtures from additional local tests. Passing local tests alone does not establish complete upstream parity.
 - Keep source references and the MIT attribution when translating code. List necessary adaptations and remaining deviations in the source map. Do not describe independently written behavior as a direct port.
-- Preserve explicit user choices, including TypeScript/QuickGUI for the UI, Rust for the engine, and Shift for proportional resizing. Explain how these map to upstream behavior instead of silently overriding them.
+- Preserve explicit user choices, including GPUI Kit for the new UI, the existing QuickGUI UI as the parity reference, Rust for the engine, and Shift for proportional resizing. Explain how these map to upstream behavior instead of silently overriding them.
 - Before extending a custom subsystem, check whether the corresponding upstream subsystem should be ported instead. The custom project format, mask stroke storage, and brush engine remain prototype deviations, not requirements of the target stack.
 - Verify native interaction changes in the running app and inspect actual screenshots, especially alignment. Keep temporary test files under ignored `artifacts/`.

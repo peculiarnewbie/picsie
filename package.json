@@ -15,7 +15,11 @@
     "check:architecture": "node scripts/check-architecture.mjs",
     "test:architecture": "node --test scripts/check-architecture.test.mjs",
     "build:native": "npm run check:architecture && napi build --manifest-path crates/picsie-native/Cargo.toml --package picsie-native --output-dir native --dts ../src/engine/native-api.d.ts --release && cargo run --quiet -p picsie-core --bin export_types && oxfmt --write src/engine/types.ts src/engine/native-api.d.ts",
-    "test:bun": "npm run check:architecture && bun test tests/native.test.ts"
+    "test:bun": "npm run check:architecture && bun test tests/native.test.ts",
+    "dev:desktop": "bash crates/picsie-desktop/run.sh",
+    "build:desktop": "npm run check:architecture && cargo build --locked --release --manifest-path crates/picsie-desktop/Cargo.toml",
+    "check:desktop": "npm run check:architecture && cargo fmt --manifest-path crates/picsie-desktop/Cargo.toml --check && cargo check --locked --manifest-path crates/picsie-desktop/Cargo.toml",
+    "test:desktop": "npm run check:architecture && cargo test --locked --manifest-path crates/picsie-desktop/Cargo.toml"
   },
   "dependencies": {
     "@quickgui/native": "0.1.6",

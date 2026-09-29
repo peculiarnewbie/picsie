@@ -10,9 +10,10 @@ assumed.
 ## What ships today, and what it costs
 
 `docs/architecture.md` documents the path: Skia renders in Rust (`crates/picsie-core`), reads
-pixels back, writes an uncompressed TIFF (~2.7 MB at 936×734) to a private directory, and the UI
-sets the `Image` node's `source` to that path. Roughly: one GPU readback, one encode, one file
-write, one file read, one decode, one texture upload — per frame. Files are uniquely named
+pixels from its CPU raster surface, writes an uncompressed TIFF (~2.7 MB at 936×734) to a
+private directory, and the UI sets the `Image` node's `source` to that path. Roughly: one CPU
+pixel extraction, one encode, one file write, one file read, one decode, one texture upload —
+per frame. Files are uniquely named
 because the core caches decoded images by path; up to eight are retained per window.
 
 The visible failure of this path was canvas flicker: QuickGUI decodes `source` paths
@@ -24,6 +25,10 @@ nodes: the last decoded frame shows through until the next finishes loading. Sam
 afterward: stable 61.15–61.18. That fix is presentation-only; the copy cost above remains.
 
 ## Hard constraints (unchanged)
+
+This section records the production stack decision at the date above. The subsequent
+user-authorized [GPUI Kit experiment](gpui-kit-experiment.md) evaluates a Rust UI in a
+separate application; it does not change the shipping preview path.
 
 - Pixels stay out of JavaScript: no per-pixel JS calls, no JSON/base64 image transport, no JS
   renderer. Rust owns buffers and lifetimes; JS sees metadata and opaque resource paths.
