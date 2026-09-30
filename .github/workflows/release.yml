@@ -17,11 +17,8 @@ jobs:
       fail-fast: false
       matrix:
         include:
-          # Namespace runner profile; the Namespace GitHub App must be installed on this repository.
           - target: linux-x64
-            runner: namespace-profile-peculiarnewbie
-          # Namespace profiles are bound to one OS. Create a Windows profile in the Namespace
-          # dashboard and swap this label to use it here too.
+            runner: ubuntu-latest
           - target: windows-x64
             runner: windows-latest
     runs-on: ${{ matrix.runner }}

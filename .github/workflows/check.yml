@@ -4,8 +4,7 @@ permissions:
   contents: read
 jobs:
   engine-and-reference:
-    # Namespace runner profile; the Namespace GitHub App must be installed on this repository.
-    runs-on: namespace-profile-peculiarnewbie
+    runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v7
       - uses: actions/setup-node@v7
@@ -34,7 +33,7 @@ jobs:
       matrix:
         include:
           - target: linux-x64
-            runner: namespace-profile-peculiarnewbie
+            runner: ubuntu-latest
           - target: windows-x64
             runner: windows-latest
     runs-on: ${{ matrix.runner }}
