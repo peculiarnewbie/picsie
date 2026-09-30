@@ -77,6 +77,6 @@ lines.push('## Complete pinned source and test index', '',
 for (const entry of registry.sourceIndex) lines.push(`| ${sourceLink(entry.path)} | ${entry.symbols.length} | ${entry.fixtures.map((x) => `\`${x}\``).join(', ') || '—'} |`);
 const output = `${lines.join('\n')}\n`;
 const destination = resolve(root, 'docs/compositor-registry.md');
-if (process.argv.includes('--check')) assert(await readFile(destination, 'utf8') === output, 'Registry Markdown is stale. Run npm run registry:update.');
+if (process.argv.includes('--check')) assert((await readFile(destination, 'utf8')).replace(/\r\n/g, '\n') === output, 'Registry Markdown is stale. Run npm run registry:update.');
 else await writeFile(destination, output);
 console.log(`Compositor registry: ${all.length} behavior entries validated${process.argv.includes('--check') ? '' : ' and documentation updated'}.`);
