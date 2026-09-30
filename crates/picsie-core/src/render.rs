@@ -8,10 +8,37 @@ use anyhow::{Result, anyhow, ensure};
 use base64::{Engine as _, engine::general_purpose::STANDARD};
 use skia_safe::{self as sk, BlendMode, Canvas, Color, Image, Paint, Rect, Surface};
 use std::{collections::VecDeque, sync::Arc};
+mod composite;
 pub fn surface(w: u32, h: u32) -> Result<Surface> {
     dimensions(w, h)?;
     sk::surfaces::raster_n32_premul((w as i32, h as i32))
         .ok_or_else(|| anyhow!("Cannot allocate image surface"))
+}
+/// Straight-alpha BGRA for native image presentation. Opaque native BGRA
+/// already has the required representation; other surfaces use Skia conversion.
+pub fn bgra_pixels(surface: &mut Surface) -> Result<Vec<u8>> {
+    if let Some(pixels) = surface.peek_pixels()
+        && pixels.color_type() == sk::ColorType::BGRA8888
+        && pixels.info().color_space().is_none()
+        && pixels.row_bytes() == pixels.width() as usize * 4
+        && pixels.compute_is_opaque()
+        && let Some(bytes) = pixels.bytes()
+    {
+        return Ok(bytes.to_vec());
+    }
+    let (width, height) = (surface.width(), surface.height());
+    let mut pixels = vec![0; width as usize * height as usize * 4];
+    let info = sk::ImageInfo::new(
+        (width, height),
+        sk::ColorType::BGRA8888,
+        sk::AlphaType::Unpremul,
+        None,
+    );
+    ensure!(
+        surface.read_pixels(&info, &mut pixels, width as usize * 4, (0, 0)),
+        "Cannot read native preview pixels"
+    );
+    Ok(pixels)
 }
 pub fn color(value: &str) -> Color {
     let rgb = u32::from_str_radix(&value[1..7], 16).expect("validated hex");
@@ -213,6 +240,8 @@ fn blend(b: Blend) -> BlendMode {
 #[derive(Default)]
 pub struct Renderer {
     cache: VecDeque<(Layer, Image)>,
+    composite: Option<composite::Composite>,
+    background: Option<composite::Background>,
 }
 impl Renderer {
     #[allow(deprecated)]
@@ -521,6 +550,10 @@ impl Renderer {
     }
     pub fn render(&mut self, doc: &Document) -> Result<Surface> {
         let mut s = surface(doc.width, doc.height)?;
+        self.draw_document(doc, s.canvas())?;
+        Ok(s)
+    }
+    fn draw_document(&mut self, doc: &Document, c: &Canvas) -> Result<()> {
         self.cache
             .retain(|(l, _)| doc.layers.iter().any(|v| v.id == l.id));
         let layers: Vec<_> = doc
@@ -531,7 +564,6 @@ impl Renderer {
         let mut index = 0;
         while index < layers.len() {
             let layer = layers[index];
-            let c = s.canvas();
             c.save();
             self.clip_folders(doc, layer, c)?;
             let mut end = index + 1;
@@ -595,7 +627,7 @@ impl Renderer {
             c.restore();
             index = end;
         }
-        Ok(s)
+        Ok(())
     }
     /// Bake only the dependency into target pixels; preserve its raster mask and appearance.
     pub fn bake_live_mask(&mut self, doc: &Document, layer: &Layer) -> Result<Layer> {
@@ -685,39 +717,15 @@ impl Renderer {
             v.height.round().max(1.) as u32,
         )?;
         let c = s.canvas();
-        c.clear(color("#15171c"));
+        // The checkerboard depends on viewport geometry, not the edited pixels.
+        let background = self.preview_background(doc, v)?;
+        c.draw_image(&background, (0., 0.), None);
         let o = geometry::canvas_origin(doc, v);
         c.save();
         c.translate(point(o));
         c.scale((v.zoom as f32, v.zoom as f32));
         c.clip_rect(rect(doc.width, doc.height), None, false);
-        c.draw_rect(rect(doc.width, doc.height), &paint("#e2e3e6"));
-        let tile = 12. / v.zoom;
-        let sx = 0f64.max((-o.x / v.zoom / tile).floor()) as i32;
-        let sy = 0f64.max((-o.y / v.zoom / tile).floor()) as i32;
-        let ex = (doc.width as f64 / tile)
-            .ceil()
-            .min(((v.width - o.x) / v.zoom / tile).ceil()) as i32;
-        let ey = (doc.height as f64 / tile)
-            .ceil()
-            .min(((v.height - o.y) / v.zoom / tile).ceil()) as i32;
-        let p = paint("#bec1c7");
-        for y in sy..ey {
-            for x in sx..ex {
-                if (x + y) % 2 == 0 {
-                    c.draw_rect(
-                        Rect::from_xywh(
-                            (x as f64 * tile) as f32,
-                            (y as f64 * tile) as f32,
-                            tile as f32,
-                            tile as f32,
-                        ),
-                        &p,
-                    );
-                }
-            }
-        }
-        let image = self.render(doc)?.image_snapshot();
+        let image = self.preview_composite(doc)?;
         c.draw_image_with_sampling_options(
             &image,
             (0., 0.),

@@ -8,7 +8,10 @@ Accepted reference scope, 2026-09-29: use GIMP to investigate functionality and 
 - Release tag: `GIMP_3_2_6`
 - Commit: `e101dd19b165f927d3ba0a74658a71537c5661b9`
 - Local reference: `/home/bolt/git/reference/gimp`, outside the Picsie repository.
-- Source inspection only: GIMP has not been built or run, and its tests have not been executed. It is not a Picsie dependency. Asset submodules are not initialized.
+- The reference checkout has not been built and its tests have not been executed.
+  Packaged GIMP 3.2.6 was separately extracted and run for the
+  [interaction measurements](gimp-performance.md). It is not a Picsie dependency.
+  Asset submodules are not initialized.
 
 To recreate the reference in an unused directory:
 
@@ -33,6 +36,11 @@ Paths below are relative to the pinned GIMP checkout. These are investigation st
 | Blend modes and image operations | `app/operations/`, `app/gegl/` |
 | Image import/export | `plug-ins/common/file-png.c`, `plug-ins/file-jpeg/`, `plug-ins/file-webp/` |
 | Core test entry points | `app/tests/` |
+| Interactive projection and damage scheduling | `app/core/gimpprojection.c`, `app/core/gimpchunkiterator.c`, `app/gegl/gimptilehandlervalidate.c` |
+| Retained display rendering | `app/display/gimpdisplayshell-render.c`, `app/display/gimpdisplayshell-draw.c`, `app/display/gimpdisplay.c` |
+
+See the [layer-move rendering analysis](gimp-rendering-analysis.md) for the pinned
+source path, its differences from Picsie, and an incremental optimization sequence.
 
 GIMP delegates substantial image processing to GEGL and pixel format/color conversion to babl. If an investigation reaches those calls, consult and pin the relevant dependency source separately; the GIMP checkout alone does not contain every algorithm. See the [GIMP API reference index](https://developer.gimp.org/resource/api/).
 

@@ -18,6 +18,11 @@ serde_json = "1"
 skia-safe = { version = "0.153.3", features = ["textlayout"] }
 serde = { version = "1", features = ["derive"] }
 
+# Pinned 0.3.7 sources with a narrow X11 frame-wakeup adaptation.
+# See vendor/gpui-pre-linux/PICSIE.md; other platform behavior is unchanged.
+[patch.crates-io]
+gpui-pre-linux = { path = "vendor/gpui-pre-linux" }
+
 [profile.dev]
 opt-level = 1
 debug = 0

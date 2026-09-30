@@ -11,6 +11,14 @@ all image/file work. The TypeScript rules below continue to govern the retained
 QuickGUI application. See [the experiment report](gpui-kit-experiment.md) and
 [the parity record](gpui-ui-parity.md).
 
+The desktop's pinned GPUI Linux backend includes a local implementation of X11
+frame waking, so a completed preview can request the normal toolkit draw without
+waiting for its periodic monitor timer. The timer and GPU presentation settings
+retain their original values. The small patch and Apache-2.0 source attribution
+are recorded in [the backend source record](../crates/picsie-desktop/vendor/gpui-pre-linux/PICSIE.md).
+This changes presentation scheduling; editor semantics and the Rust engine
+boundary remain the same.
+
 ## Ownership
 
 | Responsibility                                                                  | Implementation         |

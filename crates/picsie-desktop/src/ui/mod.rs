@@ -111,6 +111,9 @@ impl Desktop {
         window: &mut Window,
         cx: &mut Context<Self>,
     ) -> Self {
+        if std::env::var_os("PICSIE_GPU_DIAGNOSTICS").is_some() {
+            eprintln!("Picsie GPU: {:?}", window.gpu_specs());
+        }
         let engine = Engine::start(document);
         let focus = cx.focus_handle();
         let modal_focus = cx.focus_handle();
@@ -262,6 +265,9 @@ impl Desktop {
                 };
                 self.send(command);
                 window.focus(&self.focus, cx);
+                // The worker's completion wake publishes the new state and image.
+                // Invalidating now paints the old frame while that work is in flight.
+                return;
             }
             Action::File(action) => self.file_action(action, window, cx),
             Action::New => self.open_new(window, cx),
@@ -327,7 +333,7 @@ impl Desktop {
             }
             cx.notify();
         }
-        let result = self.engine.latest.lock().unwrap().take();
+        let result = self.engine.take_frame();
         if let Some(result) = result {
             match result {
                 Err(error) => {

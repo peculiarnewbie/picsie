@@ -31,8 +31,11 @@ fn open_editor(document: Document, path: Option<PathBuf>, cx: &mut App) -> anyho
 }
 fn main() -> anyhow::Result<()> {
     let arguments = std::env::args().skip(1).collect::<Vec<_>>();
-    if arguments.iter().any(|arg| arg == "--measure") {
-        return measure::run();
+    if arguments
+        .iter()
+        .any(|arg| arg == "--measure" || arg == "--measure-moving")
+    {
+        return measure::run(arguments.iter().any(|arg| arg == "--measure-moving"));
     }
     let path = arguments
         .iter()

@@ -3,7 +3,9 @@
 Rust / GPUI Kit UI matching the existing QuickGUI editor. GPUI Kit is pinned to
 **0.7.0**, with its matching GPUI 0.3.7 snapshot in this crate's Cargo.lock. The
 crate has its own workspace so toolkit dependencies do not affect the Node addon.
-No toolkit patches are required.
+The pinned Linux backend has a small local X11 frame-wakeup adaptation; see
+[its source record and patch](vendor/gpui-pre-linux/PICSIE.md). The monitor timer,
+presentation mode and queue depth keep their original settings.
 
 From the repository root, in a graphical desktop session:
 
@@ -22,6 +24,8 @@ See the [performance comparison](../../docs/desktop-performance.md) for measured
 startup, input latency, memory, and frame transport against QuickGUI.
 The [optimization follow-up](../../docs/desktop-optimization.md) measures the
 worker notification change and the renderer's opaque-fill fast path.
+The [GIMP comparison experiments](../../docs/desktop-gimp-experiments.md) record
+retained rendering, hardware-adapter controls and the X11 wakeup measurements.
 
 ## Ownership
 
@@ -67,6 +71,7 @@ npm run build:desktop
 npm run check:desktop
 npm run test:desktop
 python3 crates/picsie-desktop/verify.py --software
+python3 crates/picsie-desktop/verify-frame-wakeup.py
 ```
 
 The verification script uses a real application, Xvfb, xdotool, ImageMagick, and a
@@ -74,6 +79,8 @@ private D-Bus session with the real GTK portal file picker. It writes documents,
 engine traces, reports, and screenshots under ignored `artifacts/gpui-parity/`.
 It cleans up only its own processes. Use `--display` for an unused X display,
 `--binary` for another build, and `--tools` for an extracted tools directory.
+The frame-wakeup script additionally checks hidden/inactive CPU use and verifies
+that pending edits and input recover after remapping/refocusing a real window.
 
 `PICSIE_TRACE_DIR=/absolute/path` enables atomic per-window JSON snapshots and
 control geometry for inspection. Production runs do not write these traces.
@@ -82,5 +89,6 @@ screen presentation. The original isolated transport measurement is retained as
 `bash crates/picsie-desktop/run.sh --measure`; see the
 [experiment report](../../docs/gpui-kit-experiment.md) for its limits.
 
-Linux X11 has been exercised here using software Vulkan. macOS, Windows, Wayland,
-physical GPUs, HiDPI behavior, and desktop packaging require platform validation.
+Linux X11 has been exercised using software Vulkan and verified AMD hardware
+rendering under Xvfb. Physical display presentation, macOS, Windows, Wayland,
+HiDPI behavior, and desktop packaging require platform validation.

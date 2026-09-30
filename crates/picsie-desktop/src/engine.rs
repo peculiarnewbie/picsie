@@ -70,11 +70,15 @@ struct Request {
     sequence: u64,
     queued_at: Instant,
 }
+enum Message {
+    Request(Request),
+    FrameConsumed,
+}
 /// Frame delivery is bounded; completion/error delivery is reliable and ordered.
 pub struct Engine {
-    sender: mpsc::Sender<Request>,
+    sender: mpsc::Sender<Message>,
     pub events: mpsc::Receiver<Completion>,
-    pub latest: Arc<Mutex<Option<Result<Frame, String>>>>,
+    latest: Arc<Mutex<Option<Result<Frame, String>>>>,
     /// A single pending wake covers all unread frames and reliable completions.
     pub wakeups: async_channel::Receiver<()>,
     sequence: u64,
@@ -103,19 +107,7 @@ pub fn preview(editor: &Editor, renderer: &mut Renderer) -> Result<skia_safe::Su
 }
 /// GPUI RenderImage takes straight-alpha BGRA bytes on all supported backends.
 pub fn bgra(surface: &mut skia_safe::Surface) -> Result<Vec<u8>> {
-    let (width, height) = (surface.width(), surface.height());
-    let mut pixels = vec![0; width as usize * height as usize * 4];
-    let info = skia_safe::ImageInfo::new(
-        (width, height),
-        skia_safe::ColorType::BGRA8888,
-        skia_safe::AlphaType::Unpremul,
-        None,
-    );
-    ensure!(
-        surface.read_pixels(&info, &mut pixels, width as usize * 4, (0, 0)),
-        "Cannot read native preview pixels"
-    );
-    Ok(pixels)
+    picsie_core::render::bgra_pixels(surface)
 }
 fn operate(
     editor: &mut Editor,
@@ -245,7 +237,7 @@ fn operate(
 }
 impl Engine {
     pub fn start(document: Document) -> Self {
-        let (sender, receiver) = mpsc::channel::<Request>();
+        let (sender, receiver) = mpsc::channel::<Message>();
         let (events_tx, events) = mpsc::channel();
         let (wake, wakeups) = async_channel::bounded(1);
         let latest = Arc::new(Mutex::new(None));
@@ -262,13 +254,18 @@ impl Engine {
                     }
                 };
                 let mut renderer = Renderer::default();
+                let mut sequence = 0;
+                let mut pending_since = None;
+                let mut command_ms = 0.;
                 while let Ok(first) = receiver.recv() {
                     let started = Instant::now();
-                    let queued_at = first.queued_at;
-                    let mut sequence = first.sequence;
                     // Retain every pointer sample and terminal event. Only presentation is coalesced.
                     let requests = std::iter::once(first).chain(receiver.try_iter().take(4095));
-                    for request in requests {
+                    for message in requests {
+                        let Message::Request(request) = message else {
+                            continue;
+                        };
+                        pending_since.get_or_insert(request.queued_at);
                         sequence = request.sequence;
                         let result = operate(&mut editor, &mut renderer, request.operation);
                         if !matches!(result, Ok(None)) {
@@ -291,7 +288,17 @@ impl Engine {
                             let _ = wake.try_send(());
                         }
                     }
-                    let command_ms = started.elapsed().as_secs_f64() * 1000.;
+                    command_ms += started.elapsed().as_secs_f64() * 1000.;
+                    let Some(queued_at) = pending_since else {
+                        // A consumed frame with no newer commands needs no replacement.
+                        command_ms = 0.;
+                        continue;
+                    };
+                    if output.lock().unwrap().is_some() {
+                        // Keep applying commands and publishing reliable outcomes, but
+                        // don't prepare another full image until the UI takes this one.
+                        continue;
+                    }
                     let result = (|| -> Result<Frame> {
                         let started = Instant::now();
                         let mut surface = preview(&editor, &mut renderer)?;
@@ -312,6 +319,8 @@ impl Engine {
                     })()
                     .map_err(|e| e.to_string());
                     *output.lock().unwrap() = Some(result);
+                    pending_since = None;
+                    command_ms = 0.;
                     // Notify after publishing. A full channel means the UI is already due
                     // to drain both queues; only redundant wakes may be coalesced.
                     let _ = wake.try_send(());
@@ -331,12 +340,21 @@ impl Engine {
     }
     pub fn request(&mut self, operation: Operation) -> u64 {
         self.sequence += 1;
-        let _ = self.sender.send(Request {
+        let _ = self.sender.send(Message::Request(Request {
             operation,
             sequence: self.sequence,
             queued_at: Instant::now(),
-        });
+        }));
         self.sequence
+    }
+    pub fn take_frame(&self) -> Option<Result<Frame, String>> {
+        let frame = self.latest.lock().unwrap().take();
+        if frame.is_some() {
+            // Reliable demand wake: deferred final edits must render even when no
+            // new pointer/command arrives. This does not advance the edit sequence.
+            let _ = self.sender.send(Message::FrameConsumed);
+        }
+        frame
     }
     pub fn send(&mut self, commands: Vec<Command>) -> u64 {
         self.request(Operation::Commands(commands))
@@ -409,7 +427,7 @@ mod tests {
                 assert!(event.result.is_err());
                 completed.push(event.sequence);
             }
-            if let Some(frame) = worker.latest.lock().unwrap().take() {
+            if let Some(frame) = worker.take_frame() {
                 frame_sequence = frame.unwrap().sequence;
             }
         }
@@ -441,7 +459,56 @@ mod tests {
         notifications(&worker)
             .recv_timeout(Duration::from_secs(15))
             .expect("startup failure wake");
-        assert!(worker.latest.lock().unwrap().take().unwrap().is_err());
+        assert!(worker.take_frame().unwrap().is_err());
+    }
+    #[test]
+    fn slow_consumer_preserves_edits_and_gets_final_frame_without_more_input() {
+        let mut worker = worker();
+        let wakeups = notifications(&worker);
+        let initial_sequence = loop {
+            wakeups.recv_timeout(Duration::from_secs(15)).unwrap();
+            if let Some(frame) = worker.latest.lock().unwrap().as_ref() {
+                break frame.as_ref().unwrap().sequence;
+            }
+        };
+        // Leave that frame unconsumed while edits and a reliable barrier complete.
+        worker.send(vec![Command::AddGradient]);
+        for _ in 0..32 {
+            worker.send(vec![Command::Nudge {
+                delta: Point::new(1., 0.),
+            }]);
+        }
+        let sequence = worker.request(Operation::Barrier);
+        let completion = complete(&worker, sequence);
+        assert_eq!(completion.state.selected().unwrap().x, 32.);
+        assert_eq!(
+            worker
+                .latest
+                .lock()
+                .unwrap()
+                .as_ref()
+                .unwrap()
+                .as_ref()
+                .unwrap()
+                .sequence,
+            initial_sequence,
+            "a waiting frame must not be repeatedly replaced"
+        );
+        assert_eq!(
+            worker.take_frame().unwrap().unwrap().sequence,
+            initial_sequence
+        );
+        // No new editing command: taking the old frame must wake deferred rendering.
+        let final_frame = loop {
+            wakeups.recv_timeout(Duration::from_secs(15)).unwrap();
+            if let Some(frame) = worker.take_frame() {
+                break frame.unwrap();
+            }
+        };
+        assert_eq!(final_frame.sequence, sequence);
+        assert_eq!(final_frame.state.selected().unwrap().x, 32.);
+        assert_eq!(worker.submitted_sequence(), sequence);
+        assert!(worker.take_frame().is_none());
     }
     #[test]
     fn queued_controls_resolve_against_latest_editor_state() {

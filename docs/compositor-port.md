@@ -165,3 +165,99 @@ blur, transforms, and opaque/translucent fills. These are regression cases for
 the optimization, not additional translated upstream fixtures. The release
 `profile_preview` example times the composite, complete preview, and isolated
 demo layers to make the profiling reproducible.
+
+## Retained preview experiment (2026-09-30)
+
+`render/composite.rs` adds a local Skia backend adaptation after inspection of
+the pinned `EditorCanvas.swift` damage path, `TiledLayerRenderer.swift` replacement
+regions, `EffectsPreviewCache.swift` identity/placement keys, and the corresponding
+tile/downsample tests. It is not a direct port of Compositor's tile renderer or
+GIMP's GPL projection implementation. No GIMP code or fixtures were copied.
+
+Rust retains document-composite pixels and an immutable snapshot. Skia borrows
+the Rust pixel buffer only during a render call, preserving the Node addon's
+ability to move its locked renderer between worker threads. A Skia `Surface`
+cannot be retained across those threads. The raster-direct snapshot makes an
+immutable copy when document pixels change; preview publication still extracts
+and uploads the full viewport through the existing UI integrations.
+
+Ordinary unit-scale, unrotated moves recompose the union of the old/new bounds,
+expanded outward for sampling, by clearing and drawing the entire layer stack
+inside that clip. Masks, blur, folders, live clipping, and any transformed layer
+in the stack use full recomposition. Even a stationary transformed overlapping
+layer can produce different Skia pixels when its clip changes, which an exact
+comparison caught; its full-render fallback preserves current rounding.
+Unchanged composites can be reused for viewport or overlay changes. The existing
+checkerboard algorithm is also retained as an opaque image keyed by document
+dimensions and viewport geometry; its colors, scale and placement are unchanged.
+
+Desktop command dispatch now relies on the existing worker wake to publish
+changed state instead of explicitly notifying the UI to draw the old image
+immediately after queueing a command. Focus changes still request their own
+refresh; transient dialogs/file actions and worker errors/completions retain
+their existing notifications. Commands and pointer samples are not dropped.
+
+The desktop worker also waits until the UI takes its queued frame before
+preparing another full preview. It continues applying every edit and delivering
+ordered completion/error events while a frame waits. Taking a frame sends an
+internal demand message, so pending final edits still produce a frame even if
+no further input arrives; that message does not advance the edit sequence.
+This is presentation scheduling only, not a change to gesture/history semantics.
+
+`render_equivalence.rs` adds local cached-vs-full pixel comparisons across
+translucent content, all sixteen blends, sampling modes, fractional/off-canvas
+moves, overlapping layers, viewport/handle changes, effects, masks, hierarchy,
+reordering and restoring prior state. The cache unit test checks that retained
+snapshots remain immutable. These are backend regression cases; no additional
+upstream fixture is claimed as translated. The separate experiment report records
+the [application measurements and verification](desktop-gimp-experiments.md).
+
+### Native BGRA extraction (second experiment pass)
+
+`render::bgra_pixels` is a local Skia presentation adaptation. For tightly packed,
+untagged BGRA surfaces whose pixels are all opaque, it copies the existing bytes
+instead of asking Skia to convert premultiplied pixels to straight alpha. Opaque
+pixels have identical representations. Other color layouts, padded rows,
+translucent pixels, or tagged color spaces retain the previous Skia conversion.
+The desktop calls this helper; its image upload still copies a complete viewport.
+This is not shared GPU memory or a translated upstream renderer.
+
+Local equivalence cases compare against the original Skia conversion across
+BGRA/RGBA surfaces, opaque/translucent alpha, row padding, and linear-sRGB tags.
+The `--measure-moving` diagnostic adds actual alternating layer moves to the
+existing CPU transport microbenchmark. It changes no application workflow.
+Optional `PICSIE_GPU_DIAGNOSTICS=1` prints the toolkit's selected adapter once
+when opening a window, allowing hardware claims to be checked rather than inferred
+from an installed driver. Rejected viewport caches, image tiling, toolkit patches,
+and paint-paced delivery are retained only as ignored experimental artifacts.
+
+### X11 frame waking (third experiment pass)
+
+The desktop vendors the published `gpui-pre-linux` 0.3.7 crate, retaining its
+Apache-2.0 license, original file hashes and a patch against the original source.
+Only `linux/x11/client.rs` and `linux/x11/window.rs` change: they implement
+GPUI's existing `PlatformWindow::frame_waker` contract through a coalescing
+calloop ping. A visible window requests the normal toolkit frame callback when
+invalidated; its monitor timer, surface queue depth and presentation mode are
+unchanged. Hidden windows ignore demand pings and resume through the existing
+visibility/timer path. Closing a window removes its ping registration.
+Requests from inside a frame callback use the existing timer, avoiding a busy
+retry loop when the toolkit throttles animation.
+
+This is independently written platform integration, not translated editor
+behavior. The pinned `EditorCanvas.swift` initializer's `refreshCanvasPreview`
+calls `synchronizeDisplay()` and `displayIfNeeded()`; that supports investigating
+prompt presentation but does not establish GPUI timing parity. GPUI's own
+`window.rs` frame-waker implementation and `test_frame_waker_fires_on_frame_demand`
+were inspected. The upstream toolkit test was not executed. No GIMP source or
+fixtures were copied. The QuickGUI parity reference and explicit Shift resize
+behavior remain authoritative and unchanged.
+
+[The backend source record](../crates/picsie-desktop/vendor/gpui-pre-linux/PICSIE.md)
+identifies the pinned package/revision, exact patch, licensing and upgrade/removal
+instructions. `verify-frame-wakeup.py` adds local real-window visibility/focus
+regressions, rather than claiming additional translated upstream fixtures.
+The [experiment report](desktop-gimp-experiments.md) records native workflow,
+exact canvas, untraced performance and hardware-adapter verification. Measured
+improvements are limited to this Linux virtual-display workload; physical
+display and other-platform performance remain unmeasured.

@@ -3,7 +3,7 @@ use crate::engine::{bgra, preview};
 use anyhow::{Result, ensure};
 use gpui_kit::RenderImage;
 use picsie_core::{
-    editor::{Command, Editor},
+    editor::{Command, Editor, SelectionMode},
     files::Frames,
     model::demo_document,
     render::{Renderer, frame_bytes},
@@ -22,8 +22,7 @@ fn stats(values: &mut [f64]) -> serde_json::Value {
     values.sort_by(f64::total_cmp);
     json!({"median_ms": values[values.len()/2], "p95_ms":values[((values.len() as f64 * 0.95).ceil() as usize - 1).min(values.len()-1)]})
 }
-
-pub fn run() -> Result<()> {
+pub fn run(moving: bool) -> Result<()> {
     let mut results = Vec::new();
     for (width, height) in [(936, 734), (1920, 1080)] {
         let mut editor = Editor::new(demo_document())?;
@@ -32,6 +31,12 @@ pub fn run() -> Result<()> {
             height: height as f64,
         })?;
         editor.command(Command::Fit)?;
+        if moving {
+            editor.command(Command::Select {
+                id: Some(editor.history.document.layers[1].id.clone()),
+                mode: SelectionMode::Replace,
+            })?;
+        }
         let mut renderer = Renderer::default();
         let mut files = Frames::new()?;
         let mut render_times = Vec::new();
@@ -39,6 +44,14 @@ pub fn run() -> Result<()> {
         let mut file_times = Vec::new();
         let mut encoded_size = 0;
         for iteration in 0..45 {
+            if moving {
+                editor.command(Command::Nudge {
+                    delta: picsie_core::model::Point::new(
+                        if iteration % 2 == 0 { 10. } else { -10. },
+                        0.,
+                    ),
+                })?;
+            }
             let mut surface = timed(&mut render_times, || preview(&editor, &mut renderer))?;
             // Alternate order to limit cache/ordering bias. Five complete iterations warm caches.
             for native in if iteration % 2 == 0 {
@@ -97,6 +110,7 @@ pub fn run() -> Result<()> {
         "{}",
         serde_json::to_string_pretty(&json!({
             "scope":"CPU transport microbenchmark; excludes Node/FFI, UI scheduling, GPU upload, presentation and scanout",
+            "workload": if moving {"Alternating 10-document-pixel Electric blue nudges"} else {"Unchanged demo"},
             "profile":if cfg!(debug_assertions) {"dev"} else {"release"},
             "file_location":"picsie-core Frames: /dev/shm on Linux when available, otherwise temporary directory",
             "results":results

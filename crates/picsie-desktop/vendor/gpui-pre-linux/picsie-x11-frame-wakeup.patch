@@ -1,0 +1,75 @@
+--- a/src/linux/x11/client.rs
++++ b/src/linux/x11/client.rs
+@@ -86,0 +87 @@
++    demand_wake_token: RegistrationToken,
+@@ -252,2 +253,2 @@
+-        if let Some(window_ref) = state.windows.remove(&x_window)
+-            && let Some(RefreshState::PeriodicRefresh {
++        if let Some(window_ref) = state.windows.remove(&x_window) {
++            if let Some(RefreshState::PeriodicRefresh {
+@@ -256,2 +257,4 @@
+-        {
+-            state.loop_handle.remove(event_loop_token);
++            {
++                state.loop_handle.remove(event_loop_token);
++            }
++            state.loop_handle.remove(window_ref.demand_wake_token);
+@@ -1646,0 +1650,10 @@
++        let request_frame_active = Rc::new(std::cell::Cell::new(false));
++        let (frame_ping, frame_ping_source) = calloop::ping::make_ping()?;
++        let active = request_frame_active.clone();
++        let frame_waker = Rc::new(move || {
++            // Requests made inside a frame (including throttled animation retries)
++            // use the existing monitor timer, rather than spinning demand pings.
++            if !active.get() {
++                frame_ping.ping();
++            }
++        }) as Rc<dyn Fn()>;
+@@ -1663,0 +1677,2 @@
++            frame_waker,
++            request_frame_active,
+@@ -1677,0 +1693,23 @@
++        // GPUI invalidations wake visible X11 windows just as they wake the
++        // demand-driven backends. Keep the monitor timer for animations/retries.
++        // Register after construction so a failed window never retains a source.
++        let demand_wake_token = state
++            .loop_handle
++            .insert_source(frame_ping_source, move |_, _, client| {
++                let window = {
++                    let state = client.0.borrow();
++                    state
++                        .windows
++                        .get(&x_window)
++                        .filter(|window| window.visibility().is_visible())
++                        .map(|window| window.window.clone())
++                };
++                if let Some(window) = window {
++                    window.refresh(RequestFrameOptions {
++                        require_presentation: false,
++                        force_render: false,
++                    });
++                }
++            })
++            .map_err(|error| anyhow!("Cannot register X11 frame demand: {error:?}"))?;
++
+@@ -1682,0 +1721 @@
++            demand_wake_token,
+--- a/src/linux/x11/window.rs
++++ b/src/linux/x11/window.rs
+@@ -307,0 +308,2 @@
++    frame_waker: Rc<dyn Fn()>,
++    request_frame_active: Rc<std::cell::Cell<bool>>,
+@@ -937,0 +940,2 @@
++        frame_waker: Rc<dyn Fn()>,
++        request_frame_active: Rc<std::cell::Cell<bool>>,
+@@ -960,0 +965,2 @@
++            frame_waker,
++            request_frame_active,
+@@ -1186,0 +1193,2 @@
++            self.request_frame_active.set(true);
++            let _reset = gpui_util::defer(|| self.request_frame_active.set(false));
+@@ -1697,0 +1706,4 @@
++    }
++
++    fn frame_waker(&self) -> Option<Rc<dyn Fn()>> {
++        Some(self.0.frame_waker.clone())
