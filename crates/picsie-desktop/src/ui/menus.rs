@@ -1,4 +1,4 @@
-//! Native menus mirror the QuickGUI shell; focused Kit inputs own clipboard actions.
+//! Supported Compositor workflows; focused Kit inputs own clipboard actions.
 use super::*;
 use gpui_kit::component::input as text_input;
 gpui_kit::actions!(
@@ -6,7 +6,8 @@ gpui_kit::actions!(
     [
         New, Open, OpenComp, Import, Save, SaveAs, SaveComp, ExportPng, ExportJpeg, Close, Quit,
         UndoCanvas, RedoCanvas, AllPixels, Deselect, Inverse, Fill, CanvasSize, Paint, Gradient,
-        Clipping, Duplicate, Raise, Lower, Fit, Actual, ZoomIn, ZoomOut
+        Clipping, Duplicate, CopyMerged, Merge, Transform, ImageSize, Raise, Lower, Fit, Actual,
+        ZoomIn, ZoomOut
     ]
 );
 #[derive(Default)]
@@ -54,6 +55,7 @@ pub fn install(cx: &mut App) {
             MenuItem::separator(),
             MenuItem::action("Cut", text_input::Cut),
             MenuItem::action("Copy", text_input::Copy),
+            MenuItem::action("Copy Merged", CopyMerged),
             MenuItem::action("Paste", text_input::Paste),
             MenuItem::action("Select All", text_input::SelectAll),
         ]),
@@ -63,12 +65,17 @@ pub fn install(cx: &mut App) {
             MenuItem::action("Inverse", Inverse),
             MenuItem::action("Fill with Foreground", Fill),
         ]),
-        Menu::new("Image").items([MenuItem::action("Canvas Size…", CanvasSize)]),
+        Menu::new("Image").items([
+            MenuItem::action("Canvas Size…", CanvasSize),
+            MenuItem::action("Image Size…", ImageSize),
+        ]),
         Menu::new("Layer").items([
             MenuItem::action("New Paint Layer", Paint),
             MenuItem::action("Create / Release Clipping Mask", Clipping),
             MenuItem::action("New Gradient Layer", Gradient),
-            MenuItem::action("Duplicate Layer", Duplicate),
+            MenuItem::action("Layer via Copy", Duplicate),
+            MenuItem::action("Merge Layers / Down / Group", Merge),
+            MenuItem::action("Transform…", Transform),
             MenuItem::action("Raise Layer", Raise),
             MenuItem::action("Lower Layer", Lower),
         ]),
@@ -82,6 +89,65 @@ pub fn install(cx: &mut App) {
 }
 pub(super) fn bind(element: Div, cx: &Context<Desktop>) -> Div {
     element
+        .on_action(cx.listener(|this, _: &text_input::Copy, window, cx| {
+            if this.modal.is_none() && window.focused_input(cx).is_none() {
+                this.act(
+                    Action::Copy {
+                        merged: false,
+                        cut: false,
+                    },
+                    window,
+                    cx,
+                );
+                cx.stop_propagation();
+            }
+        }))
+        .on_action(cx.listener(|this, _: &text_input::Cut, window, cx| {
+            if this.modal.is_none() && window.focused_input(cx).is_none() {
+                this.act(
+                    Action::Copy {
+                        merged: false,
+                        cut: true,
+                    },
+                    window,
+                    cx,
+                );
+                cx.stop_propagation();
+            }
+        }))
+        .on_action(cx.listener(|this, _: &text_input::Paste, window, cx| {
+            if this.modal.is_none() && window.focused_input(cx).is_none() {
+                this.act(Action::Paste, window, cx);
+                cx.stop_propagation();
+            }
+        }))
+        .on_action(cx.listener(|this, _: &CopyMerged, window, cx| {
+            if this.modal.is_none() && window.focused_input(cx).is_none() {
+                this.act(
+                    Action::Copy {
+                        merged: true,
+                        cut: false,
+                    },
+                    window,
+                    cx,
+                );
+            }
+        }))
+        .on_action(cx.listener(|this, _: &Merge, window, cx| {
+            if this.modal.is_none() {
+                this.act(Action::Command(Command::MergeLayers), window, cx);
+            }
+        }))
+        .on_action(cx.listener(|this, _: &Transform, window, cx| {
+            if this.modal.is_none() {
+                this.act(Action::Command(Command::BeginTransform), window, cx);
+            }
+        }))
+        .on_action(cx.listener(|this, _: &ImageSize, window, cx| {
+            if this.modal.is_none() {
+                this.act(Action::ImageSize, window, cx);
+            }
+        }))
         .on_action(cx.listener(|this, _: &text_input::SelectAll, window, cx| {
             if this.modal.is_none() && window.focused_input(cx).is_none() {
                 let pixels = this
@@ -201,7 +267,7 @@ pub(super) fn bind(element: Div, cx: &Context<Desktop>) -> Div {
         }))
         .on_action(cx.listener(|this, _: &Duplicate, window, cx| {
             if this.modal.is_none() {
-                this.act(Action::Command(Command::Duplicate), window, cx);
+                this.act(Action::Command(Command::LayerViaCopy), window, cx);
             }
         }))
         .on_action(cx.listener(|this, _: &Raise, window, cx| {

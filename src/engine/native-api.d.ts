@@ -5,6 +5,8 @@ export declare class NativeEditor {
   constructor(options: string);
   snapshot(): string;
   dispatch(command: string): string;
+  /** Native worker execution for new raster operations. Only typed commands and metadata cross JS. */
+  dispatchAsync(command: string): Promise<string>;
   preview(): Promise<string>;
   save(path: string): Promise<string>;
   exportImage(path: string, jpeg: boolean): Promise<void>;

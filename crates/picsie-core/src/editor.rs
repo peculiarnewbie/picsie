@@ -1,5 +1,9 @@
 //! EditorSession / SelectionClipboard / TransformDrag behavior translated from the pinned Compositor.
 //! MIT © 2026 Wonder Assembly LLC. Multi-selection and legacy v1 stroke reading are adaptations.
+mod layer_polish;
+mod operations;
+mod placement;
+mod text;
 use crate::{
     canvas_size::{CanvasSizeOptions, crop_canvas, resize_canvas},
     crop::{self, CropDrag, CropRatio, CropRect},
@@ -10,6 +14,7 @@ use crate::{
     render,
 };
 use anyhow::{Result, bail, ensure};
+pub use operations::PixelClipboard;
 use serde::{Deserialize, Serialize};
 use std::collections::HashSet;
 use std::sync::Arc;
@@ -28,6 +33,13 @@ pub enum Tool {
     Crop,
     Marquee,
     Lasso,
+    Wand,
+}
+#[derive(Clone, Copy, Debug, PartialEq, Serialize, Deserialize, TS)]
+#[serde(rename_all = "lowercase")]
+pub enum LassoKind {
+    Freehand,
+    Polygonal,
 }
 #[derive(Clone, Copy, Debug, PartialEq, Serialize, Deserialize, TS)]
 #[serde(rename_all = "lowercase")]
@@ -81,6 +93,50 @@ pub enum InitialDocument {
 #[derive(Clone, Deserialize, TS)]
 #[serde(tag = "type", rename_all = "camelCase")]
 pub enum Command {
+    SetDisplayScale {
+        scale: f64,
+    },
+    SetTextCaretVisible {
+        visible: bool,
+    },
+    TypeOpacityDigit {
+        digit: u8,
+    },
+    StepBrushHardness {
+        increase: bool,
+    },
+    SelectTextUnit {
+        point: Point,
+        paragraph: bool,
+    },
+    UpdateText {
+        patch: crate::text::TextPatch,
+    },
+    CommitText,
+    CancelText,
+    SetTextSelection {
+        anchor: usize,
+        head: usize,
+    },
+    MoveTextCaret {
+        direction: crate::text::TextNavigation,
+        extend: bool,
+    },
+    SetViewOptions {
+        options: crate::placement::ViewOptions,
+    },
+    BeginGuide {
+        axis: crate::placement::GuideAxis,
+        point: Point,
+    },
+    FinishGuide {
+        delete: bool,
+    },
+    AddGuide {
+        axis: crate::placement::GuideAxis,
+        position: f64,
+    },
+    ClearGuides,
     Select {
         #[serde(default)]
         #[ts(optional)]
@@ -107,6 +163,53 @@ pub enum Command {
     },
     SetViewport {
         viewport: Viewport,
+    },
+    SetPaletteColor {
+        color: String,
+        background: bool,
+    },
+    SetSampledForeground {
+        color: String,
+    },
+    SwapPaletteColors,
+    ResetPaletteColors,
+    SetTextColor {
+        color: String,
+        draft_id: Option<String>,
+    },
+    PreviewBlendMode {
+        id: Option<String>,
+        mode: Option<Blend>,
+    },
+    CycleBlendMode {
+        forward: bool,
+    },
+    BeginVisibilitySwipe {
+        id: String,
+    },
+    SwipeVisibility {
+        id: String,
+    },
+    EndVisibilitySwipe,
+    CopyMask {
+        source_id: String,
+        target_id: String,
+    },
+    LoadThumbnailSelection {
+        id: String,
+        mask: bool,
+        mode: PixelSelectionMode,
+    },
+    DuplicateTo {
+        target_id: String,
+        side: Side,
+        into: bool,
+    },
+    SetMaskPlacement {
+        placement: MaskPlacement,
+    },
+    DistortMask {
+        corners: [Point; 4],
     },
     SetColor {
         color: String,
@@ -136,6 +239,30 @@ pub enum Command {
         parent_id: Option<String>,
     },
     Duplicate,
+    LayerViaCopy,
+    MergeLayers,
+    BeginTransform,
+    CommitTransform,
+    CancelTransform,
+    MoveSelection {
+        delta: Point,
+    },
+    MovePixels {
+        delta: Point,
+        #[serde(default)]
+        duplicate: bool,
+    },
+    SetLassoKind {
+        kind: LassoKind,
+    },
+    FinishSelection,
+    RemoveSelectionPoint,
+    SetWand {
+        settings: crate::wand::WandSettings,
+    },
+    ResizeImage {
+        options: crate::image_size::ImageSizeOptions,
+    },
     Remove,
     Reorder {
         direction: i8,
@@ -167,6 +294,7 @@ pub enum Command {
     SelectAllPixels,
     ClearSelectedPixels,
     FillSelection,
+    FillBackground,
     InvertSelection,
     ExpandSelection {
         amount: u32,
@@ -205,7 +333,13 @@ pub enum Command {
     },
     RemoveMask,
     ToggleMaskLink,
+    ToggleMaskLinkFor {
+        id: String,
+    },
     ToggleClippingMask,
+    ToggleClippingFor {
+        id: String,
+    },
     LinkMask {
         #[serde(rename = "sourceId")]
         source_id: String,
@@ -231,8 +365,26 @@ pub struct LayerRow {
     pub depth: u32,
     pub visible: bool,
     pub collapsed: bool,
+    pub can_toggle_clipping: bool,
 }
 enum Gesture {
+    TextBox {
+        origin: Point,
+        current: Point,
+    },
+    TextResize {
+        origin: Point,
+        handle: &'static str,
+        layer: Layer,
+    },
+    SelectionMove {
+        origin: Point,
+        selection: PixelSelection,
+    },
+    PixelMove {
+        origin: Point,
+        layer: Layer,
+    },
     Pan {
         origin: Point,
         pan: Point,
@@ -248,6 +400,7 @@ enum Gesture {
         handle: &'static str,
         handle_point: Point,
         layer: Layer,
+        mask: bool,
     },
     Shape {
         origin: Point,
@@ -260,6 +413,13 @@ enum Gesture {
         drag: CropDrag,
         before: Option<CropRect>,
     },
+    MaskDistort {
+        origin: Point,
+        handle: &'static str,
+        corners: [Point; 4],
+        layer: Layer,
+        free: bool,
+    },
     MaskMove {
         origin: Point,
         layer: Layer,
@@ -271,6 +431,22 @@ enum Gesture {
     },
 }
 pub struct Editor {
+    pub(super) blend_preview: Option<(String, Blend)>,
+    pub(super) mask_distortion: Option<layer_polish::MaskDistortion>,
+    visibility_swipe: Option<bool>,
+    pub background_color: String,
+    pending_opacity_digit: Option<(u8, std::time::Instant)>,
+    pub display_scale: f64,
+    pub text_caret_visible: bool,
+    text_mouse_unit: Option<(usize, usize, bool)>,
+    text_session: Option<text::TextSession>,
+    pub text_selection: (usize, usize),
+    text_upstream: bool,
+    text_vertical_x: Option<f32>,
+    pub text_defaults: Layer,
+    pub view_options: crate::placement::ViewOptions,
+    pub snap_lines: (Vec<f64>, Vec<f64>),
+    guide_drag: Option<crate::placement::GuideDrag>,
     pub history: History,
     pub selection: Selection,
     pub paint_target: PaintTarget,
@@ -288,6 +464,12 @@ pub struct Editor {
     pub collapsed_groups: HashSet<String>,
     pub marquee_kind: MarqueeKind,
     pub selection_mode: PixelSelectionMode,
+    pub lasso_kind: LassoKind,
+    pub wand: crate::wand::WandSettings,
+    polygon: Option<SelectionDraft>,
+    polygon_cursor: Option<Point>,
+    floating: Option<operations::Floating>,
+    layer_transform: bool,
     /// Bumped whenever an edit-text request selects a layer, so the UI can focus its editor.
     pub text_edit_requests: u64,
     gesture: Option<Gesture>,
@@ -304,6 +486,13 @@ impl Editor {
         }
     }
     pub fn selection_draft(&self) -> Option<SelectionDraft> {
+        if let Some(draft) = &self.polygon {
+            let mut draft = draft.clone();
+            if let Some(cursor) = self.polygon_cursor {
+                draft.points.push(cursor);
+            }
+            return Some(draft);
+        }
         if let Some(Gesture::PixelSelection { draft, .. }) = &self.gesture {
             Some(draft.clone())
         } else {
@@ -314,6 +503,22 @@ impl Editor {
         document.validate()?;
         let last = document.layers.last().map(|l| l.id.clone());
         let mut e = Self {
+            blend_preview: None,
+            mask_distortion: None,
+            visibility_swipe: None,
+            background_color: "#ffffff".into(),
+            pending_opacity_digit: None,
+            display_scale: 1.,
+            text_caret_visible: true,
+            text_mouse_unit: None,
+            text_session: None,
+            text_selection: (0, 0),
+            text_upstream: false,
+            text_vertical_x: None,
+            text_defaults: text::defaults(),
+            view_options: Default::default(),
+            snap_lines: (vec![], vec![]),
+            guide_drag: None,
             history: History::new(document),
             selection: Selection {
                 ids: last.clone().into_iter().collect(),
@@ -322,7 +527,7 @@ impl Editor {
             paint_target: PaintTarget::Content,
             mask_mode: MaskMode::Hide,
             tool: Tool::Move,
-            color: "#a5b4fc".into(),
+            color: "#000000".into(),
             brush_size: 40.,
             brush_opacity: 1.,
             brush_hardness: 1.,
@@ -334,6 +539,12 @@ impl Editor {
             collapsed_groups: HashSet::new(),
             marquee_kind: MarqueeKind::Rectangle,
             selection_mode: PixelSelectionMode::Replace,
+            lasso_kind: LassoKind::Freehand,
+            wand: crate::wand::WandSettings::default(),
+            polygon: None,
+            polygon_cursor: None,
+            floating: None,
+            layer_transform: false,
             text_edit_requests: 0,
             gesture: None,
         };
@@ -431,8 +642,17 @@ impl Editor {
             })
     }
     pub fn snapshot(&self) -> serde_json::Value {
-        serde_json::json!({"document":self.history.document.metadata(),"history":self.history.info(),"selection":self.selection,"paintTarget":self.paint_target,"maskMode":self.mask_mode,"tool":self.tool,"color":self.color,"brushSize":self.brush_size,"brushOpacity":self.brush_opacity,"brushHardness":self.brush_hardness,"brushSmoothing":self.brush_smoothing,"viewport":self.viewport,"cropRect":self.crop_rect,"cropRatio":self.crop_ratio,"layerRows":self.layer_rows(),"maskSourceIds":self.history.document.layers.iter().filter(|l| self.selected_id().is_some_and(|target| crate::live_mask::can_link(&self.history.document, &l.id, target))).map(|l| &l.id).collect::<Vec<_>>(),"canEditPixels":self.can_edit_pixels(),"canToggleClipping": self.selection.ids.len() == 1 && self.selected().is_some_and(|l| !l.locked && (l.mask_source_id.is_some() || crate::live_mask::clipping_source(&self.history.document, &l.id).is_some())),"hasPixelSelection": self.history.pixel_selection.is_some(),
-            "pixelSelectionBounds":self.history.pixel_selection.as_ref().and_then(|v|v.bounds.clone()),"pixelSelectionFeather":self.history.pixel_selection.as_ref().map(|v|v.feather),"marqueeKind":self.marquee_kind,"selectionMode":self.selection_mode,"textEditRequests":self.text_edit_requests})
+        let mut state = serde_json::json!({"document":self.history.document.metadata(),"history":self.history.info(),"selection":self.selection,"paintTarget":self.paint_target,"maskMode":self.mask_mode,"tool":self.tool,"color":self.color,"brushSize":self.brush_size,"brushOpacity":self.brush_opacity,"brushHardness":self.brush_hardness,"brushSmoothing":self.brush_smoothing,"viewport":self.viewport,"cropRect":self.crop_rect,"cropRatio":self.crop_ratio,"layerRows":self.layer_rows(),"maskSourceIds":self.history.document.layers.iter().filter(|l| self.selected_id().is_some_and(|target| crate::live_mask::can_link(&self.history.document, &l.id, target))).map(|l| &l.id).collect::<Vec<_>>(),"canEditPixels":self.can_edit_pixels(),"canToggleClipping": self.selection.ids.len() == 1 && self.selected().is_some_and(|l| !l.locked && (l.mask_source_id.is_some() || crate::live_mask::clipping_source(&self.history.document, &l.id).is_some())),"hasPixelSelection": self.history.pixel_selection.is_some(),
+            "pixelSelectionBounds":self.history.pixel_selection.as_ref().and_then(|v|v.bounds.clone()),"pixelSelectionFeather":self.history.pixel_selection.as_ref().map(|v|v.feather),"marqueeKind":self.marquee_kind,"selectionMode":self.selection_mode,"textEditRequests":self.text_edit_requests,"lassoKind":self.lasso_kind,"wand":self.wand,"selectionDraft":self.polygon.is_some(),"transformActive":self.floating.is_some() || self.layer_transform,"canCopyPixels":self.can_copy_pixels(),"viewOptions":self.view_options,"displayedGuides":self.displayed_guides(),"guideDragActive":self.guide_drag.is_some(),"snapLines":{"xs":self.snap_lines.0,"ys":self.snap_lines.1},"textEditing":self.text_editing(),"textCaretVisible":self.text_caret_visible,"cursorMap":self.cursor_map(),"textSelection":{"anchor":self.text_selection.0,"head":self.text_selection.1},"currentText":self.current_text().metadata(),"textCaret":if self.text_editing() {self.selected().map(|l| {let c=crate::text::caret_with_affinity(l,self.text_selection.1.min(match l.content.as_ref(){Content::Text{text,..}=>text.len(),_=>0}),self.text_upstream);geometry::to_world(l,Point::new(c.left as f64,c.top as f64))})} else {None}});
+        state["blendPreview"] = serde_json::to_value(&self.blend_preview).unwrap();
+        state["backgroundColor"] = self.background_color.clone().into();
+        state["maskDistortion"] = serde_json::to_value(self.mask_distortion_corners()).unwrap();
+        state["transformTarget"] = self
+            .independent_mask_layer()
+            .or_else(|| self.selected().cloned())
+            .map(|l| l.metadata())
+            .unwrap_or(serde_json::Value::Null);
+        state
     }
     fn layer_rows(&self) -> Vec<LayerRow> {
         fn visit(
@@ -455,6 +675,10 @@ impl Editor {
                     depth,
                     visible: effective,
                     collapsed: collapsed.contains(&layer.id),
+                    can_toggle_clipping: !layer.locked
+                        && !matches!(layer.content.as_ref(), Content::Group)
+                        && (layer.mask_source_id.is_some()
+                            || crate::live_mask::clipping_source(doc, &layer.id).is_some()),
                 });
                 if matches!(layer.content.as_ref(), Content::Group)
                     && !collapsed.contains(&layer.id)
@@ -491,15 +715,19 @@ impl Editor {
                 self.selection.anchor = Some(id);
             }
             SelectionMode::Range => {
-                let layers = &self.history.document.layers;
-                let anchor = layers
+                let rows = self.layer_rows();
+                let anchor = rows
                     .iter()
                     .position(|l| Some(&l.id) == self.selection.anchor.as_ref());
-                let end = layers.iter().position(|l| l.id == id).unwrap();
-                if let Some(anchor) = anchor {
-                    self.selection.ids = layers[anchor.min(end)..=anchor.max(end)]
+                let end = rows.iter().position(|l| l.id == id);
+                if let (Some(anchor), Some(end)) = (anchor, end) {
+                    let span = &rows[anchor.min(end)..=anchor.max(end)];
+                    self.selection.ids = self
+                        .history
+                        .document
+                        .layers
                         .iter()
-                        .filter(|l| l.id != id)
+                        .filter(|l| l.id != id && span.iter().any(|row| row.id == l.id))
                         .map(|l| l.id.clone())
                         .chain([id.clone()])
                         .collect();
@@ -587,6 +815,25 @@ impl Editor {
         }
     }
     pub fn update_layer(&mut self, patch: serde_json::Value) -> Result<()> {
+        if let Some(mut target) = self.independent_mask_layer()
+            && let Some(properties) = patch.as_object()
+            && !properties.is_empty()
+            && properties.keys().all(|k| {
+                ["x", "y", "scaleX", "scaleY", "rotation", "flipX", "flipY"].contains(&k.as_str())
+            })
+        {
+            let mut value = serde_json::to_value(MaskPlacement::of(&target))?;
+            for (key, v) in properties {
+                value[key] = v.clone();
+            }
+            let placement: MaskPlacement = serde_json::from_value(value)?;
+            target.x = placement.x;
+            self.layer_polish_command(&Command::SetMaskPlacement { placement })?;
+            return Ok(());
+        }
+        if patch.get("blend").is_some() {
+            self.blend_preview = None;
+        }
         let Some(layer) = self.selected() else {
             return Ok(());
         };
@@ -717,8 +964,8 @@ impl Editor {
             return Ok(());
         }
         ensure!(
-            self.history.document.layers.len() + layers.len() <= 100,
-            "The editor supports up to 100 layers"
+            self.history.document.layers.len() + layers.len() <= crate::model::MAX_LAYERS,
+            "The editor supports up to 10,000 layers"
         );
         let selection = vec![layers.last().unwrap().id.clone()];
         let label = if layers.len() == 1 {
@@ -831,13 +1078,35 @@ impl Editor {
         }
         if !matches!(
             gesture,
-            Gesture::Pan { .. } | Gesture::Crop { .. } | Gesture::PixelSelection { .. }
+            Gesture::Pan { .. }
+                | Gesture::Crop { .. }
+                | Gesture::PixelSelection { .. }
+                | Gesture::PixelMove { .. }
+                | Gesture::TextResize { .. }
+                | Gesture::TextBox { .. }
         ) {
             self.end_edit();
         }
+        self.snap_lines = (vec![], vec![]);
         Ok(())
     }
     pub fn cancel_gesture(&mut self) {
+        if self.text_editing() {
+            self.cancel_text();
+            return;
+        }
+        self.snap_lines = (vec![], vec![]);
+        if self.guide_drag.take().is_some() {
+            return;
+        }
+        if self.floating.is_some() || self.layer_transform {
+            self.cancel_transform();
+            return;
+        }
+        if self.polygon.take().is_some() {
+            self.polygon_cursor = None;
+            return;
+        }
         if matches!(self.gesture, Some(Gesture::PixelSelection { .. })) {
             if let Some(Gesture::PixelSelection { before, .. }) = self.gesture.take() {
                 self.history.pixel_selection = before;
@@ -892,6 +1161,94 @@ impl Editor {
         self.edit("Edit mask", doc, None)
     }
     pub fn command(&mut self, command: Command) -> Result<()> {
+        if self.layer_polish_command(&command)? {
+            return Ok(());
+        }
+        if self.visibility_swipe.is_some() {
+            self.end_visibility_swipe();
+        }
+        // EditorSession+Brush: opacity/hardness keys do nothing during a stroke.
+        if let Command::TypeOpacityDigit { digit } = command {
+            ensure!(digit <= 9, "Invalid opacity digit");
+            if !matches!(self.gesture, Some(Gesture::Brush { .. }))
+                && matches!(self.tool, Tool::Move | Tool::Brush | Tool::Eraser)
+            {
+                let now = std::time::Instant::now();
+                let percent = if let Some((previous, time)) = self.pending_opacity_digit
+                    && now.duration_since(time).as_secs_f64() < 0.6
+                {
+                    self.pending_opacity_digit = None;
+                    (previous as u32 * 10 + digit as u32).max(1)
+                } else {
+                    self.pending_opacity_digit = Some((digit, now));
+                    if digit == 0 { 100 } else { digit as u32 * 10 }
+                };
+                let opacity = percent as f64 / 100.;
+                if matches!(self.tool, Tool::Brush | Tool::Eraser) {
+                    self.brush_opacity = opacity;
+                } else {
+                    let mut doc = self.history.document.clone();
+                    for layer in &mut doc.layers {
+                        if self.selection.ids.contains(&layer.id) && !layer.locked {
+                            layer.opacity = opacity;
+                        }
+                    }
+                    self.edit("Layer opacity", doc, None)?;
+                }
+            }
+            return Ok(());
+        }
+        if let Command::StepBrushHardness { increase } = command {
+            if matches!(self.tool, Tool::Brush | Tool::Eraser)
+                && !matches!(self.gesture, Some(Gesture::Brush { .. }))
+            {
+                let quarter = self.brush_hardness * 4.;
+                let step = if increase {
+                    (quarter + 0.001).floor() + 1.
+                } else {
+                    (quarter - 0.001).ceil() - 1.
+                };
+                self.brush_hardness = step.clamp(0., 4.) / 4.;
+            }
+            return Ok(());
+        }
+        // Presentation updates must never finish a later gesture when a blink was queued.
+        if let Command::SetTextCaretVisible { visible } = command {
+            self.text_caret_visible = visible;
+            return Ok(());
+        }
+        // Keep the retained QuickGUI content-property contract working on the same
+        // Rust draft. The native UI uses UpdateText directly.
+        let text_property = self.text_editing()
+            && matches!(&command, Command::UpdateLayer { patch } if patch.as_object().is_some_and(|p| p.len() == 1 && p.get("content").is_some_and(|c| c["kind"] == "text")));
+        if self.text_editing()
+            && !text_property
+            && !matches!(&command, Command::BeginPropertyEdit { label } if label == "Edit text")
+            && !matches!(
+                &command,
+                Command::UpdateText { .. }
+                    | Command::SelectTextUnit { .. }
+                    | Command::SetTextCaretVisible { .. }
+                    | Command::SetTextSelection { .. }
+                    | Command::MoveTextCaret { .. }
+                    | Command::CommitText
+                    | Command::CancelText
+                    | Command::EditText { .. }
+                    | Command::Pointer { .. }
+                    | Command::Fit
+                    | Command::Zoom { .. }
+                    | Command::ResizeViewport { .. }
+                    | Command::SetDisplayScale { .. }
+                    | Command::Pan { .. }
+                    | Command::SetViewport { .. }
+                    | Command::SetViewOptions { .. }
+                    | Command::FinishGesture
+                    | Command::CancelGesture
+            )
+        {
+            self.finish_text()?;
+        }
+
         if matches!(self.gesture, Some(Gesture::Brush { .. }))
             && !matches!(
                 command,
@@ -900,7 +1257,181 @@ impl Editor {
         {
             self.finish_gesture()?;
         }
+        if (self.floating.is_some() || self.layer_transform)
+            && !matches!(
+                &command,
+                Command::Pointer { .. }
+                    | Command::Nudge { .. }
+                    | Command::UpdateLayer { .. }
+                    | Command::BeginPropertyEdit { .. }
+                    | Command::FinishGesture
+                    | Command::CancelGesture
+                    | Command::CommitTransform
+                    | Command::CancelTransform
+                    | Command::BeginTransform
+                    | Command::Undo
+                    | Command::Redo
+                    | Command::Zoom { .. }
+                    | Command::ResizeViewport { .. }
+                    | Command::SetDisplayScale { .. }
+                    | Command::Pan { .. }
+                    | Command::SetViewport { .. }
+                    | Command::Fit
+            )
+        {
+            self.commit_transform()?;
+        }
         match command {
+            Command::SetPaletteColor { .. }
+            | Command::SetSampledForeground { .. }
+            | Command::SwapPaletteColors
+            | Command::ResetPaletteColors
+            | Command::SetTextColor { .. }
+            | Command::PreviewBlendMode { .. }
+            | Command::CycleBlendMode { .. }
+            | Command::BeginVisibilitySwipe { .. }
+            | Command::SwipeVisibility { .. }
+            | Command::EndVisibilitySwipe
+            | Command::CopyMask { .. }
+            | Command::ToggleClippingFor { .. }
+            | Command::ToggleMaskLinkFor { .. }
+            | Command::LoadThumbnailSelection { .. }
+            | Command::DuplicateTo { .. }
+            | Command::SetMaskPlacement { .. }
+            | Command::DistortMask { .. } => unreachable!("handled above"),
+            Command::TypeOpacityDigit { .. } | Command::StepBrushHardness { .. } => {}
+            Command::SelectTextUnit { point, paragraph } => {
+                if self.text_editing()
+                    && let Some(layer) = self.selected()
+                {
+                    let point =
+                        geometry::to_document(&self.history.document, &self.viewport, point);
+                    let (start, end) = crate::text::unit_at(layer, point, paragraph);
+                    self.text_selection = (start, end);
+                    self.text_mouse_unit = Some((start, end, paragraph));
+                }
+            }
+            Command::SetTextCaretVisible { visible } => self.text_caret_visible = visible,
+            Command::SetDisplayScale { scale } => {
+                ensure!(
+                    scale.is_finite() && (0.5..=8.).contains(&scale),
+                    "Invalid display scale"
+                );
+                self.display_scale = scale;
+            }
+            Command::UpdateText { patch } => self.update_text(patch)?,
+            Command::CommitText => self.finish_text()?,
+            Command::CancelText => self.cancel_text(),
+            Command::MoveTextCaret { direction, extend } => self.move_text_caret(direction, extend),
+            Command::SetTextSelection { anchor, head } => {
+                if let Some(layer) = self.selected()
+                    && let Content::Text { text, .. } = layer.content.as_ref()
+                {
+                    ensure!(
+                        anchor <= text.len()
+                            && head <= text.len()
+                            && text.is_char_boundary(anchor)
+                            && text.is_char_boundary(head),
+                        "Invalid text selection"
+                    );
+                    if self.text_selection != (anchor, head) {
+                        self.text_upstream = false;
+                        self.text_vertical_x = None;
+                    }
+                    self.text_selection = (anchor, head);
+                }
+            }
+            Command::SetViewOptions { options } => {
+                self.view_options = options;
+                self.snap_lines = (vec![], vec![]);
+                if self.view_options.lock_guides {
+                    self.guide_drag = None;
+                }
+            }
+            Command::BeginGuide { axis, point } => self.begin_guide(axis, point)?,
+            Command::FinishGuide { delete } => self.finish_guide(delete)?,
+            Command::AddGuide { axis, position } => {
+                ensure!(
+                    position.is_finite() && position.abs() <= 100000.,
+                    "Invalid guide coordinate"
+                );
+                if !self.view_options.lock_guides {
+                    let mut doc = self.history.document.clone();
+                    doc.guides.push(crate::placement::CanvasGuide {
+                        id: id(),
+                        axis,
+                        position,
+                    });
+                    doc.validate()?;
+                    self.view_options.guides = true;
+                    self.edit("New Guide", doc, None)?;
+                }
+            }
+            Command::ClearGuides => {
+                let mut doc = self.history.document.clone();
+                doc.guides.clear();
+                self.edit("Clear Guides", doc, None)?;
+            }
+            Command::LayerViaCopy => self.layer_via_copy()?,
+            Command::MergeLayers => self.merge_layers()?,
+            Command::BeginTransform => {
+                if self.floating.is_none()
+                    && !self.layer_transform
+                    && !self.begin_selection_transform(false, true)?
+                    && self.selection.ids.len() == 1
+                    && self.selected().is_some_and(|l| {
+                        !l.locked
+                            && (!matches!(l.content.as_ref(), Content::Group)
+                                || self.independent_mask_layer().is_some())
+                    })
+                {
+                    self.finish_gesture()?;
+                    self.begin_edit("Transform Layer");
+                    self.layer_transform = true;
+                    self.tool = Tool::Move;
+                }
+            }
+            Command::CommitTransform => self.commit_transform()?,
+            Command::CancelTransform => self.cancel_transform(),
+            Command::MovePixels { delta, duplicate } => self.move_pixels(delta, duplicate)?,
+            Command::MoveSelection { delta } => {
+                ensure!(
+                    delta.x.is_finite() && delta.y.is_finite(),
+                    "Invalid selection movement"
+                );
+                if let Some(selection) = self
+                    .history
+                    .pixel_selection
+                    .as_ref()
+                    .filter(|s| !s.outline.is_empty())
+                {
+                    self.set_pixel_selection(Some(selection.translated(delta)?), "Move Selection")?;
+                }
+            }
+            Command::SetLassoKind { kind } => {
+                self.cancel_polygon();
+                self.lasso_kind = kind;
+            }
+            Command::FinishSelection => self.finish_polygon()?,
+            Command::RemoveSelectionPoint => {
+                if let Some(draft) = &mut self.polygon {
+                    draft.points.pop();
+                    if draft.points.is_empty() {
+                        self.cancel_polygon();
+                    }
+                }
+            }
+            Command::SetWand { settings } => {
+                ensure!(settings.radius <= 2, "Invalid wand sample size");
+                self.wand = settings;
+            }
+            Command::ResizeImage { options } => {
+                self.finish_gesture()?;
+                let next = crate::image_size::resize(&self.history.document, &options)?;
+                if next != self.history.document {
+                    self.edit_canvas("Image Size", next)?;
+                }
+            }
             Command::Select { id, mode } => self.select(id, mode)?,
             Command::SelectAll => {
                 self.finish_gesture()?;
@@ -915,7 +1446,12 @@ impl Editor {
                 self.paint_target = PaintTarget::Content;
             }
             Command::SetTool { tool } => {
-                self.finish_gesture()?;
+                self.cancel_polygon();
+                if matches!(self.gesture, Some(Gesture::Shape { .. })) {
+                    self.cancel_gesture();
+                } else {
+                    self.finish_gesture()?;
+                }
                 if tool != Tool::Crop {
                     self.crop_rect = None;
                 }
@@ -967,7 +1503,7 @@ impl Editor {
                     color.len() == 7 && color_valid(&color),
                     "Enter a six-digit hex color"
                 );
-                self.color = color;
+                self.set_palette_color(color, false)?;
             }
             Command::SetBrush { size, opacity } => {
                 ensure!(
@@ -987,6 +1523,32 @@ impl Editor {
                 );
                 self.brush_hardness = hardness;
                 self.brush_smoothing = smoothing;
+            }
+            Command::UpdateLayer { patch } if text_property => {
+                let content: Content = serde_json::from_value(patch["content"].clone())?;
+                let Content::Text {
+                    text,
+                    font_size,
+                    font_family,
+                    color,
+                } = content
+                else {
+                    unreachable!()
+                };
+                self.update_text(crate::text::TextPatch {
+                    text: Some(text),
+                    font_size: Some(font_size),
+                    color: Some(color),
+                    font_name: Some(
+                        match font_family {
+                            FontFamily::SansSerif => "sans-serif",
+                            FontFamily::Serif => "serif",
+                            FontFamily::Monospace => "monospace",
+                        }
+                        .into(),
+                    ),
+                    ..Default::default()
+                })?;
             }
             Command::UpdateLayer { patch } => self.update_layer(patch)?,
             Command::AddPaintLayer => self.add_layers(vec![Layer::new(
@@ -1406,6 +1968,10 @@ impl Editor {
                 self.set_pixel_selection(None, "Deselect")?;
             }
             Command::CancelPixelSelection => {
+                if self.polygon.is_some() {
+                    self.cancel_polygon();
+                    return Ok(());
+                }
                 // EditorCanvas's Escape handling cancels the draft first, keeping the
                 // completed selection. A subsequent Escape deselects through history.
                 if matches!(self.gesture, Some(Gesture::PixelSelection { .. })) {
@@ -1422,6 +1988,9 @@ impl Editor {
             }
             Command::BeginPropertyEdit { label } => {
                 ensure!(!label.is_empty() && label.len() <= 64, "Invalid edit label");
+                if self.text_editing() {
+                    return Ok(());
+                }
                 self.finish_gesture()?;
                 self.begin_edit(&label);
                 self.gesture = Some(Gesture::Property);
@@ -1457,8 +2026,7 @@ impl Editor {
                     })
                 });
                 if let Some(id) = target {
-                    self.single_selection(Some(id));
-                    self.text_edit_requests += 1;
+                    self.begin_text_edit(id)?;
                 }
             }
             Command::FeatherSelection { amount } => {
@@ -1517,18 +2085,44 @@ impl Editor {
                     }
                 }
             }
-            Command::FillSelection => {
+            Command::FillSelection | Command::FillBackground => {
                 self.finish_gesture()?;
+                let background = matches!(command, Command::FillBackground);
+                let color = if background {
+                    &self.background_color
+                } else {
+                    &self.color
+                };
                 if self.can_edit_pixels()
                     && let Some(layer) = self.selected().cloned()
                 {
+                    if self.paint_target == PaintTarget::Content
+                        && self.history.pixel_selection.is_none()
+                        && matches!(layer.content.as_ref(), Content::Text { .. })
+                    {
+                        let mut next = layer.clone();
+                        if let Content::Text { color: value, .. } = Arc::make_mut(&mut next.content)
+                        {
+                            *value = color.clone();
+                        }
+                        self.edit("Fill", self.with_layers(vec![next]), None)?;
+                        return Ok(());
+                    }
                     let next = render::fill_selected_pixels(
                         &layer,
                         self.history.pixel_selection.as_ref(),
                         &self.history.document,
-                        &self.color,
+                        color,
                         self.paint_target == PaintTarget::Mask,
-                        self.mask_mode,
+                        if background {
+                            if self.mask_mode == MaskMode::Hide {
+                                MaskMode::Reveal
+                            } else {
+                                MaskMode::Hide
+                            }
+                        } else {
+                            self.mask_mode
+                        },
                     )?;
                     self.edit(
                         if self.paint_target == PaintTarget::Mask {
@@ -1617,7 +2211,6 @@ impl Editor {
                     self.history.pixel_selection = None;
                     self.end_edit();
                     self.paint_target = PaintTarget::Mask;
-                    self.tool = Tool::Brush;
                 }
             }
             Command::SetPaintTarget { target } => {
@@ -1627,9 +2220,6 @@ impl Editor {
                         && self.selected().and_then(|l| l.mask.as_ref()).is_some())
                 {
                     self.paint_target = target;
-                    if target == PaintTarget::Mask {
-                        self.tool = Tool::Brush;
-                    }
                 }
             }
             Command::SetMaskMode { mode } => {
@@ -1649,7 +2239,7 @@ impl Editor {
             }
             Command::ToggleMaskLink => {
                 if let Some(layer) = self.selected().cloned() {
-                    if !layer.locked && !matches!(layer.content.as_ref(), Content::Group) {
+                    if !layer.locked {
                         if let Some(mask) = &layer.mask {
                             let mut next = layer.clone();
                             let mut mask = mask.as_ref().clone();
@@ -1703,6 +2293,10 @@ impl Editor {
                 }
             }
             Command::Undo => {
+                if self.floating.is_some() || self.layer_transform {
+                    self.cancel_transform();
+                    return Ok(());
+                }
                 if self.gesture.is_some() {
                     self.cancel_gesture();
                 }
@@ -1710,13 +2304,23 @@ impl Editor {
                 self.restore_selection(s);
             }
             Command::Redo => {
+                if self.floating.is_some() || self.layer_transform {
+                    self.cancel_transform();
+                    return Ok(());
+                }
                 if self.gesture.is_some() {
                     self.cancel_gesture();
                 }
                 let s = self.history.redo();
                 self.restore_selection(s);
             }
-            Command::FinishGesture => self.finish_gesture()?,
+            Command::FinishGesture => {
+                if self.text_editing() {
+                    self.finish_text()?;
+                } else {
+                    self.finish_gesture()?;
+                }
+            }
             Command::CancelGesture => self.cancel_gesture(),
             Command::Pointer { samples } => {
                 ensure!(samples.len() <= 4096, "Too many pointer samples");
@@ -1729,6 +2333,7 @@ impl Editor {
                 }
             }
         }
+        self.update_floating_selection()?;
         Ok(())
     }
     pub fn pointer(&mut self, sample: PointerSample) -> Result<()> {
@@ -1742,13 +2347,44 @@ impl Editor {
             return Ok(());
         }
         let p = geometry::to_document(&self.history.document, &self.viewport, vp);
+        if self.guide_pointer(phase, p)? {
+            return Ok(());
+        }
+        if self.text_pointer(phase, p, modifiers)? {
+            return Ok(());
+        }
+        if self.tool == Tool::Lasso
+            && self.lasso_kind == LassoKind::Polygonal
+            && self.polygon.is_some()
+        {
+            match phase {
+                Phase::Down => {
+                    let draft = self.polygon.as_mut().unwrap();
+                    if draft.points.len() >= 3
+                        && draft.points[0].distance(p) * self.viewport.zoom <= 8.
+                    {
+                        self.finish_polygon()?;
+                    } else {
+                        draft.drag(p, false);
+                    }
+                }
+                Phase::Move => self.polygon_cursor = Some(p),
+                _ => {}
+            }
+            return Ok(());
+        }
         if phase == Phase::Down {
             self.finish_gesture()?;
             if self.tool == Tool::Crop {
                 let before = self.crop_rect;
                 let original =
                     before.unwrap_or_else(|| CropRect::from_document(&self.history.document));
-                let mode = crop::hit(original, p, self.viewport.zoom);
+                let mut mode = crop::hit(original, p, self.viewport.zoom);
+                // EditorCanvas.beginCropDrag: the default visible frame is not
+                // a movable crop edit; drawing inside it begins a new frame.
+                if before.is_none() && matches!(mode, crop::DragMode::Move) {
+                    mode = crop::DragMode::Create;
+                }
                 self.gesture = Some(Gesture::Crop {
                     drag: CropDrag {
                         start: p,
@@ -1766,7 +2402,7 @@ impl Editor {
                 });
                 return Ok(());
             }
-            if matches!(self.tool, Tool::Marquee | Tool::Lasso) {
+            if matches!(self.tool, Tool::Marquee | Tool::Lasso | Tool::Wand) {
                 let mode = if modifiers.alt {
                     PixelSelectionMode::Subtract
                 } else if modifiers.shift {
@@ -1774,6 +2410,41 @@ impl Editor {
                 } else {
                     self.selection_mode
                 };
+                let inside_selection = self
+                    .history
+                    .pixel_selection
+                    .as_ref()
+                    .is_some_and(|s| s.contains(p));
+                if self.tool == Tool::Wand
+                    && !((modifiers.control || modifiers.meta) && inside_selection)
+                {
+                    self.magic_wand(p, mode)?;
+                    return Ok(());
+                }
+                if (mode == PixelSelectionMode::Replace || modifiers.control || modifiers.meta)
+                    && self.polygon.is_none()
+                    && inside_selection
+                {
+                    if modifiers.control || modifiers.meta {
+                        if self.begin_selection_transform(modifiers.alt, false)? {
+                            let layer = self.selected().unwrap().clone();
+                            self.gesture = Some(Gesture::PixelMove { origin: p, layer });
+                        }
+                    } else {
+                        let selection = self.history.pixel_selection.clone().unwrap();
+                        self.begin_edit("Move Selection");
+                        self.gesture = Some(Gesture::SelectionMove {
+                            origin: p,
+                            selection,
+                        });
+                    }
+                    return Ok(());
+                }
+                if self.tool == Tool::Lasso && self.lasso_kind == LassoKind::Polygonal {
+                    self.polygon = Some(SelectionDraft::new(p, None, mode));
+                    self.polygon_cursor = Some(p);
+                    return Ok(());
+                }
                 let marquee = (self.tool == Tool::Marquee).then_some(self.marquee_kind);
                 self.gesture = Some(Gesture::PixelSelection {
                     draft: SelectionDraft::new(p, marquee, mode),
@@ -1782,36 +2453,76 @@ impl Editor {
                 return Ok(());
             }
             if self.tool == Tool::Move {
-                if self.paint_target == PaintTarget::Mask
-                    && self.selection.ids.len() == 1
-                    && let Some(layer) = self.selected().cloned()
-                    && !layer.locked
-                    && layer.visible
-                    && !matches!(layer.content.as_ref(), Content::Group)
-                    && let Some(mask) = &layer.mask
-                    && !mask.linked
-                {
-                    let placement = mask.placement.unwrap_or_else(|| MaskPlacement::of(&layer));
-                    let at = geometry::to_local(&placement.as_layer(&layer), p);
-                    if at.x < 0.
-                        || at.y < 0.
-                        || at.x > layer.width as f64
-                        || at.y > layer.height as f64
+                if let Some(target) = self.independent_mask_layer() {
+                    let handle = self
+                        .cursor_map()
+                        .handles
+                        .as_ref()
+                        .and_then(|h| h.hit(p))
+                        .or_else(|| {
+                            self.mask_distortion
+                                .is_none()
+                                .then(|| geometry::hit_handle(&target, p, self.viewport.zoom))
+                                .flatten()
+                        })
+                        .unwrap_or("move");
+                    if self.mask_distortion.is_some()
+                        || ((modifiers.control || modifiers.meta)
+                            && handle != "move"
+                            && handle != "rotate")
                     {
+                        self.begin_mask_distortion()?;
+                        let corners = self.mask_distortion.as_ref().unwrap().corners;
+                        self.begin_edit("Distort Layer Mask");
+                        self.gesture = Some(Gesture::MaskDistort {
+                            origin: p,
+                            handle,
+                            corners,
+                            layer: target,
+                            free: modifiers.control || modifiers.meta,
+                        });
                         return Ok(());
                     }
-                    self.begin_edit("Move layer mask");
-                    self.gesture = Some(Gesture::MaskMove {
-                        origin: p,
-                        layer,
-                        placement,
-                    });
+                    let layer = self.selected().unwrap().clone();
+                    if let Some(handle) = geometry::hit_handle(&target, p, self.viewport.zoom)
+                        && (self.view_options.show_controls || self.layer_transform)
+                    {
+                        let handle_point = geometry::handles(&target, self.viewport.zoom)
+                            .into_iter()
+                            .find(|h| h.0 == handle)
+                            .unwrap()
+                            .1;
+                        self.begin_edit("Transform Layer Mask");
+                        self.gesture = Some(Gesture::Transform {
+                            origin: p,
+                            handle,
+                            handle_point,
+                            layer: target,
+                            mask: true,
+                        });
+                    } else {
+                        let at = geometry::to_local(&target, p);
+                        if at.x < 0.
+                            || at.y < 0.
+                            || at.x > target.width as f64
+                            || at.y > target.height as f64
+                        {
+                            return Ok(());
+                        }
+                        self.begin_edit("Move Layer Mask");
+                        self.gesture = Some(Gesture::MaskMove {
+                            origin: p,
+                            layer,
+                            placement: MaskPlacement::of(&target),
+                        });
+                    }
                     return Ok(());
                 }
                 if let Some(l) = self.selected().cloned()
                     && self.selection.ids.len() == 1
                     && !l.locked
                     && l.visible
+                    && (self.view_options.show_controls || self.layer_transform)
                     && let Some(handle) = geometry::hit_handle(&l, p, self.viewport.zoom)
                 {
                     self.begin_edit(if handle == "rotate" {
@@ -1829,6 +2540,7 @@ impl Editor {
                         handle,
                         handle_point,
                         layer: l,
+                        mask: false,
                     });
                     return Ok(());
                 }
@@ -1842,24 +2554,27 @@ impl Editor {
                 // Cmd/Ctrl-click walks the layers whose bounds contain the point, top to
                 // bottom and back around. Upstream's Cmd-click re-picks the topmost layer;
                 // cycling is a local extension so a full-canvas layer cannot bury the stack.
-                if modifiers.meta || modifiers.control {
+                if modifiers.meta {
                     self.pick_under(p);
                     return Ok(());
                 }
-                if !hit
-                    .as_ref()
-                    .is_some_and(|id| self.selection.ids.contains(id))
+                if self.view_options.auto_select
+                    && !self.layer_transform
+                    && hit.is_some()
+                    && !hit
+                        .as_ref()
+                        .is_some_and(|id| self.selection.ids.contains(id))
                 {
                     self.single_selection(hit.clone());
                 }
-                if hit.is_some() {
+                if !self.selected_layers().is_empty() {
                     self.begin_edit("Move layers");
                     self.gesture = Some(Gesture::Move {
                         origin: p,
                         layers: self
                             .selected_layers()
                             .into_iter()
-                            .filter(|l| !l.locked && l.visible)
+                            .filter(|l| !l.locked && self.history.document.effective(l).0)
                             .collect(),
                     });
                 }
@@ -1872,37 +2587,8 @@ impl Editor {
             {
                 return Ok(());
             }
-            if self.tool == Tool::Text {
-                // TypeTool's `beginTextGesture`: a click on live text edits it.
-                let existing = geometry::hit_layers(&self.history.document, p)
-                    .into_iter()
-                    .find(|l| matches!(l.content.as_ref(), Content::Text { .. }))
-                    .map(|l| l.id.clone());
-                if let Some(id) = existing {
-                    self.single_selection(Some(id));
-                    self.text_edit_requests += 1;
-                    self.tool = Tool::Move;
-                    return Ok(());
-                }
-                let mut l = Layer::new(
-                    "Text",
-                    800.min(self.history.document.width),
-                    240.min(self.history.document.height),
-                    Content::Text {
-                        text: "Your text".into(),
-                        font_size: 64.,
-                        font_family: FontFamily::SansSerif,
-                        color: self.color.clone(),
-                    },
-                );
-                l.x = p.x;
-                l.y = p.y;
-                self.add_layers(vec![l])?;
-                self.tool = Tool::Move;
-                return Ok(());
-            }
             if matches!(self.tool, Tool::Rectangle | Tool::Ellipse) {
-                if self.history.document.layers.len() >= 100 {
+                if self.history.document.layers.len() >= crate::model::MAX_LAYERS {
                     return Ok(());
                 }
                 let ellipse = self.tool == Tool::Ellipse;
@@ -1956,7 +2642,9 @@ impl Editor {
                 {
                     return Ok(());
                 }
-                if self.selected().is_none() && self.history.document.layers.len() >= 100 {
+                if self.selected().is_none()
+                    && self.history.document.layers.len() >= crate::model::MAX_LAYERS
+                {
                     return Ok(());
                 }
                 self.begin_edit(if mask {
@@ -2033,11 +2721,60 @@ impl Editor {
             return Ok(());
         };
         match &mut gesture {
+            Gesture::TextBox { origin, current } => {
+                *current = p;
+                if phase == Phase::Up {
+                    let size = if (p.x - origin.x).abs() < 4. && (p.y - origin.y).abs() < 4. {
+                        None
+                    } else {
+                        Some((
+                            (p.x - origin.x).abs().round().max(16.) as u32,
+                            (p.y - origin.y).abs().round().max(16.) as u32,
+                        ))
+                    };
+                    let at = if size.is_some() {
+                        Point::new(origin.x.min(p.x), origin.y.min(p.y))
+                    } else {
+                        *origin
+                    };
+                    self.begin_new_text(at, size)?;
+                    return Ok(());
+                }
+            }
+            Gesture::TextResize {
+                origin,
+                handle,
+                layer,
+            } => {
+                self.resize_text_box(layer, handle, *origin, p)?;
+                if phase == Phase::Up {
+                    self.gesture = None;
+                    return Ok(());
+                }
+            }
+            Gesture::SelectionMove { origin, selection } => {
+                self.history.pixel_selection =
+                    Some(selection.translated(Point::new(p.x - origin.x, p.y - origin.y))?);
+            }
+            Gesture::PixelMove { origin, layer } => {
+                let mut next = layer.clone();
+                next.x += (p.x - origin.x).round();
+                next.y += (p.y - origin.y).round();
+                if next.validate().is_ok() {
+                    self.history.preview(self.with_layers(vec![next]));
+                    self.update_floating_selection()?;
+                }
+            }
             Gesture::Pan { origin, pan } => {
                 self.viewport.pan = Point::new(pan.x + vp.x - origin.x, pan.y + vp.y - origin.y);
             }
             Gesture::Move { origin, layers } => {
-                let moved = Self::moved(layers, Point::new(p.x - origin.x, p.y - origin.y));
+                let delta = self.snap_move(
+                    layers,
+                    Point::new(p.x - origin.x, p.y - origin.y),
+                    modifiers.control,
+                );
+                let moved = Self::moved(layers, delta);
                 self.history.preview(self.with_layers(moved));
             }
             Gesture::Transform {
@@ -2045,6 +2782,7 @@ impl Editor {
                 handle,
                 handle_point,
                 layer,
+                mask,
             } => {
                 let mut next = layer.clone();
                 if p != *origin {
@@ -2064,19 +2802,41 @@ impl Editor {
                     };
                 }
                 if next.validate().is_ok() {
-                    self.history.preview(self.with_layers(vec![next]));
+                    if *mask {
+                        let mut original = self.selected().unwrap().clone();
+                        let placement = MaskPlacement::of(&next);
+                        Arc::make_mut(original.mask.as_mut().unwrap()).placement =
+                            if placement == MaskPlacement::of(&original) {
+                                None
+                            } else {
+                                Some(placement)
+                            };
+                        self.history.preview(self.with_layers(vec![original]));
+                    } else {
+                        self.history.preview(self.with_layers(vec![next]));
+                    }
                 }
             }
             Gesture::Shape { origin, layer } => {
-                let end = Point::new(
-                    p.x.clamp(0., self.history.document.width as f64),
-                    p.y.clamp(0., self.history.document.height as f64),
-                );
+                let Some(bounds) =
+                    crate::shape::drag_box(*origin, p, modifiers.shift, modifiers.alt)
+                else {
+                    if phase == Phase::Up {
+                        self.cancel_gesture();
+                    } else {
+                        self.gesture = Some(gesture);
+                    }
+                    return Ok(());
+                };
                 let mut l = layer.clone();
-                l.x = origin.x.min(end.x);
-                l.y = origin.y.min(end.y);
-                l.width = (end.x - origin.x).abs().round().max(1.) as u32;
-                l.height = (end.y - origin.y).abs().round().max(1.) as u32;
+                l.x = bounds.x;
+                l.y = bounds.y;
+                l.width = bounds.width as u32;
+                l.height = bounds.height as u32;
+                if let Err(error) = dimensions(l.width, l.height) {
+                    self.cancel_gesture();
+                    return Err(error);
+                }
                 self.history.preview(self.with_layers(vec![l]));
             }
             Gesture::Brush { stroke } => {
@@ -2109,28 +2869,78 @@ impl Editor {
             Gesture::Crop { drag, .. } => {
                 let ratio = self.crop_ratio.value(&self.history.document);
                 let mut rect = drag.updated(p, ratio, modifiers.alt);
-                let mut xs = vec![0., self.history.document.width as f64];
-                let mut ys = vec![0., self.history.document.height as f64];
-                for layer in self.history.document.layers.iter().filter(|l| l.visible) {
-                    let corners = geometry::corners(layer);
-                    xs.extend([
-                        corners.iter().map(|p| p.x).fold(f64::INFINITY, f64::min),
-                        corners
-                            .iter()
-                            .map(|p| p.x)
-                            .fold(f64::NEG_INFINITY, f64::max),
-                    ]);
-                    ys.extend([
-                        corners.iter().map(|p| p.y).fold(f64::INFINITY, f64::min),
-                        corners
-                            .iter()
-                            .map(|p| p.y)
-                            .fold(f64::NEG_INFINITY, f64::max),
-                    ]);
+                let (xs, ys) = crate::placement::targets(
+                    &self.history.document,
+                    &self.view_options,
+                    &[],
+                    false,
+                );
+                if !modifiers.control {
+                    rect = crop::snap(
+                        rect,
+                        *drag,
+                        p,
+                        ratio,
+                        (&xs, &ys),
+                        10. * self.display_scale / self.viewport.zoom,
+                    );
                 }
-                rect = crop::snap(rect, *drag, p, ratio, (&xs, &ys), 6. / self.viewport.zoom);
                 if rect.validate().is_ok() {
                     self.crop_rect = Some(rect);
+                }
+            }
+            Gesture::MaskDistort {
+                origin,
+                handle,
+                corners,
+                layer,
+                free,
+            } => {
+                let mut moved = *corners;
+                if *handle == "move" {
+                    for corner in &mut moved {
+                        corner.x += p.x - origin.x;
+                        corner.y += p.y - origin.y;
+                    }
+                } else if *free && *handle != "rotate" {
+                    let affected: &[usize] = match *handle {
+                        "nw" => &[0],
+                        "n" => &[0, 1],
+                        "ne" => &[1],
+                        "e" => &[1, 2],
+                        "se" => &[2],
+                        "s" => &[2, 3],
+                        "sw" => &[3],
+                        "w" => &[3, 0],
+                        _ => &[],
+                    };
+                    for i in affected {
+                        moved[*i].x += p.x - origin.x;
+                        moved[*i].y += p.y - origin.y;
+                    }
+                } else {
+                    let next = if *handle == "rotate" {
+                        geometry::rotate(layer, *origin, p, modifiers.shift)
+                    } else {
+                        let at = geometry::handles(layer, self.viewport.zoom)
+                            .into_iter()
+                            .find(|h| h.0 == *handle)
+                            .unwrap()
+                            .1;
+                        geometry::resize(
+                            layer,
+                            handle,
+                            Point::new(at.x + p.x - origin.x, at.y + p.y - origin.y),
+                            modifiers.shift,
+                            modifiers.alt,
+                        )
+                    };
+                    for (point, old) in moved.iter_mut().zip(corners.iter()) {
+                        *point = geometry::to_world(&next, geometry::to_local(layer, *old));
+                    }
+                }
+                if crate::distort::usable(&moved) {
+                    self.preview_mask_distortion(moved, Some(2048.))?;
                 }
             }
             Gesture::MaskMove {
@@ -2174,8 +2984,12 @@ impl Editor {
             Gesture::Property => {}
         }
         self.gesture = Some(gesture);
+        self.update_floating_selection()?;
         if phase == Phase::Up {
             self.finish_gesture()?;
+            if self.floating.as_ref().is_some_and(|f| !f.persistent) {
+                self.commit_transform()?;
+            }
         }
         Ok(())
     }

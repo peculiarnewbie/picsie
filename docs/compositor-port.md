@@ -32,8 +32,8 @@ Port Compositor's existing behavior and algorithms before designing alternatives
 | `crop.rs`, `canvas_size.rs`, `editor.rs`, `render.rs` | [Crop.swift](https://github.com/robbietilton/Compositor/blob/609dbeae2ef68ef4fc82d67e4981a49852eb6e13/Compositor/Document/Crop.swift), [CropTests.swift](https://github.com/robbietilton/Compositor/blob/609dbeae2ef68ef4fc82d67e4981a49852eb6e13/CompositorTests/CropTests.swift)                                                                                                                                                                                          | Eight handles, aspect presets, edge snapping, reversible draft, and crop that translates layers while retaining source pixels. QuickGUI's C/Enter/Escape controls and Skia overlay replace AppKit controls. The local 8192 side/24MP limits apply.                                                                                                                                                                                                                                                                                                                                                                |
 | `model.rs`, `render.rs`, `editor.rs`                  | [LayerMask.swift](https://github.com/robbietilton/Compositor/blob/609dbeae2ef68ef4fc82d67e4981a49852eb6e13/Compositor/Document/LayerMask.swift), [LayerMaskTests.swift](https://github.com/robbietilton/Compositor/blob/609dbeae2ef68ef4fc82d67e4981a49852eb6e13/CompositorTests/LayerMaskTests.swift), [MaskTransformTests.swift](https://github.com/robbietilton/Compositor/blob/609dbeae2ef68ef4fc82d67e4981a49852eb6e13/CompositorTests/MaskTransformTests.swift)       | New masks begin as 1×1 grayscale assets; completed strokes materialize immutable 8-bit coverage. Masks may be linked or placed independently; linked placement follows layer transforms. Old stroke lists remain readable. Local brush stamps and placed-mask resampling still differ from CoreGraphics.                                                                                                                                                                                                                                                                                                          |
 | `model.rs`, `editor.rs`, `render.rs`                  | [LayerGroups.swift](https://github.com/robbietilton/Compositor/blob/609dbeae2ef68ef4fc82d67e4981a49852eb6e13/Compositor/Document/LayerGroups.swift), [GroupTests.swift](https://github.com/robbietilton/Compositor/blob/609dbeae2ef68ef4fc82d67e4981a49852eb6e13/CompositorTests/GroupTests.swift)                                                                                                                                                                          | Parent IDs, cycle/depth validation, depth-first rows, collapse, inherited visibility, pass-through opacity, grouping, and subtree deletion/duplication. QuickGUI offers folder drag targets and Into/Out actions. Folder masks multiply each descendant's coverage; live clipping is described below.                                                                                                                                                                                                                                                                                                             |
-| `pixel_selection.rs`, `editor.rs`, `render.rs`        | [Selection.swift](https://github.com/robbietilton/Compositor/blob/609dbeae2ef68ef4fc82d67e4981a49852eb6e13/Compositor/Document/Selection.swift), [SelectionTests.swift](https://github.com/robbietilton/Compositor/blob/609dbeae2ef68ef4fc82d67e4981a49852eb6e13/CompositorTests/SelectionTests.swift), [SelectionFeatherTests.swift](https://github.com/robbietilton/Compositor/blob/609dbeae2ef68ef4fc82d67e4981a49852eb6e13/CompositorTests/SelectionFeatherTests.swift) | Rectangular/elliptical marquee and freehand lasso, replace/add/subtract, antialiased coverage, select all/deselect, coverage-clipped pixel clearing, and Select → Modify → Feather (`featherSelection`, `coverageBounds`). Rust stores coverage and rasterizes edited layer pixels. Fill, Invert, Expand, and Contract are supported. Polygonal lasso, wand/object selection, selection move/transform, and persisted selection state remain unsupported. Completed selection edits, including Feather, participate in undo/redo.                                                                                 |
-| `comp.rs`, `files.rs`                                 | [ProjectStore.swift](https://github.com/robbietilton/Compositor/blob/609dbeae2ef68ef4fc82d67e4981a49852eb6e13/Compositor/IO/ProjectStore.swift), [ProjectTests.swift](https://github.com/robbietilton/Compositor/blob/609dbeae2ef68ef4fc82d67e4981a49852eb6e13/CompositorTests/ProjectTests.swift)                                                                                                                                                                          | Reads versions 1–8 and writes version 8 directory packages with `manifest.json`, UUID-named PNG assets, grayscale mask PNGs, transforms, sampling, folders, opacity, and blend modes. Validates paths and writes a complete sibling package before replacement. Picsie's limits apply. Folder masks (version 6+) and linked mask sources (version 5+) round-trip. Live effects, adjustments, guides, and editable upstream text/shape metadata are rejected on import. Picsie text/shapes/gradients are rasterized on export and the UI announces that conversion. `.picsie`/`.electropic` files remain readable. |
+| `pixel_selection.rs`, `editor.rs`, `render.rs`        | [Selection.swift](https://github.com/robbietilton/Compositor/blob/609dbeae2ef68ef4fc82d67e4981a49852eb6e13/Compositor/Document/Selection.swift), [SelectionTests.swift](https://github.com/robbietilton/Compositor/blob/609dbeae2ef68ef4fc82d67e4981a49852eb6e13/CompositorTests/SelectionTests.swift), [SelectionFeatherTests.swift](https://github.com/robbietilton/Compositor/blob/609dbeae2ef68ef4fc82d67e4981a49852eb6e13/CompositorTests/SelectionFeatherTests.swift) | Rectangular/elliptical marquee and freehand lasso, replace/add/subtract, antialiased coverage, select all/deselect, coverage-clipped pixel clearing, and Select → Modify → Feather (`featherSelection`, `coverageBounds`). Rust stores coverage and rasterizes edited layer pixels. Fill, Invert, Expand, and Contract are supported. Polygonal lasso, color wand, selection movement and selected-pixel transforms are supported in the native app; object selection and persisted selection state remain unsupported. Completed selection edits, including Feather, participate in undo/redo.                                                                                 |
+| `comp.rs`, `files.rs`                                 | [ProjectStore.swift](https://github.com/robbietilton/Compositor/blob/609dbeae2ef68ef4fc82d67e4981a49852eb6e13/Compositor/IO/ProjectStore.swift), [ProjectTests.swift](https://github.com/robbietilton/Compositor/blob/609dbeae2ef68ef4fc82d67e4981a49852eb6e13/CompositorTests/ProjectTests.swift)                                                                                                                                                                          | Reads versions 1–8 and writes version 8 directory packages with `manifest.json`, UUID-named PNG assets, grayscale mask PNGs, transforms, sampling, folders, opacity, and blend modes. Validates paths and writes a complete sibling package before replacement. Picsie's limits apply. Folder masks (version 6+) and linked mask sources (version 5+) round-trip. Live effects, adjustments and editable upstream shape metadata are rejected on import. Guides and live text round-trip. Picsie shapes/gradients and legacy translucent text rasterize on export, with a UI notice. `.picsie`/`.electropic` files remain readable. |
 
 The Rust behavior suite translates or adapts the cited crop, mask, group, selection, and package scenarios, including package overwrite and unsafe asset names; `tests/native.test.ts` runs those command paths through the actual addon. The upstream AppKit suite cannot run in this Linux workspace, and parity is claimed only for the behaviors stated above.
 
@@ -53,17 +53,17 @@ The Swift/AppKit suite has not been executed in this Linux workspace. These are 
 | Area               | Upstream reference                            | Remaining local deviation                                                                                                                                                                                                                                                                                                              |
 | ------------------ | --------------------------------------------- | -------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
 | Layer workflow     | `LayerGroups.swift`, `NativeLayerList.swift`  | Folder hierarchy and pass-through appearance are present. The QuickGUI panel offers folder drag targets, Into/Out actions, clipping controls, and folder masks. Option-drag copying, automatic scroll while dragging, and upstream thumbnail drag interactions remain.                                                                 |
-| Transform session  | `LayerTransform.swift`, `EditorSession.swift` | Persistent Apply/Cancel transforms, guides, and distortion remain. Drag commits retain fractions. Canvas Shift-click toggles membership rather than upstream Cmd+Shift.                                                                                                                                                                |
+| Transform session  | `LayerTransform.swift`, `EditorSession.swift` | Persistent Apply/Cancel layer and selected-pixel transforms are present in the native UI. Guides and distortion remain. Drag commits retain fractions. Canvas Shift-click toggles membership rather than upstream Cmd+Shift.                                                                                                                                                                |
 | Ratio modifier     | `TransformDrag.updated`, `lockRatio != shift` | User-requested Shift-to-preserve maps to upstream with `lockRatio = false`; a persistent ratio-lock toggle is absent.                                                                                                                                                                                                                  |
 | Masks and painting | `LayerMask.swift`, upstream brush engine      | Software brush spacing, curves, coverage union/accumulation, and opacity follow BrushStroke.swift. Native tip rasterization and placed-mask sampling differ from CoreGraphics. GPU coverage, optimized source tile publishing, healing, and cloning remain. Legacy vector strokes stay readable.                                       |
-| Selection          | `Selection.swift`                             | Coverage remains session-only but is restored by undo/redo, including feather metadata and explicit empty selections. Polygonal lasso, wand/object selection, selection move/transform, selected-pixel transforms, the antialiasing toggle, and pixel-color inversion remain. Selection inversion and foreground Fill are implemented. |
-| Project files      | `ProjectStore.swift`                          | The `.comp` adapter supports the raster/folder/raster-mask/live-mask subset within Picsie's lower limits. `.picsie` remains a single JSON file; `.comp` exports flatten Picsie's live text, shape, and gradient content. Rich upstream records are rejected explicitly.                                                                |
-| UI and limits      | Upstream `UI/`, model validation              | QuickGUI controls and 8192 side/24MP/100-layer bounds are adaptations.                                                                                                                                                                                                                                                                 |
+| Selection          | `Selection.swift`                             | Coverage remains session-only but is restored by undo/redo, including feather metadata and explicit empty selections. Polygonal lasso, color wand, outline movement, selected-pixel movement/duplication and transforms, and the pixel clipboard are present in the native UI. Object selection, the antialiasing toggle, and pixel-color inversion remain. Selection inversion and foreground Fill are implemented. |
+| Project files      | `ProjectStore.swift`                          | The `.comp` adapter supports the raster/folder/raster-mask/live-mask subset within Picsie's lower limits. `.picsie` remains a single JSON file; `.comp` retains guides and live RGB text; Picsie shapes/gradients and legacy translucent text rasterize. Rich upstream records are rejected explicitly.                                                                |
+| UI and limits      | Upstream `UI/`, model validation              | GPUI Kit controls, the retained QuickGUI reference, and 8192 side/24MP/100-layer bounds are adaptations.                                                                                                                                                                                                                                                                 |
 
 ## Canvas Size and history port
 
 - `crates/picsie-core/src/canvas_size.rs` translates `CanvasSizeDraft` and `CanvasSizeOptions.offset` from [CanvasSize.swift](https://github.com/robbietilton/Compositor/blob/609dbeae2ef68ef4fc82d67e4981a49852eb6e13/Compositor/Document/CanvasSize.swift), plus the document translation and colored extension routine from [CanvasResizer.swift](https://github.com/robbietilton/Compositor/blob/609dbeae2ef68ef4fc82d67e4981a49852eb6e13/Compositor/IO/CanvasResizer.swift). Nine anchors, floor rounding, source preservation, off-canvas content, and transparent holes in colored extensions follow that source. Skia creates the extension PNG instead of CoreGraphics.
-- `src/ui/canvas-size.tsx` follows [CanvasSizeSheet.swift](https://github.com/robbietilton/Compositor/blob/609dbeae2ef68ef4fc82d67e4981a49852eb6e13/Compositor/UI/CanvasSizeSheet.swift). Center/absolute/pixels/unlocked/transparent defaults and the Cmd/Ctrl+Alt+C shortcut match upstream. Local differences: no inches/centimeters despite stored resolution metadata; no background-palette choice because this editor exposes only a foreground color; existing 8192-side/24MP/100-layer limits remain. The dimensions button gives Linux access without application menus. Guides remain unported.
+- `src/ui/canvas-size.tsx` follows [CanvasSizeSheet.swift](https://github.com/robbietilton/Compositor/blob/609dbeae2ef68ef4fc82d67e4981a49852eb6e13/Compositor/UI/CanvasSizeSheet.swift). Center/absolute/pixels/unlocked/transparent defaults and the Cmd/Ctrl+Alt+C shortcut match upstream. Local differences: no inches/centimeters despite stored resolution metadata; no background-palette choice because this editor exposes only a foreground color; existing 8192-side/24MP/100-layer limits remain. The dimensions button gives Linux access without application menus. Native guides now follow the canvas translation; see the placement/type pass below.
 - `crates/picsie-core/src/history.rs` adapts [DocumentHistory.swift](https://github.com/robbietilton/Compositor/blob/609dbeae2ef68ef4fc82d67e4981a49852eb6e13/Compositor/Document/DocumentHistory.swift): before/after snapshots, UUID revisions, nested transaction depth, value-equivalent no-ops, selection restoration, 100 entries/256 MB, and oldest-first pruning across undo and redo. `Editor` captures selection before and after each complete operation. Local adaptations retain multi-selection/range anchors, cancellation of live gestures, and the document captured by an asynchronous save. New documents still open separate windows, so creation of a window is not an undo entry.
 - [crates/picsie-core/tests/behavior.rs](../crates/picsie-core/tests/behavior.rs) translates the four scenarios in [CanvasSizeTests.swift](https://github.com/robbietilton/Compositor/blob/609dbeae2ef68ef4fc82d67e4981a49852eb6e13/CompositorTests/CanvasSizeTests.swift) (physical units excluded; local limits substituted) and the layer/selection, navigation/no-op/revision, nested-transaction, and retained-storage scenarios in [HistoryTests.swift](https://github.com/robbietilton/Compositor/blob/609dbeae2ef68ef4fc82d67e4981a49852eb6e13/CompositorTests/HistoryTests.swift). Additional cases cover local validation, recoverable cropped artwork, multi-selection, and gesture cancellation.
 
@@ -99,13 +99,13 @@ Necessary adaptations and remaining limits:
 - Diameter defaults to upstream's 40px, hardness 100%, opacity 100%, smoothing 0. The existing foreground swatch, standalone Eraser tool, zero-opacity setting, and automatic blank layer creation remain local UI/workflow adaptations. Bracket size shortcuts retain the existing 5px step. There is one foreground palette, so separate background-color Fill is unavailable. Healing, cloning, and other brush tools remain outside this pass.
 - Ordinary layer masks retain the existing nearest placed-mask sampling. Folder mask rendering follows upstream's folder transform and pass-through clipping. Live coverage is resolved iteratively within the canvas to bound temporary memory; deletion renders source coverage through the inverse target transform, including source pixels outside the canvas. Skia sampling can differ at transformed/subpixel edges from CoreGraphics.
 - Deleting a live source automatically takes upstream's **Bake and Delete** path as one undoable operation. The existing immediate Delete workflow is retained; the upstream choice dialog for unlinking instead is not ported. Source links can be released explicitly before deletion. QuickGUI exposes **Clip to layer below** and a source picker in place of upstream thumbnail gestures. GIMP UX is not used.
-- Existing limits remain 8192px per side, 24MP per surface, and 100 layers; source growth beyond those limits fails atomically. Selections remain session-only. More advanced selection operations and richer `.comp` live records remain unported.
+- Existing limits remain 8192px per side, 24MP per surface, and 10,000 layers; source growth beyond those limits fails atomically. Selections remain session-only. Object selection, the antialias toggle, pixel-color inversion and richer `.comp` live records remain unported.
 
 `reference_features.rs` adapts the upstream `SelectionTests` expansion/contraction fixtures; feathered fill from `SelectionFeatherTests`; seven pixel scenarios from `BrushTests` (opacity cap, soft accumulation, spacing ripple, sparse curves, provisional tail replacement, trimmed bounds, and document-space diameter on a rotated/nonuniform/flipped layer); folder coverage/painting from `LayerMaskTests`; and soft-alpha, hidden-source, graph edit, persistence, and deletion scenarios from `LiveMaskTests`. Test comments identify the source scenarios. Local regressions separately cover transformed fill/mask placement, empty selections, live-text recoloring, interrupted smoothed strokes, native image persistence, folder/multi-layer copies, off-canvas dependency baking, and `.picsie` round-trips. The actual-addon suite exercises the commands under Node and Bun, including Shift-click and `.comp` reopen. These are selected translated/adapted fixtures, not execution of the Swift/AppKit suite or full upstream parity.
 
 ## Editor UX port (text, inspector, color picker, layer list, picking)
 
-- **Text** — `render.rs` translates `TypeTool.textImage`'s layout: box text word-wraps at the box width minus `LayerTextStyle.padding` (12 px each side), with the padded box clipping overflow. `beginTextGesture`'s click-on-live-text becomes the `EditText` command (also reached by a second press on a layer row, as `NativeLayerList`'s `doubleAction` opens what a row holds). Commit keys are the user's explicit choice — Enter commits and Shift+Enter inserts a line — instead of upstream's ⌘Return on its inline `NSTextView`. Editing uses QuickGUI's controlled value contract: every keystroke previews through `beginPropertyEdit("Edit text")` and finishes as one undo entry, matching `applyText`'s single entry. A second press is read from QuickGUI's `MouseEventDetails.clickCount` (Button `onDoubleClick` delivery proved unreliable). Not ported: point text auto-growing boxes, box-handle resizing of text boxes, tracking/leading controls, the overset `+` marker.
+- **Text** — `render.rs` translates `TypeTool.textImage`'s layout: box text word-wraps at the box width minus `LayerTextStyle.padding` (12 px each side), with the padded box clipping overflow. `beginTextGesture`'s click-on-live-text becomes the `EditText` command (also reached by a second press on a layer row, as `NativeLayerList`'s `doubleAction` opens what a row holds). Commit keys are the user's explicit choice — Enter commits and Shift+Enter inserts a line — instead of upstream's ⌘Return on its inline `NSTextView`. Editing uses QuickGUI's controlled value contract: every keystroke previews through `beginPropertyEdit("Edit text")` and finishes as one undo entry, matching `applyText`'s single entry. A second press is read from QuickGUI's `MouseEventDetails.clickCount` (Button `onDoubleClick` delivery proved unreliable). This describes the earlier QuickGUI adapter. The native placement/type pass below supersedes those gaps.
 - **Inspector** — `FilterSheet`'s repeating row (caption, slider, value, unit) and `LayerAppearanceControls`' opacity slider become `SliderField` in `src/ui/controls.tsx`, with the `beginOpacityEdit`/`finishOpacityEdit` bracket generalized as `beginPropertyEdit`/`finishGesture`, so a slider drag is one undo entry. Adjustments stay local per-layer properties (upstream uses adjustment layers and floating filter sheets; those remain unported).
 - **Color** — `ColorPickerSheet`'s saturation/brightness square, hue strip, live preview, integer R/G/B fields, and hex field are ported in `src/ui/color-picker.tsx`, with `ColorPalette.swift`'s `PaletteColor`/`PickerHSB` math in `src/ui/color-math.ts`: `RRGGBB`/`RGB` with or without `#`, uppercase `RRGGBB` formatting, 8-bit HSB round-trips, and Photoshop's rule that grays keep the previous hue and black keeps hue and saturation. Nothing is written until OK. The Fill swatch targets the selected layer's color, standing in for upstream's `ColorPickerTarget`. Adaptations: the picker is a modal QuickGUI dialog, so canvas sampling while open is not available (use the Sample tool first, as the caption says); QuickGUI's CSS-like gradient strings paint the square and strip.
 - **Layer list** — `NativeLayerList`'s drop semantics are ported in `src/ui/layers.tsx`: whole rows drag (upstream has no grip), drops between rows reorder into the target's parent, drops on a folder row file inside it, and moves are single undo entries with the dragged selection retained. Adaptations: fixed-height-row coordinate math instead of `NSTableView`; Option-drag copy and effect/mask drags are not ported. Fixed as part of this pass: QuickGUI's release event does not carry the drag total in `delta` — displacement comes from `localPosition − localOrigin`.
@@ -278,3 +278,190 @@ The [experiment report](desktop-gimp-experiments.md) records native workflow,
 exact canvas, untraced performance and hardware-adapter verification. Measured
 improvements are limited to this Linux virtual-display workload; physical
 display and other-platform performance remain unmeasured.
+
+
+## Native clipboard, selection tools, merging and Image Size (2026-09-30)
+
+This pass implements all four requested feature groups in the default Rust / GPUI Kit
+application. The QuickGUI application remains the earlier UI parity reference; its
+UI has not been expanded with these new controls. Rust owns every pixel operation.
+
+| Implementation | Pinned Compositor source | Ported behavior and adaptations |
+| --- | --- | --- |
+| `editor/operations.rs`, desktop `engine.rs`, `ui/clipboard.rs` | `Document/SelectionClipboard.swift` | Copy/Cut/Paste, Copy Merged and Layer via Copy. Copy uses the selected path's tight canvas-clipped bounds, including feather growth; active-layer copying ignores appearance, opacity and masks, while mask copying produces opaque gray and Copy Merged uses the visible composite. Internal paste preserves origin across native windows; external images center on the canvas. New layers use the first unused `Layer N` name. PNG encoding/decoding occurs only at the operating-system clipboard boundary, on the engine worker. Kit preserves text-field clipboard handling. |
+| `pixel_selection.rs`, `editor.rs`, `editor/operations.rs`, desktop `ui/input.rs` | `Document/Selection.swift`, `SelectionEdits.swift`, `FloatingSelection.swift`, `Rendering/EditorCanvas.swift` | Whole-pixel outline movement retains off-canvas geometry. Control/Command-drag moves selected pixels; Alt/Option duplicates. Floating transforms support existing handles and numeric fields, Apply/Cancel, source growth, white mask coverage in newly exposed source regions, and one outer history transaction. An unchanged transform restores the exact source, avoiding feather round-trip loss. Shift retains the user's proportional-resize behavior. Polygonal lasso supports hover preview, corner removal, Enter/double-click/near-first-point closure (8 view pixels), and Escape cancellation. |
+| `wand.rs`, `editor/operations.rs`, native wand controls | `Document/MagicWand.swift`, `Rendering/WandPixels.c` | Default tolerance 32, point sampling, contiguous enabled, and active-layer sampling. Point/3×3/5×5 averaging, premultiplied RGBA tolerance including alpha, scanline flood fill, noncontiguous matching, exact directed pixel outlines, holes and diagonal contacts are translated. The upstream eight-million-edge cap remains. Sample All Layers reads the visible composite. Apple Vision object selection is not part of this port. |
+| `editor/operations.rs::merge_layers` | `Document/LayerMerge.swift` | Single-layer Merge Down uses the lower sibling; multiple selected layers merge their subtrees; Merge Group includes descendants and removes the folder. Appearance, masks and internal clipping bake into a trimmed raster. The highest selected stack position supplies name/parent/anchor; Merge Down retains the lower name. External clipping dependents redirect to the result. Hierarchy validation precedes the single undo transaction. |
+| `image_size.rs`, desktop `ui/dialogs/image.rs`, `render.rs::export` | `IO/ImageResizer.swift`, `UI/ImageSizeSheet.swift` | Image Size independently resamples transformed layers in document axes, retaining identity, hierarchy, visibility, opacity, blend and adjustments. Resolution-only edits retain pixel assets/transforms. Independent masks retain pixels and scale placement; attached masks resample separately, with resolution-independent uniform masks retained. Pixels/percent/inches/centimeters, aspect locking, resample toggle and sampling choices follow the upstream form. Resolution-only mode permits inches/centimeters. Resolution persists in project files and PNG/JPEG density metadata. |
+
+Remaining adaptations in this pass:
+
+- Skia replaces CoreGraphics. Existing `High` sampling uses the engine's smooth
+  interpolation; it does not reproduce CoreGraphics high-quality filtering.
+  Placed-mask transforms use the existing rotation/scale placement model and its
+  shear-dropping rule. Live text, shape and gradient assets rasterize on Image Size.
+- Existing limits apply: 8192 pixels per side, 24MP per surface and per aggregate
+  resized source/mask asset set, and 10,000 layers. A floating selection uses one
+  temporary layer, so beginning one in a 100-layer document fails atomically.
+- GPUI exposes image clipboard bytes but no portable pasteboard change counter.
+  Internal origin recognition uses equality with the application's last copied
+  image, shared across windows. An externally re-copied identical PNG can therefore
+  retain the internal origin. Different external images center normally.
+- Pixel selections remain session-only. New operations preserve them in history;
+  reopening a project starts without a selection. Guides, distortion, object
+  selection and the selection antialias toggle remain outside this pass.
+- The retained addon exposes `dispatchAsync` for new raster commands, keeping
+  image processing off the JavaScript thread. Callers must await Apply/Cancel
+  before capturing a save/export; unfinished transform captures are rejected.
+  The native desktop automatically applies transforms before save/export.
+
+`crates/picsie-core/tests/workflow_features.rs` translates selected scenarios from
+`SelectionClipboardTests.swift`, `SelectionEditTests.swift`, `SelectionTests.swift`,
+`MagicWandTests.swift` and `ImageSizeTests.swift`: clipboard placement/clear/undo, lasso-shaped copies and visible-layer merged copies,
+Layer via Copy, movement and duplication, off-canvas outlines, transform apply/cancel
+and source/mask growth, polygon corners, wand tolerance/alpha/averaging/holes/row
+orientation, layer-independent resizing, rotated hidden assets,
+resolution-only persistence/export, and invalid allocation rejection. Comments
+identify source scenarios; separately labeled local tests cover merging, clipboard
+mask/feather behavior, independently placed masks during resizing, actual pointer
+modifiers, and stack selection order. These
+are selected fixture adaptations, not execution of the Swift/AppKit suite.
+
+The real desktop worker tests cover cut/paste ordering, bad-image recovery, Image
+Size and undo. `tests/native.test.ts` exercises generated typed commands through the
+actual Node/Bun addon and independently reads exported pixels and saved packages.
+`crates/picsie-desktop/verify.py` exercises all four feature groups through real
+X11 events and the system image clipboard, alongside the earlier UI workflow suite.
+
+## Native Compositor UI pass (2026-09-30)
+
+The user changed the UI target from QuickGUI parity to Compositor. The native
+shell in `crates/picsie-desktop/src/ui/layout.rs`, tool headers in `toolbars.rs`,
+and layer rows/mask adapters in `layers.rs` adapt the pinned `ContentView.swift`,
+`ToolHeaderStyle.swift`, `TransformInspector.swift`, `BrushControls.swift`,
+`LassoControls.swift`, `TypeControls.swift`, `ShapeControls.swift`,
+`LayersPanel.swift`, `LayerAppearanceControls.swift` and `NativeLayerList.swift`.
+The port retains the 42/56/30 px tool-header/rail/status dimensions, the Layers
+panel's 252 px default and 202–352 px resize range, 52 px layer rows, and neutral
+chrome. Existing Rust commands remain authoritative. Numeric transform edits and
+flips now begin an Apply/Cancel session, matching `TransformInspector.change`.
+
+`crates/picsie-core/src/thumbnail.rs` translates `CanvasThumbnail.layer`'s
+canvas-shaped 36-point, 2× checkerboard preview and transformed source placement.
+Its cache follows `NativeLayerList.ThumbnailKey`: selection/name/opacity changes
+reuse the picture; source/geometry/canvas changes invalidate it. Sources render
+without appearance or masks, then small BGRA resources travel in the existing
+bounded native frame mailbox. GPUI reuses unchanged uploads and evicts deleted or
+replaced pictures. Mask thumbnails are not included in this pass. Two local
+regressions check placement/aspect ratio and cache invalidation; these are not
+claimed as translated upstream tests.
+
+`render/composite.rs::preview_background` uses `EditorCanvas.draw`'s 0.105 gray
+pasteboard and 0.30/0.35 gray, 10-point viewport-clipped transparency grid. The
+cached Skia backing and shared engine boundary are unchanged; the source canvas shadow is now adapted to Skia Gaussian blur (see the polish pass below). Rulers are covered in the following feature pass. `ui/dialogs/image.rs` follows `ImageSizeSheet`'s separate
+width/height rows, 430 px form, resolution and resampling arrangement.
+
+Kit menus/popovers replace AppKit menus and floating panel mechanisms. Current
+project windows, hidden native text input, single foreground picker and
+local adjustment palette remain explicit adaptations, not direct upstream ports.
+See [the UI record](gpui-ui-parity.md) for supported controls and remaining gaps.
+
+## Native placement and typography (2026-09-30)
+
+Pinned source: Compositor `609dbeae2ef68ef4fc82d67e4981a49852eb6e13`, MIT
+© 2026 Wonder Assembly LLC. Source references remain in the translated modules.
+
+| Rust implementation | Pinned upstream source | Behavior / adaptation |
+| --- | --- | --- |
+| `placement.rs`, `editor/placement.rs`, `ui/placement.rs` | [Guides.swift](https://github.com/robbietilton/Compositor/blob/609dbeae2ef68ef4fc82d67e4981a49852eb6e13/Compositor/Document/Guides.swift), [CanvasRulers.swift](https://github.com/robbietilton/Compositor/blob/609dbeae2ef68ef4fc82d67e4981a49852eb6e13/Compositor/Rendering/CanvasRulers.swift), `TransformSnap`, `CropSnap`, `TransformPress` | 18-point rulers, source nice-number ticks, document guides and drag drafts, clear/lock/undo, 64-pixel grid with eight subdivisions, nearest edge/center snapping within ten screen points. Canvas/crop offsets and Image Size scale guides. Auto Select defaults off; Show Controls defaults on. Control moves freely; local cycling uses Super/Command or middle-click. Ruler BGRA resources use the existing bounded mailbox/cache. |
+| `text.rs`, `editor/text.rs`, `ui/text.rs`, `ui/toolbars.rs` | [TypeTool.swift](https://github.com/robbietilton/Compositor/blob/609dbeae2ef68ef4fc82d67e4981a49852eb6e13/Compositor/Document/TypeTool.swift), [InlineTextEditor.swift](https://github.com/robbietilton/Compositor/blob/609dbeae2ef68ef4fc82d67e4981a49852eb6e13/Compositor/Rendering/InlineTextEditor.swift), `TypeControls.swift` | Blank point/box drafts, whitespace discard, one commit/undo, cancellation, transformed corner-preserving point growth, box resizing, 12-pixel padding, alignment, tracking, leading and overset marker. SkParagraph replaces AppKit layout; Kit supplies text input and local undo. Glyph geometry paints the caret/selection and maps UTF-8 input offsets to Skia UTF-16 positions. Installed family and PostScript face names resolve through Skia's font manager. Rendered rows and caret affinity adapt wrapped keyboard navigation. |
+| `model.rs`, `comp.rs` | `LayerTextStyle`, `CanvasGuide`, `ProjectStore.Manifest` | Backward-compatible optional `textLayout`, document guides, live `.comp` text records and version-8 guide metadata. Point text omits `boxSize`; paragraph text writes `[width,height]`, following [Foundation CGSize Codable](https://github.com/swiftlang/swift-corelibs-foundation/blob/main/Sources/Foundation/NSGeometry.swift). Import also accepts the object representation. Translucent legacy text preserves pixels by rasterizing because upstream text metadata stores RGB only. |
+
+`placement_text.rs` includes eleven selected translated/adapted GuideTests,
+TransformPressTests and TypeToolTests scenarios, with eight labeled local
+regressions for resized reflow, typography pixels, UTF-8 validation, translucent
+text packages, empty-caret placement, wrapped keyboard navigation, the retained reference property contract and
+flipped text overlay placement/clipping. These are selected fixtures, not the executed Swift/AppKit suite.
+
+Necessary adaptations and remaining differences:
+
+- Draft layers use Rust history previews and sanitized metadata until commit;
+  upstream keeps a separate TextDraft outside its document. Save/export/import
+  in the native worker finish the draft first.
+- Legacy text without `textLayout` retains box semantics and generic families.
+  New text uses a system sans family rather than macOS's exact default face.
+  OS fonts, Skia shaping, antialiasing and preserved Canvas2D baseline alignment
+  can differ from AppKit raster output.
+- Enter commits and Shift+Enter inserts a line, retaining the user's accepted
+  shortcut choice instead of upstream Command+Return. View options and panel width now persist through local platform configuration.
+  Tool/brush/font defaults remain session-local rather than ToolDefaults-backed preferences.
+- Existing limits remain 20,000 text characters, 1…1000 font size, 8192 pixels
+  per side, 24MP and 10,000 layers, rather than upstream's larger allocations.
+  Guide validation allows at most 10,000 finite UUID guides within ±100,000
+  document pixels.
+- Skia glyph/row navigation bridges the hidden native input's layout to the
+  displayed paragraph. IME preedit decorations and full bidirectional/platform
+  keyboard fidelity require additional runtime verification.
+- Guides/grid/caret/handles are non-printing. `.picsie` preserves local metadata;
+  `.comp` retains source guide/text records within the supported package subset.
+
+## Feature registry and existing-feature polish (2026-09-30)
+
+[The registry](compositor-registry.md) tracks implementation, polish, remaining
+gaps and evidence independently. Its JSON inventories every Swift/C/header file
+and upstream fixture name at the pinned revision with source hashes; the reviewed
+behavior rows are a feature-level checklist, not proof of every branch or full
+macOS runtime parity. `check:registry` validates statuses, evidence, named native
+checks and generated documentation. Set `COMPOSITOR_REFERENCE_PATH` to the
+external pinned checkout to also verify every indexed file's digest.
+
+| Implementation | Pinned Compositor source | Behavior and necessary adaptations |
+| --- | --- | --- |
+| `feedback.rs`, `geometry.rs`, `editor/placement.rs`, desktop `ui/polish.rs` | `Rendering/TransformOverlay.swift`, `Rendering/EditorCanvas.swift`, `Rendering/InlineTextEditor.swift`, `Rendering/BrushCursorOverlay.swift` | Full-edge transform reach, rotation-aware resize direction, text-box edge reach capped for tiny boxes, handles preceding guides, I-beam/move/copy/hand feedback, and zoomed brush diameter outline. Small engine geometry metadata drives UI hover without engine commands or raster work per mouse move. Toolkit hand/copy/crosshair cursors replace upstream custom assets; inner hardness ring and advanced selection cursors remain absent. |
+| `text.rs`, `editor/text.rs`, `render.rs`, desktop `ui/text.rs`, `ui/polish.rs`, `ui/toolbars.rs` | `Rendering/InlineTextEditor.swift`, `UI/TypeControls.swift`, `ContentView.swift::ArrowStepping` | Text-colored 500ms blinking caret resets on input/selection; blink commands cannot finish a later editing gesture. Double-click selects a shaped word; triple-click selects a hard paragraph; dragging expands by complete units. SkParagraph word boundaries and UTF-16/UTF-8 conversion adapt native NSTextView selection. Shared numeric fields step 1 or Shift 10; empty leading starts at Auto=120%. Source compact size/unit, swatch and alignment metrics are retained with vector icons replacing SF Symbols. IME/preedit and full bidi fidelity remain unverified. |
+| `thumbnail.rs`, desktop `ui/layers.rs` | `UI/CanvasThumbnail.swift`, `UI/NativeLayerList.swift` | Cached 36-point, 2× canvas-shaped grayscale mask thumbnails; source mean edge tone fills the region outside the placed mask. Target border distinguishes image/mask editing. Existing BGRA resources carry thumbnails without encoded-preview or JavaScript pixel paths. |
+| `shape.rs`, `editor.rs` | `Document/Selection.swift::DragBox`, `Document/ShapeTool.swift`, `ShapeToolTests.swift` | Rounded drag coordinates; Shift square/circle; Alt draws from center; reverse drag/off-canvas bounds; zero-size clicks and tool switches discard the draft. Existing fill-only local shape records remain prototype deviations. Rounded corners, line shapes and upstream editable shape/package metadata remain absent. |
+| `editor.rs`, desktop `ui/input.rs` | `Document/EditorSession+Brush.swift`, `Document/EditorSession.swift::typeOpacityDigit` | Shift-brackets step to the next/previous hardness quarter; opacity digits use a 600ms two-digit window (Move layer opacity or Brush/Eraser setting), ignored during a stroke. GPUI-normalized braces are recognized on Linux. Plain brackets retain the accepted local 5px diameter step rather than source fifth-size stepping. |
+| `render/composite.rs`, desktop `preferences.rs`, `ui/layout.rs`, `ui/toolbars.rs` | `Rendering/EditorCanvas.swift`, `ContentView.swift::AppStorage`, `Document/ToolDefaults.swift`, `UI/CropControls.swift` | Source black35%, down3pt, blur14pt canvas shadow uses Skia sigma7 approximation. Panel width/view options persist through platform config. Dynamic operation/merge menu titles and crop ratio/dimensions/enabled state follow source workflows. TransformOverlay.drawCrop supplies the 60% surround, 40% thirds lines and bordered 8-point handles; default canvas frame stays separate from an active crop edit. Kit menus/selectors replace AppKit/SwiftUI; tool/font/brush default persistence remains incomplete. |
+
+`tests/polish.rs` distinguishes seven selected source-derived geometry, shape,
+shortcut and mask edge-tone scenarios from four local regressions for mask cache
+lifetime, queued caret presentation, UTF-8 word/paragraph boundaries and nonprinting
+crop overlays. The mask scenario adapts CanvasThumbnailTests.masksFillTheCanvasWithTheirEdgeTone.
+The actual Node/Bun addon fixture also exercises caret visibility and text-unit
+selection. These are translated/adapted scenarios, not execution of the Swift
+suite. Source retains MIT © 2026 Wonder Assembly LLC attribution. No GIMP UX,
+code or fixtures are used in this pass.
+
+## Layers, masks and color polish (2026-09-30)
+
+This pass reads the same pinned revision, 609dbeae2ef68ef4fc82d67e4981a49852eb6e13.
+The following are selected translations/adaptations, with MIT © 2026 Wonder
+Assembly LLC attribution retained in the Rust sources. The Swift suite did not
+run here.
+
+| Local implementation | Pinned source | Behavior and adaptation |
+| --- | --- | --- |
+| `editor/layer_polish.rs`, desktop `ui/layers.rs` and `ui/input.rs` | `UI/NativeLayerList.swift`, `Document/LayerGroups.swift` | Inline rename with Return/Escape, visible-row range selection, context actions, eye swipe as one undo, edge autoscroll, Alt duplicate/reorder and clipping boundary without changing selection. Adjacent image/mask slots, chain link button, Shift mask enable/disable and red disabled-mask mark follow source controls. GPUI list/option accessibility and portable copy/link cursors replace AppKit table/bitmap cursors. |
+| `model.rs`, `render/blends.rs`, `render.rs`, `comp.rs`, desktop `ui/layers.rs` | `Document/LayerAppearance.swift`, `Rendering/SeparableBlend.swift`, `UI/BlendModePicker.swift`, `Rendering/EditorCanvas.swift` | All 24 source modes/order, grouped menu, transient canvas-only preview, commit/cancel and Shift +/− wrapping. Skia sRGB runtime blenders replace Core Image for eight additional separable modes and Burn/Dodge, preserving premultiplied alpha. Export/save use committed state. All modes round-trip through `.comp` using source names. |
+| `editor/layer_polish.rs`, `render.rs`, desktop `ui/layers.rs` | `Document/LayerMask.swift`, `Document/MaskTracing.swift`, `UI/LayerMaskMenu.swift` | One-click Add Mask consumes selection without changing tools. Command/Control thumbnail selection traces unmasked image alpha or mask black pixels; Shift adds and Alt subtracts. Alt mask copy keeps document placement, adapting scale to the destination's legacy local grid. Thumbnail link actions preserve active selection; the footer trash deletes a targeted mask. |
+| `distort.rs`, `editor.rs`, `feedback.rs`, desktop `ui/toolbars.rs` | `Document/LayerMask.swift`, `Document/Distort.swift`, `Document/EditorSession.swift::beginTransform/commitTransform/cancelTransform`, `Rendering/TransformOverlay.swift` | Independent mask affine/numeric/gizmo transforms, nudge/flip, Cancel/Apply and one undo. Command/Control corner/edge dragging creates a persistent distortion draft: perspective for convex quads, two diagonal triangles for folded quads, uniform-mask identity and majority-edge background. Skia replaces Core Image/Core Graphics. Preview caps at 2048; Apply rasterizes at full supported size. Folder mask placement participates in child compositing. Image distortion remains tracked separately. |
+| `editor/layer_polish.rs`, `editor.rs`, desktop `ui/dialogs.rs`, `ui/toolbars.rs`, `preferences.rs` | `Document/ColorPalette.swift`, `Document/SelectionEdits.swift`, `UI/ColorPaletteControls.swift`, `UI/ColorPickerSheet.swift`, `UI/CanvasSizeSheet.swift` | Independent black/white-default foreground/background and mask palettes, X/D, foreground/background fill and background canvas extension. Whole-text fills keep text editable. Palette edits update only an open Type draft; picker OK retains its draft identity. Working picker colors remain transient; Cancel does not change palette/document. The movable remembered GPUI panel uses the source 256-point SV field, padded hue strip and compact 180-point channel/button column. Same-window panel/window chrome and the new/current split preview are UI adaptations. |
+| `render.rs::sample`, desktop `engine.rs`, `ui/polish.rs` | `Document/ColorPalette.swift::sampleCompositeColor`, `Rendering/EditorCanvas.swift`, `Rendering/SampleRingOverlay.swift` | One-pixel sRGB compositing samples displayed blend previews and ignores transparent/outside pixels. Picker samples update working color only. Alt Brush/Eraser sampling changes the image foreground without changing the black/white mask palette. The persisted 116-point comparison ring has the source gray 24-point rim and 16-point new/original halves; the source has no magnifier. GPUI Crosshair replaces the AppKit eyedropper cursor/hotspot. |
+
+`tests/layers_masks_colors.rs` distinguishes translated source scenarios from local
+cross-grid, transaction, folder placement, alpha, package and one-pixel rendering
+regressions. Corresponding selected upstream fixtures were reviewed in
+`ColorPickerTests`, `BlendShortcutTests`, `LayerAppearanceTests`, `SelectionTests`,
+`LayerMaskTests`, `MaskTransformTests` and `DistortTests`. Node/Bun tests exercise
+the real addon, including palette/preview isolation, background fill, mask black
+selection, placed mask export and save/reopen. Raster selection/distortion/placement
+commands run through the addon worker, with metadata-only results.
+
+The layer count now matches the source 10,000 limit throughout model, import,
+creation/duplication and package validation. The existing 8192-side/24MP surface
+and 96MB file limits remain explicit allocation adaptations. The legacy `.picsie`
+mask-grid/project compatibility is preserved. Effect and adjustment child rows
+require the separately unimplemented effect stack and adjustment-layer model;
+they remain recorded under `filters-effects.effect-rows` and
+`adjustments.layer-adjustments`. No GIMP UX is used in this pass.

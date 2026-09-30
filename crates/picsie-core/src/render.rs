@@ -1,4 +1,5 @@
 //! Native Skia compositor; all surfaces, filters, codecs, and preview pixels remain in Rust.
+mod blends;
 use crate::{
     geometry::{self, Viewport},
     model::*,
@@ -149,31 +150,32 @@ fn mask_image(mask: &LayerMask, layer: &Layer) -> Result<Image> {
         source.read_pixels(&info, &mut rgba, width * 4, (0, 0)),
         "Cannot read placed mask"
     );
-    let mut edge_total = 0usize;
-    let mut edge_count = 0usize;
-    for y in 0..height {
-        for x in 0..width {
-            if y == 0 || y + 1 == height || x == 0 || x + 1 == width {
-                edge_total += rgba[(y * width + x) * 4 + 3] as usize;
-                edge_count += 1;
-            }
-        }
-    }
-    let background = if edge_total * 2 >= edge_count * 255 {
-        255
-    } else {
-        0
+    let raster = MaskRaster {
+        width: layer.width,
+        height: layer.height,
+        pixels: Arc::new(rgba.chunks_exact(4).map(|p| p[3]).collect()),
     };
+    let background = mask_background(&raster);
     let placed = placement.as_layer(layer);
     let mut pixels = vec![background; width * height];
     for y in 0..height {
         for x in 0..width {
             let world = geometry::to_world(layer, Point::new(x as f64 + 0.5, y as f64 + 0.5));
             let local = geometry::to_local(&placed, world);
-            let sx = local.x.floor() as isize;
-            let sy = local.y.floor() as isize;
-            if sx >= 0 && sy >= 0 && sx < width as isize && sy < height as isize {
-                pixels[y * width + x] = rgba[(sy as usize * width + sx as usize) * 4 + 3];
+            let (fx, fy) = (local.x - 0.5, local.y - 0.5);
+            let (sx, sy) = (fx.floor() as isize, fy.floor() as isize);
+            if local.x >= 0. && local.y >= 0. && local.x < width as f64 && local.y < height as f64 {
+                let sample = |x: isize, y: isize| {
+                    rgba[(y.clamp(0, height as isize - 1) as usize * width
+                        + x.clamp(0, width as isize - 1) as usize)
+                        * 4
+                        + 3] as f64
+                };
+                let (tx, ty) = (fx - sx as f64, fy - sy as f64);
+                pixels[y * width + x] = ((sample(sx, sy) * (1. - tx) + sample(sx + 1, sy) * tx)
+                    * (1. - ty)
+                    + (sample(sx, sy + 1) * (1. - tx) + sample(sx + 1, sy + 1) * tx) * ty)
+                    .round() as u8;
             }
         }
     }
@@ -187,6 +189,20 @@ fn mask_image(mask: &LayerMask, layer: &Layer) -> Result<Image> {
         .ok_or_else(|| anyhow!("Cannot place grayscale mask"))
 }
 
+/// LayerMask.background: majority of the perimeter; equality reveals.
+pub fn mask_background(raster: &MaskRaster) -> u8 {
+    let (w, h) = (raster.width as usize, raster.height as usize);
+    let (mut total, mut count) = (0usize, 0usize);
+    for y in 0..h {
+        for x in 0..w {
+            if x == 0 || y == 0 || x + 1 == w || y + 1 == h {
+                total += raster.pixels[y * w + x] as usize;
+                count += 1;
+            }
+        }
+    }
+    if total * 2 >= count * 255 { 255 } else { 0 }
+}
 pub fn rasterize_mask(mask: &LayerMask, layer: &Layer) -> Result<MaskRaster> {
     let mut surface = mask_surface(mask, layer)?;
     let mut rgba = vec![0u8; layer.width as usize * layer.height as usize * 4];
@@ -207,7 +223,7 @@ pub fn rasterize_mask(mask: &LayerMask, layer: &Layer) -> Result<MaskRaster> {
         pixels: Arc::new(pixels),
     })
 }
-fn transform(c: &Canvas, l: &Layer) {
+pub(crate) fn transform(c: &Canvas, l: &Layer) {
     let mid = geometry::center(l);
     c.translate((mid.x as f32, mid.y as f32));
     c.rotate(l.rotation as f32, None);
@@ -216,6 +232,25 @@ fn transform(c: &Canvas, l: &Layer) {
         (l.scale_y * if l.flip_y { -1. } else { 1. }) as f32,
     ));
     c.translate((-(l.width as f32) / 2., -(l.height as f32) / 2.));
+}
+/// Draw source pixels in document space, without appearance, masks, or clipping links.
+pub fn draw_pixels(canvas: &Canvas, layer: &Layer, image: &Image) {
+    canvas.save();
+    transform(canvas, layer);
+    canvas.draw_image_with_sampling_options(
+        image,
+        (0., 0.),
+        sk::SamplingOptions::new(
+            if layer.sampling == Sampling::Nearest {
+                sk::FilterMode::Nearest
+            } else {
+                sk::FilterMode::Linear
+            },
+            sk::MipmapMode::None,
+        ),
+        None,
+    );
+    canvas.restore();
 }
 fn blend(b: Blend) -> BlendMode {
     match b {
@@ -235,6 +270,14 @@ fn blend(b: Blend) -> BlendMode {
         Blend::Saturation => BlendMode::Saturation,
         Blend::Color => BlendMode::Color,
         Blend::Luminosity => BlendMode::Luminosity,
+        Blend::LinearBurn
+        | Blend::LinearDodge
+        | Blend::VividLight
+        | Blend::LinearLight
+        | Blend::PinLight
+        | Blend::HardMix
+        | Blend::Subtract
+        | Blend::Divide => BlendMode::SrcOver,
     }
 }
 #[derive(Default)]
@@ -293,26 +336,8 @@ impl Renderer {
                 font_family,
                 color,
             } => {
-                let family = match font_family {
-                    FontFamily::SansSerif => "sans-serif",
-                    FontFamily::Serif => "serif",
-                    FontFamily::Monospace => "monospace",
-                };
-                use sk::textlayout::{FontCollection, ParagraphBuilder, ParagraphStyle, TextStyle};
-                let mut fonts = FontCollection::new();
-                fonts.set_default_font_manager(sk::FontMgr::new(), None);
-                let mut text_style = TextStyle::new();
-                text_style
-                    .set_font_families(&[family])
-                    .set_font_size(*font_size as f32)
-                    // Auto leading is 120% of the font size, as in TypeTool's autoLeading.
-                    .set_height(1.2)
-                    .set_color(self::color(color));
-                let mut paragraph_style = ParagraphStyle::new();
-                paragraph_style.set_text_style(&text_style);
-                let mut builder = ParagraphBuilder::new(&paragraph_style, fonts.clone());
-                builder.add_text(text);
-                let mut paragraph = builder.build();
+                let _ = (text, font_size, font_family, color);
+                let mut paragraph = crate::text::paragraph(l, None);
                 // Box text word-wraps at the box width minus TypeTool's 12px padding on each
                 // side; explicit line breaks still break. Overflow clips to the padded box.
                 let width = (l.width as f32 - 2. * PADDING).max(1.);
@@ -372,13 +397,14 @@ impl Renderer {
         }
         Ok(image)
     }
-    fn draw_own(&mut self, doc: &Document, l: &Layer, c: &Canvas, mode: BlendMode) -> Result<()> {
+    fn draw_own(&mut self, doc: &Document, l: &Layer, c: &Canvas, mode: Blend) -> Result<()> {
         let opacity = doc.effective(l).1;
         let image = self.layer_surface(l)?;
         let mut p = Paint::default();
         p.set_anti_alias(true)
             .set_alpha((opacity * 255.).round() as u8)
-            .set_blend_mode(mode);
+            .set_blend_mode(blend(mode));
+        blends::apply(&mut p, mode)?;
         // The identity matrix forces Skia's floating-point color pipeline even for
         // a plain opaque fill. Skip it only when drawing is an exact pixel copy:
         // translucent/filtered/transformed draws must retain the old rounding.
@@ -392,7 +418,7 @@ impl Renderer {
         };
         let direct_fill = opaque_fill
             && opacity == 1.
-            && mode == BlendMode::SrcOver
+            && mode == Blend::SourceOver
             && l.blur == 0.
             && l.rotation == 0.
             && l.scale_x == 1.
@@ -512,7 +538,7 @@ impl Renderer {
                     1.,
                 ));
             }
-            self.draw_own(doc, layer, pixels.canvas(), BlendMode::SrcOver)?;
+            self.draw_own(doc, layer, pixels.canvas(), Blend::SourceOver)?;
             let own = rgba_pixels(&pixels.image_snapshot())?;
             for (alpha, pixel) in coverage.iter_mut().zip(own.chunks_exact(4)) {
                 *alpha = ((*alpha as u16 * pixel[3] as u16 + 127) / 255) as u8;
@@ -531,7 +557,7 @@ impl Renderer {
             if let Some(mask) = &folder.mask
                 && mask.enabled
             {
-                let image = mask_surface(mask, folder)?.image_snapshot();
+                let image = mask_image(mask, folder)?;
                 let matrix = c.local_to_device();
                 transform(c, folder);
                 let shader = image
@@ -579,7 +605,7 @@ impl Renderer {
                 // LiveMaskRenderer.drawComposite: blend colors on an opaque base, then
                 // restore its original alpha once. Repeated source-over thickens soft edges.
                 let mut base = surface(doc.width, doc.height)?;
-                self.draw_own(doc, layer, base.canvas(), BlendMode::SrcOver)?;
+                self.draw_own(doc, layer, base.canvas(), Blend::SourceOver)?;
                 let mut pixels = rgba_pixels(&base.image_snapshot())?;
                 let coverage: Vec<_> = pixels
                     .chunks_exact_mut(4)
@@ -596,7 +622,7 @@ impl Renderer {
                     None,
                 );
                 for child in &layers[index + 1..end] {
-                    self.draw_own(doc, child, base.canvas(), blend(child.blend))?;
+                    self.draw_own(doc, child, base.canvas(), child.blend)?;
                 }
                 pixels = rgba_pixels(&base.image_snapshot())?;
                 for (pixel, alpha) in pixels.chunks_exact_mut(4).zip(coverage) {
@@ -604,6 +630,7 @@ impl Renderer {
                 }
                 let mut p = Paint::default();
                 p.set_blend_mode(blend(layer.blend));
+                blends::apply(&mut p, layer.blend)?;
                 c.draw_image(
                     rgba_image(doc.width, doc.height, &pixels)?,
                     (0., 0.),
@@ -622,7 +649,7 @@ impl Renderer {
                         .ok_or_else(|| anyhow!("Cannot clip live mask"))?;
                     c.clip_shader(shader, None);
                 }
-                self.draw_own(doc, layer, c, blend(layer.blend))?;
+                self.draw_own(doc, layer, c, layer.blend)?;
             }
             c.restore();
             index = end;
@@ -844,10 +871,27 @@ impl Renderer {
                 bottom_right.x as f32,
                 bottom_right.y as f32,
             );
+            // TransformOverlay.drawCrop (609dbeae): non-printing 60% surround,
+            // one-point frame, 40% rule-of-thirds lines and 8-point bordered handles.
+            let mut surround = sk::PathBuilder::new();
+            surround.add_rect(Rect::from_wh(v.width as f32, v.height as f32), None, None);
+            surround.add_rect(bounds, None, None);
+            surround.set_fill_type(sk::PathFillType::EvenOdd);
+            let mut shade = paint("#000000");
+            shade.set_alpha_f(0.6);
+            c.draw_path(&surround.detach(), &shade);
             let mut line = paint("#ffffff");
             line.set_style(sk::paint::Style::Stroke)
-                .set_stroke_width(1.5);
+                .set_stroke_width(1.);
             c.draw_rect(bounds, &line);
+            line.set_alpha_f(0.4);
+            for index in 1..=2 {
+                let fraction = index as f32 / 3.;
+                let x = bounds.left + bounds.width() * fraction;
+                let y = bounds.top + bounds.height() * fraction;
+                c.draw_line((x, bounds.top), (x, bounds.bottom), &line);
+                c.draw_line((bounds.left, y), (bounds.right, y), &line);
+            }
             for (hx, hy) in [
                 (0., 0.),
                 (0.5, 0.),
@@ -860,7 +904,13 @@ impl Renderer {
             ] {
                 let x = (top_left.x + (bottom_right.x - top_left.x) * hx) as f32;
                 let y = (top_left.y + (bottom_right.y - top_left.y) * hy) as f32;
-                c.draw_rect(Rect::from_xywh(x - 3.5, y - 3.5, 7., 7.), &paint("#ffffff"));
+                let handle = Rect::from_xywh(x - 4., y - 4., 8., 8.);
+                c.draw_rect(handle, &paint("#ffffff"));
+                let mut border = paint("#000000");
+                border
+                    .set_style(sk::paint::Style::Stroke)
+                    .set_stroke_width(1.);
+                c.draw_rect(handle, &border);
             }
         }
         if let Some(draft) = selection_draft {
@@ -896,10 +946,54 @@ impl Renderer {
             p.set_blend_mode(BlendMode::DstOver);
             s.canvas().draw_paint(&p);
         }
-        encode(&s.image_snapshot(), jpeg)
+        let image = s.image_snapshot();
+        if !jpeg {
+            let mut bytes = Vec::new();
+            let mut encoder = png::Encoder::new(&mut bytes, doc.width, doc.height);
+            encoder.set_color(png::ColorType::Rgba);
+            encoder.set_depth(png::BitDepth::Eight);
+            let ppu = (doc.resolution / 0.0254).round() as u32;
+            encoder.set_pixel_dims(Some(png::PixelDimensions {
+                xppu: ppu,
+                yppu: ppu,
+                unit: png::Unit::Meter,
+            }));
+            encoder.set_source_srgb(png::SrgbRenderingIntent::Perceptual);
+            encoder
+                .write_header()?
+                .write_image_data(&rgba_pixels(&image)?)?;
+            return Ok(bytes);
+        }
+        let mut bytes = encode(&image, true)?;
+        // JFIF density uses pixels/inch. Replace the encoder's APP0 density, or add APP0.
+        let dpi = doc.resolution.round() as u16;
+        if bytes.get(2..4) == Some(&[0xff, 0xe0])
+            && bytes.get(6..11) == Some(b"JFIF\0")
+            && bytes.len() >= 18
+        {
+            bytes[13] = 1;
+            bytes[14..16].copy_from_slice(&dpi.to_be_bytes());
+            bytes[16..18].copy_from_slice(&dpi.to_be_bytes());
+        } else {
+            let mut app0 = vec![0xff, 0xe0, 0, 16, b'J', b'F', b'I', b'F', 0, 1, 1, 1];
+            app0.extend(dpi.to_be_bytes());
+            app0.extend(dpi.to_be_bytes());
+            app0.extend([0, 0]);
+            bytes.splice(2..2, app0);
+        }
+        Ok(bytes)
     }
     pub fn sample(&mut self, doc: &Document, p: Point) -> Result<[u8; 4]> {
-        let mut s = self.render(doc)?;
+        // ColorPalette.sampleCompositeColor: translate the displayed composite into
+        // one sRGB pixel, preserving layer order, appearance and alpha.
+        ensure!(
+            p.x >= 0. && p.y >= 0. && p.x < doc.width as f64 && p.y < doc.height as f64,
+            "Sample is outside the canvas"
+        );
+        let mut s = surface(1, 1)?;
+        s.canvas()
+            .translate((-(p.x.floor() as f32), -(p.y.floor() as f32)));
+        self.draw_document(doc, s.canvas())?;
         let mut pixel = [0; 4];
         let info = sk::ImageInfo::new(
             (1, 1),
@@ -908,12 +1002,7 @@ impl Renderer {
             None,
         );
         ensure!(
-            s.read_pixels(
-                &info,
-                &mut pixel,
-                4,
-                (p.x.floor() as i32, p.y.floor() as i32)
-            ),
+            s.read_pixels(&info, &mut pixel, 4, (0, 0)),
             "Sample is outside the canvas"
         );
         Ok(pixel)

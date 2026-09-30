@@ -144,15 +144,36 @@ impl Renderer {
             v.height.round().max(1.) as u32,
         )?;
         let c = s.canvas();
-        c.clear(color("#15171c"));
+        // EditorCanvas.swift: neutral pasteboard and a 10-point dark transparency grid.
+        c.clear(color("#1b1b1b"));
         let o = geometry::canvas_origin(doc, v);
+        // EditorCanvas.draw: y-down 3-point offset, 14-point soft shadow, black 35%.
+        // Skia's Gaussian sigma adapts CoreGraphics' blur radius.
+        let mut shadow = paint("#000000");
+        shadow
+            .set_alpha_f(0.35)
+            .set_mask_filter(skia_safe::MaskFilter::blur(
+                skia_safe::BlurStyle::Normal,
+                7.,
+                true,
+            ));
+        c.draw_rect(
+            Rect::from_xywh(
+                o.x as f32,
+                (o.y + 3.) as f32,
+                (doc.width as f64 * v.zoom) as f32,
+                (doc.height as f64 * v.zoom) as f32,
+            ),
+            &shadow,
+        );
         c.save();
         c.translate(point(o));
         c.scale((v.zoom as f32, v.zoom as f32));
         c.clip_rect(rect(doc.width, doc.height), None, false);
-        // The existing checkerboard algorithm is unchanged; cache its opaque result.
-        c.draw_rect(rect(doc.width, doc.height), &paint("#e2e3e6"));
-        let tile = 12. / v.zoom;
+        // EditorCanvas.swift 609dbeae, MIT © 2026 Wonder Assembly LLC.
+        // Retain the viewport-clipped checkerboard in the Skia background cache.
+        c.draw_rect(rect(doc.width, doc.height), &paint("#4d4d4d"));
+        let tile = 10. / v.zoom;
         let sx = 0f64.max((-o.x / v.zoom / tile).floor()) as i32;
         let sy = 0f64.max((-o.y / v.zoom / tile).floor()) as i32;
         let ex = (doc.width as f64 / tile)
@@ -161,7 +182,7 @@ impl Renderer {
         let ey = (doc.height as f64 / tile)
             .ceil()
             .min(((v.height - o.y) / v.zoom / tile).ceil()) as i32;
-        let p = paint("#bec1c7");
+        let p = paint("#595959");
         for y in sy..ey {
             for x in sx..ex {
                 if (x + y) % 2 == 0 {

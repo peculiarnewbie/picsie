@@ -1,6 +1,6 @@
 //! Compositor ProjectStore.swift package format (v8), pinned 609dbeae; MIT © 2026 Wonder Assembly LLC.
 //! Picsie's bounded raster editor imports the shared raster/folder/mask subset and rejects
-//! unsupported live effects, adjustments, shapes, text, guides, and linked mask sources.
+//! unsupported live effects, adjustments and shapes; text and guides retain live metadata.
 use crate::{
     files::bounded_read,
     model::*,
@@ -32,7 +32,7 @@ struct Manifest {
     active_layer_id: Option<String>,
     layers: Vec<Record>,
     #[serde(default)]
-    guides: Option<serde_json::Value>,
+    guides: Option<Vec<crate::placement::CanvasGuide>>,
 }
 #[derive(Clone, Serialize, Deserialize)]
 #[serde(rename_all = "camelCase")]
@@ -68,7 +68,119 @@ struct Record {
     #[serde(default)]
     effects: Option<serde_json::Value>,
     #[serde(default)]
-    text: Option<serde_json::Value>,
+    text: Option<TextRecord>,
+}
+#[derive(Clone, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+struct TextRecord {
+    content: String,
+    font_name: String,
+    font_size: f64,
+    red: f64,
+    green: f64,
+    blue: f64,
+    alignment: String,
+    tracking: f64,
+    leading: f64,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    box_size: Option<serde_json::Value>,
+}
+impl TextRecord {
+    fn install(&self, layer: &mut Layer) -> Result<()> {
+        ensure!(
+            [self.red, self.green, self.blue]
+                .iter()
+                .all(|v| v.is_finite() && (0. ..=1.).contains(v)),
+            "Invalid text color"
+        );
+        let alignment = match self.alignment.as_str() {
+            "Left" => crate::text::TextAlignment::Left,
+            "Center" => crate::text::TextAlignment::Center,
+            "Right" => crate::text::TextAlignment::Right,
+            _ => bail!("Invalid text alignment"),
+        };
+        if let Some(size) = &self.box_size {
+            let width = size["width"]
+                .as_f64()
+                .or_else(|| size[0].as_f64())
+                .ok_or_else(|| anyhow::anyhow!("Invalid text box"))?;
+            let height = size["height"]
+                .as_f64()
+                .or_else(|| size[1].as_f64())
+                .ok_or_else(|| anyhow::anyhow!("Invalid text box"))?;
+            ensure!(
+                width.is_finite()
+                    && height.is_finite()
+                    && width >= 16.
+                    && height >= 16.
+                    && width <= MAX_DIMENSION as f64
+                    && height <= MAX_DIMENSION as f64,
+                "Invalid text box"
+            );
+            ensure!(
+                (width - layer.width as f64).abs() < 1.
+                    && (height - layer.height as f64).abs() < 1.,
+                "Text box does not match its raster"
+            );
+        }
+        layer.content = Arc::new(Content::Text {
+            text: self.content.clone(),
+            font_size: self.font_size,
+            font_family: match self.font_name.as_str() {
+                "monospace" => FontFamily::Monospace,
+                "serif" => FontFamily::Serif,
+                _ => FontFamily::SansSerif,
+            },
+            color: format!(
+                "#{:02x}{:02x}{:02x}",
+                (self.red * 255.).round() as u8,
+                (self.green * 255.).round() as u8,
+                (self.blue * 255.).round() as u8
+            ),
+        });
+        layer.text_layout = Some(crate::text::TextLayout {
+            font_name: self.font_name.clone(),
+            alignment,
+            tracking: self.tracking,
+            leading: self.leading,
+            point: self.box_size.is_none(),
+        });
+        layer.validate()
+    }
+    fn from_layer(layer: &Layer) -> Option<Self> {
+        let Content::Text {
+            text,
+            font_size,
+            color,
+            ..
+        } = layer.content.as_ref()
+        else {
+            return None;
+        };
+        let layout = layer.text_layout.clone().unwrap_or_default();
+        let color = render::color(color);
+        // Upstream LayerTextStyle has RGB only. Keep legacy translucent text as its raster.
+        if color.a() != 255 {
+            return None;
+        }
+        Some(Self {
+            content: text.clone(),
+            font_name: crate::text::family(layer).into(),
+            font_size: *font_size,
+            red: color.r() as f64 / 255.,
+            green: color.g() as f64 / 255.,
+            blue: color.b() as f64 / 255.,
+            alignment: match layout.alignment {
+                crate::text::TextAlignment::Left => "Left",
+                crate::text::TextAlignment::Center => "Center",
+                crate::text::TextAlignment::Right => "Right",
+            }
+            .into(),
+            tracking: layout.tracking,
+            leading: layout.leading,
+            box_size: (!layout.point).then(|| serde_json::json!([layer.width, layer.height])),
+        })
+    }
 }
 #[derive(Clone, Copy, Serialize, Deserialize)]
 struct Size {
@@ -173,6 +285,15 @@ fn blend_from(value: &str) -> Result<Blend> {
         "Saturation" => Blend::Saturation,
         "Color" => Blend::Color,
         "Luminosity" => Blend::Luminosity,
+        "Linear Burn" => Blend::LinearBurn,
+        "Linear Dodge (Add)" => Blend::LinearDodge,
+        "Vivid Light" => Blend::VividLight,
+        "Linear Light" => Blend::LinearLight,
+        "Pin Light" => Blend::PinLight,
+        "Hard Mix" => Blend::HardMix,
+        "Subtract" => Blend::Subtract,
+        "Divide" => Blend::Divide,
+
         _ => bail!("Unsupported Compositor blend mode: {value}"),
     })
 }
@@ -194,6 +315,14 @@ fn blend_to(value: Blend) -> &'static str {
         Blend::Saturation => "Saturation",
         Blend::Color => "Color",
         Blend::Luminosity => "Luminosity",
+        Blend::LinearBurn => "Linear Burn",
+        Blend::LinearDodge => "Linear Dodge (Add)",
+        Blend::VividLight => "Vivid Light",
+        Blend::LinearLight => "Linear Light",
+        Blend::PinLight => "Pin Light",
+        Blend::HardMix => "Hard Mix",
+        Blend::Subtract => "Subtract",
+        Blend::Divide => "Divide",
     }
 }
 fn asset(path: &Path, name: &str) -> Result<Vec<u8>> {
@@ -276,15 +405,12 @@ pub fn open(path: &Path) -> Result<Document> {
         "Unsupported Compositor project"
     );
     ensure!(
-        manifest
-            .guides
-            .as_ref()
-            .is_none_or(|v| v.as_array().is_some_and(Vec::is_empty)),
-        "Alignment guides are not yet supported"
+        manifest.version >= 8 || manifest.guides.as_ref().is_none_or(Vec::is_empty),
+        "Guides require Compositor version 8"
     );
     ensure!(
-        manifest.layers.len() <= 100,
-        "Picsie supports up to 100 layers"
+        manifest.layers.len() <= crate::model::MAX_LAYERS,
+        "Picsie supports up to 10,000 layers"
     );
     let id = uuid(&manifest.document_id)?;
     let mut doc = Document::new(
@@ -292,6 +418,10 @@ pub fn open(path: &Path) -> Result<Document> {
         manifest.width,
         manifest.height,
     )?;
+    doc.guides = manifest.guides.clone().unwrap_or_default();
+    for guide in &mut doc.guides {
+        guide.id = uuid(&guide.id)?;
+    }
     doc.id = id;
     doc.resolution = manifest.resolution.unwrap_or(72.);
     for item in &manifest.layers {
@@ -301,10 +431,7 @@ pub fn open(path: &Path) -> Result<Document> {
             "Compositor layer name exceeds Picsie's limit"
         );
         ensure!(
-            item.adjustment.is_none()
-                && item.shape.is_none()
-                && item.effects.is_none()
-                && item.text.is_none(),
+            item.adjustment.is_none() && item.shape.is_none() && item.effects.is_none(),
             "This Compositor project uses live features Picsie cannot edit yet"
         );
         ensure!(
@@ -341,6 +468,13 @@ pub fn open(path: &Path) -> Result<Document> {
             Content::Paint
         };
         let mut layer = Layer::new(&item.name, width, height, content);
+        if let Some(text) = &item.text {
+            ensure!(
+                image.is_some() && !item.is_group.unwrap_or(false),
+                "Text requires an image asset"
+            );
+            text.install(&mut layer)?;
+        }
         layer.id = normalized;
         layer.parent_id = item.parent_id.as_deref().map(uuid).transpose()?;
         layer.mask_source_id = item.mask_source_id.as_deref().map(uuid).transpose()?;
@@ -492,7 +626,7 @@ pub fn save(path: &Path, doc: &Document) -> Result<()> {
             adjustment: None,
             shape: None,
             effects: None,
-            text: None,
+            text: TextRecord::from_layer(layer),
         });
     }
     let manifest = Manifest {
@@ -505,7 +639,7 @@ pub fn save(path: &Path, doc: &Document) -> Result<()> {
         height: doc.height,
         active_layer_id: None,
         layers: records,
-        guides: None,
+        guides: Some(doc.guides.clone()),
     };
     let bytes = serde_json::to_vec_pretty(&manifest)?;
     ensure!(

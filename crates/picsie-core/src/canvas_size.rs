@@ -33,6 +33,9 @@ pub fn resize_canvas(doc: &Document, opt: &CanvasSizeOptions) -> Result<Document
     let mut next = doc.clone();
     next.width = opt.width;
     next.height = opt.height;
+    for guide in &mut next.guides {
+        guide.offset(dx, dy);
+    }
     for l in &mut next.layers {
         l.x += dx;
         l.y += dy;
@@ -42,7 +45,7 @@ pub fn resize_canvas(doc: &Document, opt: &CanvasSizeOptions) -> Result<Document
         && (opt.width > doc.width || opt.height > doc.height)
     {
         ensure!(
-            next.layers.len() < 100,
+            next.layers.len() < crate::model::MAX_LAYERS,
             "A colored extension needs one available layer"
         );
         let mut s = render::surface(opt.width, opt.height)?;
@@ -73,6 +76,9 @@ pub fn crop_canvas(doc: &Document, rect: CropRect) -> Result<Document> {
     let mut next = doc.clone();
     next.width = rect.width as u32;
     next.height = rect.height as u32;
+    for guide in &mut next.guides {
+        guide.offset(-rect.x, -rect.y);
+    }
     for layer in &mut next.layers {
         layer.x -= rect.x;
         layer.y -= rect.y;

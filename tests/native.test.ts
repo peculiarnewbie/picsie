@@ -7,6 +7,7 @@ import { createRequire } from "node:module";
 import { createCanvas, loadImage } from "@napi-rs/canvas";
 import { Editor } from "../src/engine/editor.ts";
 import { CanvasSizeDraft } from "../src/ui/canvas-size-draft.ts";
+import type { Command, EditorState } from "../src/engine/types.ts";
 const require = createRequire(import.meta.url);
 const native: typeof import("../src/engine/native-api") = require("../native/picsie.node");
 const session = () => new Editor({ kind: "new", name: "Native", width: 200, height: 160 });
@@ -60,6 +61,7 @@ test("Rust masks, transforms, canvas resize, save/reopen and JPEG work across th
       e.pointer("down", { x: 20, y: 20 });
       e.pointer("up", { x: 120, y: 120 });
       e.addMask();
+      e.setTool("brush");
       e.brushSize = 30;
       e.pointer("down", { x: 60, y: 60 });
       e.pointer("up", { x: 60, y: 60 });
@@ -287,19 +289,47 @@ test("async canvas resize and crop restore selection atomically on undo", async 
 
 test("text editing and slider edits cross the bridge as typed commands", async () =>
   temporary(async (dir) => {
-    const e = session();
+    const reference = session();
     try {
-      e.viewport = { width: 200, height: 160, zoom: 1, pan: { x: 0, y: 0 } };
-      e.setTool("text");
-      e.pointer("down", { x: 20, y: 20 });
-      e.pointer("up", { x: 20, y: 20 });
-      assert.equal(e.document.layers.length, 1);
-      const id = e.selectedId!;
-      assert.equal(e.textEditRequests, 0, "creating text must not request editing");
+      reference.viewport = { width: 200, height: 160, zoom: 1, pan: { x: 0, y: 0 } };
+      reference.setTool("text");
+      reference.pointer("down", { x: 20, y: 20 });
+      reference.pointer("up", { x: 20, y: 20 });
+      const content = reference.selected!.content;
+      assert.equal(content.kind, "text");
+      if (content.kind !== "text") throw new Error("Expected the Rust text draft");
+      reference.beginPropertyEdit("Edit text");
+      reference.updateLayer({ content: { ...content, text: "QuickGUI draft", fontSize: 24 } });
+      assert.equal(reference.history.undoCount, 0);
+      reference.finishGesture();
+      assert.equal(reference.selected?.content.kind, "text");
+      assert.equal(reference.history.undoCount, 1);
+      const path = join(dir, "reference-text.picsie");
+      await reference.save(path);
+      const reopened = await Editor.open(path);
+      try {
+        assert.deepEqual(reopened.document.layers, reference.document.layers);
+      } finally {
+        reopened.close();
+      }
+    } finally {
+      reference.close();
+    }
+    const e = new Editor({ kind: "demo" });
+    try {
+      const text = e.document.layers.find((layer) => layer.content.kind === "text")!;
+      const id = text.id;
+      assert.equal(e.textEditRequests, 0);
       e.editText({ id });
       assert.equal(e.selectedId, id);
       assert.equal(e.textEditRequests, 1);
-      e.editText({ point: { x: 25, y: 25 } });
+      e.viewport = {
+        width: e.document.width,
+        height: e.document.height,
+        zoom: 1,
+        pan: { x: 0, y: 0 },
+      };
+      e.editText({ point: { x: text.x + 12, y: text.y + 12 } });
       assert.equal(e.textEditRequests, 2);
       // A slider drag previews every step but commits as one undo entry.
       const before = e.history.undoCount;
@@ -628,5 +658,343 @@ test("native clipping, folder mask paint, package persistence and source deletio
       assert.equal(e.document.layers.find((l) => l.id === top)?.maskSourceId, base);
     } finally {
       e.close();
+    }
+  }));
+
+test("actual addon executes selection, transform, merge and image size in native workers", async () =>
+  temporary(async (dir) => {
+    const raw = new native.NativeEditor(
+      JSON.stringify({ kind: "new", name: "Workflows", width: 80, height: 40 }),
+    );
+    const dispatch = (command: Command): EditorState =>
+      JSON.parse(raw.dispatch(JSON.stringify(command)));
+    const worker = async (command: Command): Promise<EditorState> =>
+      JSON.parse(await raw.dispatchAsync(JSON.stringify(command)));
+    const pointer = (phase: "down" | "up", x: number, y: number) =>
+      dispatch({
+        type: "pointer",
+        samples: [
+          {
+            phase,
+            point: { x, y },
+            modifiers: { shift: false, alt: false, control: false, meta: false },
+          },
+        ],
+      });
+    try {
+      dispatch({
+        type: "setViewport",
+        viewport: { width: 80, height: 40, zoom: 1, pan: { x: 0, y: 0 } },
+      });
+      dispatch({ type: "setTool", tool: "rectangle" });
+      dispatch({ type: "setColor", color: "#ff0000" });
+      pointer("down", 0, 0);
+      pointer("up", 40, 40);
+      dispatch({ type: "setTool", tool: "marquee" });
+      pointer("down", 5, 5);
+      pointer("up", 15, 15);
+      assert.throws(() => dispatch({ type: "layerViaCopy" }), /dispatchAsync/);
+      let state = await worker({ type: "layerViaCopy" });
+      assert.equal(state.document.layers.length, 2);
+      assert.equal(state.document.layers[1]!.x, 5);
+      dispatch({ type: "undo" });
+      const before = raw.snapshot();
+      state = await worker({ type: "beginTransform" });
+      assert.equal(state.transformActive, true);
+      dispatch({ type: "updateLayer", patch: { x: 25 } });
+      assert.throws(() => raw.save(join(dir, "unfinished.picsie")), /Apply or cancel/);
+      dispatch({ type: "cancelTransform" });
+      assert.deepEqual(JSON.parse(raw.snapshot()).document, JSON.parse(before).document);
+      const count = JSON.parse(raw.snapshot()).history.undoCount;
+      await worker({ type: "beginTransform" });
+      dispatch({ type: "updateLayer", patch: { x: 25 } });
+      state = await worker({ type: "commitTransform" });
+      assert.equal(state.history.undoCount, count + 1);
+      assert.deepEqual(state.pixelSelectionBounds, { x: 25, y: 5, width: 10, height: 10 });
+      const png = join(dir, "moved.png");
+      await raw.exportImage(png, false);
+      assert.deepEqual(await pixel(png, 10, 10), [0, 0, 0, 0]);
+      assert.deepEqual(await pixel(png, 30, 10), [255, 0, 0, 255]);
+      dispatch({ type: "undo" });
+      dispatch({ type: "deselectPixels" });
+      dispatch({ type: "setTool", tool: "lasso" });
+      dispatch({ type: "setLassoKind", kind: "polygonal" });
+      pointer("down", 0, 0);
+      pointer("up", 0, 0);
+      pointer("down", 20, 0);
+      pointer("up", 20, 0);
+      pointer("down", 20, 20);
+      pointer("up", 20, 20);
+      state = dispatch({ type: "finishSelection" });
+      assert.equal(state.hasPixelSelection, true);
+      dispatch({ type: "deselectPixels" });
+      dispatch({ type: "setTool", tool: "wand" });
+      dispatch({
+        type: "setWand",
+        settings: { tolerance: 0, radius: 0, contiguous: true, sampleAllLayers: false },
+      });
+      const input: Command = {
+        type: "pointer",
+        samples: [
+          {
+            phase: "down",
+            point: { x: 10, y: 10 },
+            modifiers: { shift: false, alt: false, control: false, meta: false },
+          },
+        ],
+      };
+      assert.throws(() => dispatch(input), /dispatchAsync/);
+      state = await worker(input);
+      assert.deepEqual(state.pixelSelectionBounds, { x: 0, y: 0, width: 40, height: 40 });
+      dispatch({ type: "deselectPixels" });
+      dispatch({ type: "setTool", tool: "move" });
+      dispatch({ type: "duplicate" });
+      state = await worker({ type: "mergeLayers" });
+      assert.equal(state.document.layers.length, 1);
+      state = await worker({
+        type: "resizeImage",
+        options: { width: 160, height: 80, resolution: 300, sampling: "Nearest" },
+      });
+      assert.equal(state.document.width, 160);
+      assert.equal(state.document.resolution, 300);
+      const project = join(dir, "workflows.comp");
+      await raw.save(project);
+      const reopened = await native.openEditor(project);
+      try {
+        const saved: EditorState = JSON.parse(reopened.snapshot());
+        assert.equal(saved.document.resolution, 300);
+        assert.equal(saved.document.width, 160);
+      } finally {
+        reopened.close();
+      }
+      state = dispatch({ type: "undo" });
+      assert.equal(state.document.width, 80);
+      assert.equal(JSON.stringify(state).includes("pixels"), false);
+    } finally {
+      raw.close();
+    }
+  }));
+
+test("actual addon retains guide and text drafts, typography, history and both project formats", async () =>
+  temporary(async (dir) => {
+    const raw = new native.NativeEditor(
+      JSON.stringify({ kind: "new", name: "Typography", width: 400, height: 300 }),
+    );
+    const worker = async (command: Command): Promise<EditorState> =>
+      JSON.parse(await raw.dispatchAsync(JSON.stringify(command)));
+    const pointer = (phase: "down" | "up", x: number, y: number) =>
+      worker({
+        type: "pointer",
+        samples: [
+          {
+            phase,
+            point: { x, y },
+            modifiers: { shift: false, alt: false, control: false, meta: false },
+          },
+        ],
+      });
+    try {
+      await worker({
+        type: "setViewport",
+        viewport: { width: 400, height: 300, zoom: 1, pan: { x: 0, y: 0 } },
+      });
+      await worker({ type: "addGuide", axis: "vertical", position: 64 });
+      let state = await worker({ type: "addGuide", axis: "horizontal", position: 40 });
+      assert.equal(state.history.undoCount, 2);
+      await worker({
+        type: "setViewOptions",
+        options: { ...state.viewOptions, rulers: true, grid: true, snapGrid: true },
+      });
+      await worker({ type: "setTool", tool: "text" });
+      await pointer("down", 25, 70);
+      state = await pointer("up", 25, 70);
+      assert.equal(state.textEditing, true);
+      const id = state.selection.ids[0]!;
+      assert.throws(
+        () =>
+          raw.dispatch(
+            JSON.stringify({ type: "updateText", patch: { text: "blocking" } } satisfies Command),
+          ),
+        /dispatchAsync/,
+      );
+      state = await worker({
+        type: "updateText",
+        patch: {
+          text: "Native café\nTypography",
+          fontName: "monospace",
+          fontSize: 28,
+          alignment: "center",
+          tracking: 2,
+          leading: 38,
+          color: "#123456",
+        },
+      });
+      assert.equal(state.history.undoCount, 2, "draft typing does not fill document history");
+      assert.ok(state.currentText.width > 100);
+      assert.equal(state.currentText.textLayout?.point, true);
+      await assert.rejects(
+        worker({ type: "setTextSelection", anchor: 11, head: 11 }),
+        /Invalid text selection/,
+      );
+      state = await worker({ type: "setTextSelection", anchor: 0, head: 12 });
+      assert.deepEqual(state.textSelection, { anchor: 0, head: 12 });
+      state = await worker({ type: "setTextSelection", anchor: 0, head: 0 });
+      const caretY = state.textCaret!.y;
+      const firstCaret = state.textCaret!;
+      state = await worker({ type: "setTextCaretVisible", visible: false });
+      assert.equal(state.textCaretVisible, false);
+      assert.equal(state.textEditing, true);
+      assert.equal(state.history.undoCount, 2);
+      state = await worker({
+        type: "selectTextUnit",
+        point: { x: firstCaret.x + 3, y: firstCaret.y + 14 },
+        paragraph: false,
+      });
+      assert.deepEqual(state.textSelection, { anchor: 0, head: 6 });
+      state = await worker({
+        type: "selectTextUnit",
+        point: { x: firstCaret.x + 3, y: firstCaret.y + 14 },
+        paragraph: true,
+      });
+      assert.deepEqual(state.textSelection, { anchor: 0, head: 13 });
+      await worker({ type: "setTextCaretVisible", visible: true });
+      state = await worker({ type: "setTextSelection", anchor: 0, head: 0 });
+      state = await worker({ type: "moveTextCaret", direction: "down", extend: true });
+      assert.equal(state.textSelection.anchor, 0);
+      assert.ok(state.textSelection.head > 0 && state.textCaret!.y > caretY);
+      state = await worker({ type: "moveTextCaret", direction: "up", extend: false });
+      assert.deepEqual(state.textSelection, { anchor: 0, head: 0 });
+      state = await worker({ type: "commitText" });
+      assert.equal(state.history.undoCount, 3);
+      const committed = state.document.layers[0]!;
+      await worker({ type: "editText", id });
+      await worker({ type: "updateText", patch: { text: "Discard this draft" } });
+      state = await worker({ type: "cancelText" });
+      assert.deepEqual(state.document.layers[0], committed);
+      const png = join(dir, "text.png");
+      await raw.exportImage(png, false);
+      const image = await loadImage(png);
+      assert.equal(image.width, 400);
+      for (const extension of ["picsie", "comp"]) {
+        const path = join(dir, `layout.${extension}`);
+        await raw.save(path);
+        const reopened = await native.openEditor(path);
+        try {
+          const saved: EditorState = JSON.parse(reopened.snapshot());
+          assert.deepEqual(saved.document.guides, state.document.guides);
+          assert.deepEqual(saved.document.layers[0]?.content, committed.content);
+          assert.deepEqual(saved.document.layers[0]?.textLayout, committed.textLayout);
+          const output = join(dir, `reopened-${extension}.png`);
+          await reopened.exportImage(output, false);
+          assert.deepEqual(await readFile(output), await readFile(png));
+          assert.equal(JSON.stringify(saved).includes('"data"'), false);
+          assert.equal(JSON.stringify(saved).includes('"pixels"'), false);
+        } finally {
+          reopened.close();
+        }
+      }
+      state = await worker({ type: "undo" });
+      assert.equal(state.document.layers.length, 0);
+      assert.equal(state.document.guides.length, 2);
+    } finally {
+      raw.close();
+    }
+  }));
+
+test("actual addon preserves palette, transient blend previews, mask coverage and placement", async () =>
+  temporary(async (dir) => {
+    const editor = new native.NativeEditor(
+      JSON.stringify({ kind: "new", name: "Polish", width: 100, height: 100 }),
+    );
+    const dispatch = (command: Command): EditorState =>
+      JSON.parse(editor.dispatch(JSON.stringify(command)));
+    const worker = async (command: Command): Promise<EditorState> =>
+      JSON.parse(await editor.dispatchAsync(JSON.stringify(command)));
+    try {
+      dispatch({ type: "resizeViewport", width: 100, height: 100 });
+      dispatch({ type: "setPaletteColor", color: "#ff0000", background: false });
+      dispatch({ type: "setPaletteColor", color: "#00ff00", background: true });
+      let state = dispatch({ type: "swapPaletteColors" });
+      assert.equal(state.color, "#00ff00");
+      assert.equal(state.backgroundColor, "#ff0000");
+      dispatch({ type: "setTool", tool: "rectangle" });
+      dispatch({
+        type: "pointer",
+        samples: [
+          {
+            phase: "down",
+            point: { x: 0, y: 0 },
+            modifiers: { shift: false, alt: false, control: false, meta: false },
+          },
+          {
+            phase: "up",
+            point: { x: 100, y: 100 },
+            modifiers: { shift: false, alt: false, control: false, meta: false },
+          },
+        ],
+      });
+      state = JSON.parse(editor.snapshot());
+      const id = state.selection.ids[0]!;
+      const before = state.history.undoCount;
+      state = dispatch({ type: "previewBlendMode", id, mode: "linear-burn" });
+      assert.equal(state.document.layers[0]!.blend, "source-over");
+      assert.equal(state.history.undoCount, before);
+      assert.deepEqual(state.blendPreview, [id, "linear-burn"]);
+      const png = join(dir, "committed.png");
+      await editor.exportImage(png, false);
+      assert.deepEqual(await pixel(png, 50, 50), [0, 255, 0, 255]);
+      dispatch({ type: "previewBlendMode", id: null, mode: null });
+      await worker({ type: "fillBackground" });
+      await editor.exportImage(png, false);
+      assert.deepEqual(await pixel(png, 50, 50), [255, 0, 0, 255]);
+      dispatch({ type: "undo" });
+      state = dispatch({ type: "cycleBlendMode", forward: false });
+      assert.equal(state.document.layers[0]!.blend, "luminosity");
+      dispatch({ type: "updateLayer", patch: { blend: "source-over" } });
+      dispatch({ type: "setTool", tool: "marquee" });
+      dispatch({
+        type: "pointer",
+        samples: [
+          {
+            phase: "down",
+            point: { x: 30, y: 30 },
+            modifiers: { shift: false, alt: false, control: false, meta: false },
+          },
+          {
+            phase: "up",
+            point: { x: 70, y: 70 },
+            modifiers: { shift: false, alt: false, control: false, meta: false },
+          },
+        ],
+      });
+      state = dispatch({ type: "addMask", base: "reveal" });
+      assert.equal(state.tool, "marquee");
+      assert.equal(state.hasPixelSelection, false);
+      state = await worker({ type: "loadThumbnailSelection", id, mask: true, mode: "replace" });
+      assert.deepEqual(state.pixelSelectionBounds, { x: 30, y: 30, width: 40, height: 40 });
+      dispatch({ type: "deselectPixels" });
+      dispatch({ type: "toggleMaskLink" });
+      await worker({
+        type: "setMaskPlacement",
+        placement: { x: 10, y: 0, scaleX: 1, scaleY: 1, rotation: 0, flipX: false, flipY: false },
+      });
+      await editor.exportImage(png, false);
+      assert.equal((await pixel(png, 50, 50))[3], 0);
+      assert.equal((await pixel(png, 35, 50))[3], 255);
+      const serialized = editor.snapshot();
+      assert.equal(serialized.includes('"pixels"'), false);
+      assert.equal(serialized.includes('"strokes"'), false);
+      const project = join(dir, "polish.picsie");
+      await editor.save(project);
+      const reopened = await native.openEditor(project);
+      try {
+        const second = join(dir, "reopened.png");
+        await reopened.exportImage(second, false);
+        assert.deepEqual(await readFile(second), await readFile(png));
+      } finally {
+        reopened.close();
+      }
+    } finally {
+      editor.close();
     }
   }));

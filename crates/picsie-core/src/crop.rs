@@ -178,10 +178,32 @@ pub fn hit(rect: CropRect, p: Point, zoom: f64) -> DragMode {
         (0., 1.),
         (0., 0.5),
     ];
-    if let Some((index, _)) = H.iter().enumerate().find(|(_, (x, y))| {
-        Point::new(rect.x + x * rect.width, rect.y + y * rect.height).distance(p) * zoom <= 8.
-    }) {
-        return DragMode::Resize(index);
+    // TransformOverlay.cropResizeRegions: corner squares first, then whole
+    // edge strips, each extending ten screen points on either side.
+    let reach = 10. / zoom;
+    for index in [0, 2, 4, 6] {
+        let (x, y) = H[index];
+        if (p.x - rect.x - x * rect.width).abs() <= reach
+            && (p.y - rect.y - y * rect.height).abs() <= reach
+        {
+            return DragMode::Resize(index);
+        }
+    }
+    for index in [1, 5] {
+        if p.x >= rect.x + reach
+            && p.x <= rect.x + rect.width - reach
+            && (p.y - rect.y - H[index].1 * rect.height).abs() <= reach
+        {
+            return DragMode::Resize(index);
+        }
+    }
+    for index in [3, 7] {
+        if p.y >= rect.y + reach
+            && p.y <= rect.y + rect.height - reach
+            && (p.x - rect.x - H[index].0 * rect.width).abs() <= reach
+        {
+            return DragMode::Resize(index);
+        }
     }
     if rect.contains(p) {
         DragMode::Move

@@ -19,6 +19,10 @@ struct EditorState {
     mask_mode: MaskMode,
     tool: Tool,
     color: String,
+    background_color: String,
+    blend_preview: Option<(String, Blend)>,
+    transform_target: Option<Layer>,
+    mask_distortion: Option<[Point; 4]>,
     brush_size: f64,
     brush_opacity: f64,
     brush_hardness: f64,
@@ -36,6 +40,31 @@ struct EditorState {
     marquee_kind: picsie_core::pixel_selection::MarqueeKind,
     selection_mode: picsie_core::pixel_selection::PixelSelectionMode,
     text_edit_requests: u64,
+    lasso_kind: LassoKind,
+    wand: picsie_core::wand::WandSettings,
+    selection_draft: bool,
+    transform_active: bool,
+    can_copy_pixels: bool,
+    view_options: picsie_core::placement::ViewOptions,
+    displayed_guides: Vec<picsie_core::placement::CanvasGuide>,
+    guide_drag_active: bool,
+    snap_lines: SnapLines,
+    text_editing: bool,
+    text_caret_visible: bool,
+    cursor_map: picsie_core::feedback::CursorMap,
+    text_selection: TextSelection,
+    current_text: Layer,
+    text_caret: Option<Point>,
+}
+#[derive(TS, Serialize)]
+struct SnapLines {
+    xs: Vec<f64>,
+    ys: Vec<f64>,
+}
+#[derive(TS, Serialize)]
+struct TextSelection {
+    anchor: usize,
+    head: usize,
 }
 fn main() {
     let mut out =
@@ -43,6 +72,18 @@ fn main() {
     macro_rules! export{($($t:ty),*)=>{$(out.push_str("export ");out.push_str(&<$t>::decl(&ts_rs::Config::default()));out.push('\n');)*};}
     export!(
         Point,
+        picsie_core::feedback::CursorHint,
+        picsie_core::geometry::HandleGeometry,
+        picsie_core::feedback::CursorMap,
+        picsie_core::placement::GuideAxis,
+        picsie_core::placement::CanvasGuide,
+        picsie_core::placement::ViewOptions,
+        picsie_core::text::TextAlignment,
+        picsie_core::text::TextNavigation,
+        picsie_core::text::TextLayout,
+        picsie_core::text::TextPatch,
+        TextSelection,
+        SnapLines,
         Shape,
         FontFamily,
         Blend,
@@ -57,6 +98,9 @@ fn main() {
         Selection,
         HistoryInfo,
         Tool,
+        LassoKind,
+        picsie_core::wand::WandSettings,
+        picsie_core::image_size::ImageSizeOptions,
         PaintTarget,
         SelectionMode,
         Phase,

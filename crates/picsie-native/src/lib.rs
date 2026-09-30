@@ -80,9 +80,49 @@ impl NativeEditor {
         if matches!(command, Command::ResizeCanvas { .. }) {
             return Err(error("Use the asynchronous canvas resize API"));
         }
+        if matches!(
+            command,
+            Command::UpdateText { .. }
+                | Command::SelectTextUnit { .. }
+                | Command::ResizeImage { .. }
+                | Command::LayerViaCopy
+                | Command::MergeLayers
+                | Command::BeginTransform
+                | Command::CommitTransform
+                | Command::MovePixels { .. }
+                | Command::LoadThumbnailSelection { .. }
+                | Command::DistortMask { .. }
+                | Command::SetMaskPlacement { .. }
+                | Command::FillBackground
+        ) {
+            return Err(error("Use dispatchAsync for pixel operations"));
+        }
         let mut editor = lock(&shared.editor)?;
+        if let Command::Pointer { samples } = &command {
+            let selected_pixel_input =
+                matches!(editor.tool, Tool::Marquee | Tool::Lasso | Tool::Wand)
+                    && editor.history.pixel_selection.is_some()
+                    && samples
+                        .iter()
+                        .any(|sample| sample.modifiers.control || sample.modifiers.meta);
+            if editor.tool == Tool::Wand || editor.transform_active() || selected_pixel_input {
+                return Err(error("Use dispatchAsync for wand and selected-pixel input"));
+            }
+        }
         editor.command(command).map_err(error)?;
         Ok(editor.snapshot().to_string())
+    }
+    /// Native worker execution for new raster operations. Only typed commands and metadata cross JS.
+    #[napi(ts_return_type = "Promise<string>")]
+    pub fn dispatch_async(&self, command: String) -> Result<AsyncTask<CommandTask>> {
+        if command.len() > 1024 * 1024 {
+            return Err(error("Command exceeds 1 MB"));
+        }
+        let command = serde_json::from_str(&command).map_err(error)?;
+        Ok(AsyncTask::new(CommandTask {
+            shared: self.shared()?,
+            command: Some(command),
+        }))
     }
     #[napi(ts_return_type = "Promise<string>")]
     pub fn preview(&self) -> Result<AsyncTask<PreviewTask>> {
@@ -90,10 +130,11 @@ impl NativeEditor {
         let editor = lock(&shared.editor)?;
         let task = PreviewTask {
             shared: shared.clone(),
-            document: editor.history.document.clone(),
+            document: editor.preview_document(),
             viewport: editor.viewport.clone(),
             selection: editor.selection.ids.clone(),
-            handles: editor.tool == Tool::Move,
+            handles: editor.tool == Tool::Move
+                && (editor.view_options.show_controls || editor.transform_active()),
             mask_id: if editor.paint_target == PaintTarget::Mask {
                 editor.selected_id().map(str::to_owned)
             } else {
@@ -115,6 +156,11 @@ impl NativeEditor {
     pub fn save(&self, path: String) -> Result<AsyncTask<SaveTask>> {
         let shared = self.shared()?;
         let editor = lock(&shared.editor)?;
+        if editor.transform_active() {
+            return Err(error(
+                "Apply or cancel the transform with dispatchAsync before saving",
+            ));
+        }
         Ok(AsyncTask::new(SaveTask {
             shared: shared.clone(),
             document: editor.history.document.clone(),
@@ -125,7 +171,14 @@ impl NativeEditor {
     #[napi(ts_return_type = "Promise<void>")]
     pub fn export_image(&self, path: String, jpeg: bool) -> Result<AsyncTask<ExportTask>> {
         let shared = self.shared()?;
-        let document = lock(&shared.editor)?.history.document.clone();
+        let editor = lock(&shared.editor)?;
+        if editor.transform_active() {
+            return Err(error(
+                "Apply or cancel the transform with dispatchAsync before exporting",
+            ));
+        }
+        let document = editor.history.document.clone();
+        drop(editor);
         Ok(AsyncTask::new(ExportTask {
             shared,
             document,
@@ -137,8 +190,8 @@ impl NativeEditor {
     pub fn import_images(&self, paths: Vec<String>) -> Result<AsyncTask<ImportTask>> {
         let shared = self.shared()?;
         let e = lock(&shared.editor)?;
-        if e.history.document.layers.len() + paths.len() > 100 {
-            return Err(error("The editor supports up to 100 layers"));
+        if e.history.document.layers.len() + paths.len() > picsie_core::model::MAX_LAYERS {
+            return Err(error("The editor supports up to 10,000 layers"));
         }
         let revision = e.history.revision.clone();
         drop(e);
@@ -158,7 +211,7 @@ impl NativeEditor {
         }
         Ok(AsyncTask::new(SampleTask {
             shared: shared.clone(),
-            document: e.history.document.clone(),
+            document: e.preview_document(),
             point,
         }))
     }
@@ -197,6 +250,27 @@ pub fn open_editor(path: String) -> AsyncTask<OpenTask> {
 }
 pub struct OpenTask {
     path: String,
+}
+pub struct CommandTask {
+    shared: Arc<Shared>,
+    command: Option<Command>,
+}
+impl Task for CommandTask {
+    type Output = String;
+    type JsValue = String;
+    fn compute(&mut self) -> Result<String> {
+        self.shared.check()?;
+        let mut editor = lock(&self.shared.editor)?;
+        editor
+            .command(self.command.take().expect("one command task"))
+            .map_err(error)?;
+        self.shared.check()?;
+        Ok(editor.snapshot().to_string())
+    }
+    fn resolve(&mut self, _: Env, state: String) -> Result<String> {
+        self.shared.check()?;
+        Ok(state)
+    }
 }
 impl Task for OpenTask {
     type Output = Document;

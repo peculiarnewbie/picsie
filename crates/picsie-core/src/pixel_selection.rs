@@ -42,6 +42,34 @@ pub struct PixelSelection {
     pub feather: f64,
 }
 impl PixelSelection {
+    /// Selection.swift::moveSelection: retain the full outline when it leaves the canvas.
+    pub fn transformed(&self, matrix: &sk::Matrix) -> Result<Self> {
+        Self::from_path(
+            self.width,
+            self.height,
+            self.outline.with_transform(matrix),
+            self.feather,
+        )
+    }
+    pub fn translated(&self, delta: Point) -> Result<Self> {
+        self.transformed(&sk::Matrix::translate((
+            delta.x.round() as f32,
+            delta.y.round() as f32,
+        )))
+    }
+    pub fn combined(&self, outline: &Path, mode: PixelSelectionMode) -> Result<Self> {
+        let clipped = operation(
+            outline,
+            &canvas_path(self.width, self.height),
+            PathOp::Intersect,
+        )?;
+        let path = match mode {
+            PixelSelectionMode::Replace => clipped,
+            PixelSelectionMode::Add => operation(&self.outline, &clipped, PathOp::Union)?,
+            PixelSelectionMode::Subtract => operation(&self.outline, &clipped, PathOp::Difference)?,
+        };
+        Self::from_path(self.width, self.height, path, 0.)
+    }
     pub fn at(&self, x: u32, y: u32) -> u8 {
         self.pixels[y as usize * self.width as usize + x as usize]
     }

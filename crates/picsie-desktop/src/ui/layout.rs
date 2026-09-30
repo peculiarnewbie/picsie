@@ -1,249 +1,473 @@
+//! ContentView.swift shell adaptation, Compositor 609dbeae. MIT © 2026 Wonder Assembly LLC.
+//! macOS titlebar tabs are represented by the current document; Linux/Windows use Kit menus.
 use super::input::TOOLS;
 use super::*;
-use picsie_core::{
-    crop::CropRatio,
-    editor::{PaintTarget, SelectionMode},
-    model::MaskMode,
-    pixel_selection::{MarqueeKind, PixelSelectionMode},
+use gpui_kit::component::{
+    menu::{DropdownMenu, PopupMenu, PopupMenuItem},
+    popover::Popover,
 };
 impl Desktop {
-    fn header(&self, cx: &Context<Self>) -> Div {
-        row()
-            .h(px(52.))
-            .flex_shrink_0()
-            .px(px(18.))
-            .border_b_1()
-            .border_color(rgb(LINE))
-            .child(icon("image", 20.).text_color(rgb(ACCENT)))
-            .child(
-                div()
-                    .text_size(px(14.))
-                    .font_weight(FontWeight::SEMIBOLD)
-                    .child("picsie"),
-            )
-            .child(label("IMAGE EDITOR").ml(px(12.)))
-            .child(div().flex_1())
-            .child(self.button("new", "New", Action::New, cx))
-            .child(self.button("open", "Open", Action::File(FileAction::Open), cx))
-            .child(self.button(
-                "open-comp",
-                "Open .comp",
-                Action::File(FileAction::OpenComp),
-                cx,
-            ))
-            .child(self.button(
-                "import",
-                "Import image",
-                Action::File(FileAction::Import),
-                cx,
-            ))
-            .child(self.button("save", "Save", Action::File(FileAction::Save), cx))
-            .child(self.button(
-                "save-comp",
-                "Save .comp",
-                Action::File(FileAction::SaveComp),
-                cx,
-            ))
-            .child(
-                self.probe(
-                    "export-png",
-                    self.raw_button("export-png-button", "Export PNG", true, cx)
-                        .bg(rgb(ACCENT))
-                        .text_color(rgb(0x171b2c))
-                        .icon(icon("export", 18.))
-                        .disabled(self.busy)
-                        .on_click(cx.listener(|this, _, window, cx| {
-                            this.act(Action::File(FileAction::ExportPng), window, cx)
-                        })),
-                ),
-            )
+    fn menu_item(
+        &self,
+        id: &'static str,
+        title: impl Into<SharedString>,
+        action: Action,
+        disabled: bool,
+        cx: &Context<Self>,
+    ) -> PopupMenuItem {
+        let entity = cx.entity();
+        let title = title.into();
+        let click = entity.clone();
+        let item = PopupMenuItem::element(move |_, cx| {
+            entity.update(cx, |this, _| {
+                this.probe(id, div().w_full().text_size(px(12.)).child(title.clone()))
+            })
+        })
+        .disabled(disabled || self.busy);
+        match id {
+            "pixels-copy" => item.action(Box::new(gpui_kit::component::input::Copy)),
+            "pixels-cut" => item.action(Box::new(gpui_kit::component::input::Cut)),
+            "pixels-paste" => item.action(Box::new(gpui_kit::component::input::Paste)),
+            _ => item.on_click(move |_, window, cx| {
+                click.update(cx, |this, cx| this.act(action.clone(), window, cx))
+            }),
+        }
     }
-    fn toolbar(&self, cx: &Context<Self>) -> Div {
-        let mut bar = row()
-            .h(px(46.))
-            .flex_shrink_0()
-            .px(px(18.))
-            .border_b_1()
-            .border_color(rgb(LINE));
-        let Some(state) = &self.state else { return bar };
-        let title = TOOLS
-            .iter()
-            .find(|(tool, _, _, _)| *tool == state.tool)
-            .map(|t| t.2)
-            .unwrap_or("Move");
-        bar = bar.child(
-            div()
-                .w(px(98.))
-                .flex_shrink_0()
-                .text_color(rgb(ACCENT))
-                .child(title),
-        );
-        match state.tool {
-            Tool::Brush | Tool::Eraser => {
-                bar = bar.child(
-                    row()
-                        .w(px(460.))
-                        .items_center()
-                        .child(self.field("brush-size", "Size (px)", false))
-                        .child(self.field("brush-opacity", "Opacity (%)", false))
-                        .child(self.field("hardness", "Hardness (%)", false))
-                        .child(self.field("smoothing", "Smoothing", false)),
+    fn app_menu(&self, name: &'static str, cx: &Context<Self>) -> Stateful<Div> {
+        // Kit handles keyboard navigation, focus restoration, dismissal and popup placement.
+        // PopupMenuItem isn't Clone, so prepare a fresh list when the trigger opens.
+        let entity = cx.entity();
+        let close = entity.clone();
+        self.probe(
+            format!("menu-{name}"),
+            self.raw_button(format!("menu-button-{name}"), name, false, cx)
+                .ghost()
+                .rounded(px(5.))
+                .h(px(28.))
+                .on_mouse_down(
+                    MouseButton::Left,
+                    cx.listener(|this, _, window, cx| {
+                        // Capture before BasePopover takes focus, so its commands target the input/canvas.
+                        this.menu_focus = window.focused(cx);
+                        this.menu_text_focus = window.focused_input(cx).is_some();
+                    }),
+                )
+                .dropdown_menu(move |menu, window, cx| {
+                    entity.update(cx, |this, dcx| this.menu_contents(name, menu, window, dcx))
+                })
+                .on_open_change(move |open, _, cx| {
+                    close.update(cx, |this, _| {
+                        if !*open {
+                            this.menu_focus = None;
+                            this.menu_text_focus = false;
+                        }
+                    })
+                }),
+        )
+    }
+    fn menu_contents(
+        &self,
+        name: &str,
+        mut menu: PopupMenu,
+        _window: &mut Window,
+        cx: &mut Context<Self>,
+    ) -> PopupMenu {
+        menu = menu.action_context(self.menu_focus.clone().unwrap_or(self.focus.clone()));
+        let text_focus = self.menu_text_focus;
+        let state = self.state.as_ref();
+        let no_selection = state.is_none_or(|s| s.selection.ids.is_empty());
+        let locked = state.is_none_or(|s| !s.unlocked_selection());
+        let entries: Vec<(&'static str, &'static str, Action, bool)> = match name {
+            "File" => vec![
+                ("new", "New Canvas…", Action::New, false),
+                (
+                    "open",
+                    "Open Project…",
+                    Action::File(FileAction::Open),
+                    false,
+                ),
+                (
+                    "open-comp",
+                    "Open Compositor Package…",
+                    Action::File(FileAction::OpenComp),
+                    false,
+                ),
+                (
+                    "import",
+                    "Import Image…",
+                    Action::File(FileAction::Import),
+                    false,
+                ),
+                ("save", "Save", Action::File(FileAction::Save), false),
+                (
+                    "save-as",
+                    "Save As…",
+                    Action::File(FileAction::SaveAs),
+                    false,
+                ),
+                (
+                    "save-comp",
+                    "Save Compositor Package…",
+                    Action::File(FileAction::SaveComp),
+                    false,
+                ),
+                (
+                    "export-png",
+                    "Export PNG…",
+                    Action::File(FileAction::ExportPng),
+                    false,
+                ),
+                (
+                    "export-jpeg",
+                    "Export JPEG…",
+                    Action::File(FileAction::ExportJpeg),
+                    false,
+                ),
+                ("close", "Close Window", Action::Close, false),
+            ],
+            "Edit" => vec![
+                (
+                    "undo",
+                    "Undo",
+                    Action::Command(Command::Undo),
+                    state.is_none_or(|s| !s.history.can_undo),
+                ),
+                (
+                    "redo",
+                    "Redo",
+                    Action::Command(Command::Redo),
+                    state.is_none_or(|s| !s.history.can_redo),
+                ),
+                (
+                    "pixels-cut",
+                    "Cut",
+                    Action::Copy {
+                        merged: false,
+                        cut: true,
+                    },
+                    state.is_none_or(|s| !s.can_edit_pixels || !s.has_pixel_selection),
+                ),
+                (
+                    "pixels-copy",
+                    "Copy",
+                    Action::Copy {
+                        merged: false,
+                        cut: false,
+                    },
+                    state.is_none_or(|s| !s.can_copy_pixels),
+                ),
+                (
+                    "pixels-copy-merged",
+                    "Copy Merged",
+                    Action::Copy {
+                        merged: true,
+                        cut: false,
+                    },
+                    false,
+                ),
+                ("pixels-paste", "Paste", Action::Paste, false),
+                (
+                    "pixels-fill-foreground",
+                    "Fill with Foreground Color",
+                    Action::Command(Command::FillSelection),
+                    state.is_none_or(|s| !s.can_edit_pixels),
+                ),
+                (
+                    "pixels-fill-background",
+                    "Fill with Background Color",
+                    Action::Command(Command::FillBackground),
+                    state.is_none_or(|s| !s.can_edit_pixels),
+                ),
+                (
+                    "pixels-transform",
+                    "Transform…",
+                    Action::Command(Command::BeginTransform),
+                    locked,
+                ),
+            ],
+            "Select" => vec![
+                (
+                    "pixels-all",
+                    "All",
+                    Action::Command(Command::SelectAllPixels),
+                    false,
+                ),
+                (
+                    "pixels-deselect-menu",
+                    "Deselect",
+                    Action::Command(Command::DeselectPixels),
+                    state.is_none_or(|s| !s.has_pixel_selection),
+                ),
+                (
+                    "pixels-invert",
+                    "Inverse",
+                    Action::Command(Command::InvertSelection),
+                    state.is_none_or(|s| !s.has_pixel_selection),
+                ),
+                (
+                    "pixels-fill",
+                    "Fill with Foreground",
+                    Action::Command(Command::FillSelection),
+                    state.is_none_or(|s| !s.can_edit_pixels),
+                ),
+                (
+                    "pixels-clear",
+                    "Clear Pixels",
+                    Action::Command(Command::ClearSelectedPixels),
+                    state.is_none_or(|s| !s.can_edit_pixels || !s.has_pixel_selection),
+                ),
+            ],
+            "Image" => vec![
+                (
+                    "canvas-size-menu",
+                    "Canvas Size…",
+                    Action::CanvasSize,
+                    false,
+                ),
+                ("image-size", "Image Size…", Action::ImageSize, false),
+            ],
+            "Layer" => vec![
+                (
+                    "add-gradient",
+                    "New Gradient Layer",
+                    Action::Command(Command::AddGradient),
+                    false,
+                ),
+                (
+                    "duplicate",
+                    "Duplicate Layers",
+                    Action::Command(Command::Duplicate),
+                    no_selection,
+                ),
+                (
+                    "pixels-via-copy",
+                    "Layer via Copy",
+                    Action::Command(Command::LayerViaCopy),
+                    state.is_none_or(|s| !s.can_copy_pixels),
+                ),
+                (
+                    "group",
+                    "Group Selected",
+                    Action::Command(Command::GroupSelected),
+                    no_selection,
+                ),
+                (
+                    "out-of-folder",
+                    "Move Out of Folder",
+                    Action::Command(Command::MoveToGroup { parent_id: None }),
+                    no_selection,
+                ),
+                (
+                    "raise",
+                    "Raise Layer",
+                    Action::Command(Command::Reorder { direction: 1 }),
+                    locked,
+                ),
+                (
+                    "lower",
+                    "Lower Layer",
+                    Action::Command(Command::Reorder { direction: -1 }),
+                    locked,
+                ),
+                (
+                    "layers-merge",
+                    "Merge Layers / Down / Group",
+                    Action::Command(Command::MergeLayers),
+                    locked,
+                ),
+            ],
+            _ => vec![
+                (
+                    "fit-menu",
+                    "Fit Canvas",
+                    Action::Command(Command::Fit),
+                    false,
+                ),
+                (
+                    "actual-menu",
+                    "Actual Pixels",
+                    Action::Command(Command::Zoom {
+                        zoom: 1.,
+                        point: None,
+                    }),
+                    false,
+                ),
+            ],
+        };
+        for (id, title, action, disabled) in entries {
+            let title = match id {
+                "undo" => state
+                    .filter(|s| s.history.can_undo)
+                    .map(|s| format!("Undo {}", s.history.undo_label)),
+                "redo" => state
+                    .filter(|s| s.history.can_redo)
+                    .map(|s| format!("Redo {}", s.history.redo_label)),
+                "layers-merge" => state.map(|s| {
+                    if s.selection.ids.len() > 1 {
+                        "Merge Layers"
+                    } else if s.selected().is_some_and(|l| l.kind() == "group") {
+                        "Merge Folder"
+                    } else {
+                        "Merge Down"
+                    }
+                    .to_owned()
+                }),
+                _ => None,
+            }
+            .unwrap_or_else(|| title.to_owned());
+            menu = menu.item(self.menu_item(
+                id,
+                title,
+                action,
+                disabled
+                    && !(text_focus && matches!(id, "pixels-copy" | "pixels-cut" | "pixels-paste")),
+                cx,
+            ));
+        }
+        if name == "View" {
+            menu = menu.separator();
+            for (key, title) in [
+                ("rulers", "Rulers"),
+                ("guides", "Guides"),
+                ("grid", "Grid"),
+                ("lock-guides", "Lock Guides"),
+                ("snap", "Snap"),
+                ("snap-guides", "Snap to Guides"),
+                ("snap-grid", "Snap to Grid"),
+                ("snap-layers", "Snap to Layers"),
+                ("snap-bounds", "Snap to Document Bounds"),
+            ] {
+                menu = menu.item(
+                    self.menu_item(key, title, Action::ViewOption(key), false, cx)
+                        .checked(self.view_option(key)),
                 );
             }
-            Tool::Crop => {
-                for (id, label, ratio) in [
-                    ("free", "Free", CropRatio::Free),
-                    ("original", "Original", CropRatio::Original),
-                    ("square", "1:1", CropRatio::Square),
-                    ("fourThree", "4:3", CropRatio::FourThree),
-                    ("sixteenNine", "16:9", CropRatio::SixteenNine),
-                ] {
-                    bar = bar.child(self.command_button(
-                        &format!("crop-{id}"),
-                        label,
-                        Command::SetCropRatio { ratio },
-                        false,
-                        state.crop_ratio == id,
-                        cx,
-                    ));
-                }
-                bar = bar
-                    .child(self.command_button(
-                        "crop-apply",
-                        "Apply",
-                        Command::CommitCrop,
-                        false,
-                        true,
-                        cx,
-                    ))
-                    .child(self.command_button(
-                        "crop-cancel",
-                        "Cancel",
-                        Command::CancelCrop,
-                        false,
-                        false,
-                        cx,
-                    ));
-            }
-            Tool::Marquee | Tool::Lasso => {
-                if state.tool == Tool::Marquee {
-                    bar = bar
-                        .child(self.command_button(
-                            "marquee-rectangle",
-                            "Rectangle",
-                            Command::SetMarqueeKind {
-                                kind: MarqueeKind::Rectangle,
-                            },
-                            false,
-                            state.marquee_kind == "rectangle",
-                            cx,
-                        ))
-                        .child(self.command_button(
-                            "marquee-ellipse",
-                            "Ellipse",
-                            Command::SetMarqueeKind {
-                                kind: MarqueeKind::Ellipse,
-                            },
-                            false,
-                            state.marquee_kind == "ellipse",
-                            cx,
-                        ));
-                }
-                for (id, label, mode) in [
-                    ("replace", "New", PixelSelectionMode::Replace),
-                    ("add", "Add", PixelSelectionMode::Add),
-                    ("subtract", "Subtract", PixelSelectionMode::Subtract),
-                ] {
-                    bar = bar.child(self.command_button(
-                        &format!("selection-{id}"),
-                        label,
-                        Command::SetSelectionMode { mode },
-                        false,
-                        state.selection_mode == id,
-                        cx,
-                    ));
-                }
-            }
-            _ => bar = bar.child(hint("V move · B brush · M marquee · L lasso · C crop")),
+            menu = menu.separator().item(self.menu_item(
+                "clear-guides",
+                "Clear Guides",
+                Action::Command(Command::ClearGuides),
+                state.is_none_or(|s| s.document.guides.is_empty()),
+                cx,
+            ));
         }
-        if state.paint_target == "mask" {
-            bar = bar
-                .child(label("Mask").text_color(rgb(0x62deca)))
-                .child(self.command_button(
-                    "mask-hide",
-                    "Hide",
-                    Command::SetMaskMode {
-                        mode: MaskMode::Hide,
-                    },
-                    false,
-                    state.mask_mode == "hide",
-                    cx,
-                ))
-                .child(self.command_button(
-                    "mask-reveal",
-                    "Reveal",
-                    Command::SetMaskMode {
-                        mode: MaskMode::Reveal,
-                    },
-                    false,
-                    state.mask_mode == "reveal",
-                    cx,
-                ));
+        menu.min_w(px(220.))
+    }
+    fn header(&self, cx: &Context<Self>) -> Div {
+        let mut header = row()
+            .h(px(42.))
+            .flex_shrink_0()
+            .px(px(12.))
+            .gap(px(3.))
+            .border_b_1()
+            .border_color(rgb(LINE));
+        header = header.child(self.icon_button(
+            "new-canvas",
+            "plus",
+            "New canvas (Ctrl/⌘N)".into(),
+            Action::New,
+            false,
+            false,
+            cx,
+        ));
+        for name in ["File", "Edit", "Select", "Image", "Layer", "View"] {
+            header = header.child(self.app_menu(name, cx));
         }
-        bar.child(div().flex_1())
-            .child(self.icon_button(
-                "undo",
-                "undo",
-                format!("Undo {}", state.history.undo_label),
-                Action::Command(Command::Undo),
-                !state.history.can_undo,
+        header = header
+            .child(
+                div()
+                    .flex_1()
+                    .min_w_0()
+                    .text_center()
+                    .text_ellipsis()
+                    .text_size(px(12.))
+                    .font_weight(FontWeight::MEDIUM)
+                    .child(
+                        self.state
+                            .as_ref()
+                            .map(|s| {
+                                format!(
+                                    "{}{}",
+                                    s.document.name,
+                                    if s.history.dirty { " •" } else { "" }
+                                )
+                            })
+                            .unwrap_or_else(|| "Picsie".into()),
+                    ),
+            )
+            .child(self.command_button("fit", "Fit", Command::Fit, false, false, cx))
+            .child(self.command_button(
+                "actual",
+                "100%",
+                Command::Zoom {
+                    zoom: 1.,
+                    point: None,
+                },
+                false,
                 false,
                 cx,
-            ))
-            .child(self.icon_button(
-                "redo",
-                "redo",
-                format!("Redo {}", state.history.redo_label),
-                Action::Command(Command::Redo),
-                !state.history.can_redo,
-                false,
-                cx,
-            ))
-            .when(state.viewport.width >= 700., |d| {
-                d.child(
-                    label(format!(
-                        "{}{}",
-                        state.document.name,
-                        if state.history.dirty { " •" } else { "" }
-                    ))
-                    .ml(px(10.)),
-                )
-            })
+            ));
+        for (id, title, factor) in [("zoom-in", "+", 1.25), ("zoom-out", "−", 0.8)] {
+            header = header.child(
+                self.probe(
+                    id,
+                    self.raw_button(format!("{id}-button"), title, false, cx)
+                        .w(px(28.))
+                        .tooltip(if factor > 1. { "Zoom in" } else { "Zoom out" })
+                        .on_click(cx.listener(move |this, _, _, _| {
+                            this.engine.request(Operation::ZoomBy {
+                                factor,
+                                point: None,
+                            });
+                        })),
+                ),
+            );
+        }
+        header
     }
     fn tool_rail(&self, cx: &Context<Self>) -> Stateful<Div> {
         let tool = self.state.as_ref().map(|s| s.tool).unwrap_or(Tool::Move);
         let mut rail = div()
             .id("tool-rail")
-            .w(px(64.))
+            .w(px(56.))
             .h_full()
             .flex_shrink_0()
             .flex()
             .flex_col()
             .items_center()
-            .gap(px(7.))
-            .p(px(10.))
+            .gap(px(10.))
+            .pt(px(16.))
+            .pb(px(12.))
             .border_r_1()
             .border_color(rgb(LINE))
             .overflow_y_scroll();
         for (value, id, name, key) in TOOLS {
+            if matches!(value, Tool::Eraser | Tool::Ellipse) {
+                continue;
+            }
+            let active = tool == *value
+                || (*value == Tool::Brush && tool == Tool::Eraser)
+                || (*value == Tool::Rectangle && tool == Tool::Ellipse);
             let command = Command::SetTool { tool: *value };
             rail = rail.child(
                 self.probe(
                     format!("tool-{id}"),
-                    self.raw_button(format!("tool-button-{id}"), "", tool == *value, cx)
-                        .icon(icon(id, 18.))
-                        .w(px(42.))
-                        .h(px(37.))
+                    self.raw_button(format!("tool-button-{id}"), "", active, cx)
+                        .with_size(gpui_kit::component::Size::Size(px(24.)))
+                        .icon(icon(
+                            if *value == Tool::Rectangle && tool == Tool::Ellipse {
+                                "ellipse"
+                            } else {
+                                id
+                            },
+                            18.,
+                        ))
+                        .w(px(36.))
+                        .h(px(36.))
+                        .rounded(px(7.))
+                        .ghost()
+                        .when(active, |b| {
+                            b.bg(rgb(0x414141)).border_1().border_color(rgb(0x505050))
+                        })
                         .tooltip(format!("{name} ({key})"))
                         .disabled(self.busy)
                         .on_click(cx.listener(move |this, _, window, cx| {
@@ -253,685 +477,22 @@ impl Desktop {
                 .flex_shrink_0(),
             );
         }
-        rail.child(div().h(px(10.)).flex_shrink_0())
-            .child(
-                div()
-                    .size(px(32.))
-                    .flex_shrink_0()
-                    .rounded(px(6.))
-                    .border_2()
-                    .border_color(rgb(0xedf0fc))
-                    .bg(hex_color(
-                        self.state
-                            .as_ref()
-                            .map(|s| s.color.as_str())
-                            .unwrap_or("#a5b4fc"),
-                    )),
-            )
-            .child(div().flex_1())
-            .child(label("RGB"))
-    }
-    fn color_section(&self, state: &Snapshot, cx: &Context<Self>) -> Div {
-        let mut swatches = row().gap(px(7.));
-        for color in SWATCHES {
-            let color = color.to_string();
-            let command = Command::SetColor {
-                color: color.clone(),
-            };
-            swatches = swatches.child(
-                self.probe(
-                    format!("swatch-{color}"),
-                    self.raw_button(format!("color-{color}"), "", false, cx)
-                        .w(px(29.))
-                        .h(px(20.))
-                        .custom(
-                            ButtonCustomVariant::new(cx)
-                                .color(hex_color(&color))
-                                .hover(hex_color(&color))
-                                .active(hex_color(&color)),
-                        )
-                        .when(state.color.eq_ignore_ascii_case(&color), |b| {
-                            b.border_2().border_color(rgb(0xffffff))
-                        })
-                        .bg(hex_color(&color))
-                        .tooltip(color)
-                        .on_click(cx.listener(move |this, _, window, cx| {
-                            this.act(Action::Command(command.clone()), window, cx)
-                        })),
-                ),
-            );
-        }
-        section("Color")
-            .child(
-                row()
-                    .items_end()
-                    .child(
-                        self.probe(
-                            "foreground-picker",
-                            self.raw_button("foreground-picker-button", "", false, cx)
-                                .w(px(33.))
-                                .h(px(33.))
-                                .custom(
-                                    ButtonCustomVariant::new(cx)
-                                        .color(hex_color(&state.color))
-                                        .hover(hex_color(&state.color)),
-                                )
-                                .border_2()
-                                .border_color(rgb(0xedf0fc))
-                                .bg(hex_color(&state.color))
-                                .tooltip("Choose foreground color")
-                                .on_click(cx.listener(|this, _, window, cx| {
-                                    this.act(Action::Color(ColorTarget::Foreground), window, cx)
-                                })),
-                        ),
-                    )
-                    .child(self.field("foreground", "Foreground", false)),
-            )
-            .child(swatches)
-            .child(self.command_button(
-                "fill-foreground",
-                "Fill with foreground",
-                Command::FillSelection,
-                !state.can_edit_pixels,
-                false,
-                cx,
-            ))
-    }
-    fn selection_section(&self, state: &Snapshot, cx: &Context<Self>) -> Div {
-        let no_bounds = state.pixel_selection_bounds.is_none();
-        let amount = number(&self.field_value("selection-amount", cx))
-            .unwrap_or(5.)
-            .clamp(1., 500.) as u32;
-        let feather = number(&self.field_value("feather", cx))
-            .unwrap_or(2.)
-            .clamp(1., 250.) as u32;
-        section("Pixel selection")
-            .child(hint(if !state.has_pixel_selection {
-                "No selection · edits affect the canvas."
-            } else if no_bounds {
-                "The selection is empty."
-            } else {
-                "Edits affect the selected area."
-            }))
-            .child(
-                row()
-                    .child(self.command_button(
-                        "pixels-all",
-                        "All",
-                        Command::SelectAllPixels,
-                        false,
-                        false,
-                        cx,
-                    ))
-                    .child(self.command_button(
-                        "pixels-invert",
-                        "Invert",
-                        Command::InvertSelection,
-                        !state.has_pixel_selection,
-                        false,
-                        cx,
-                    ))
-                    .child(self.command_button(
-                        "pixels-deselect",
-                        "Deselect",
-                        Command::DeselectPixels,
-                        !state.has_pixel_selection,
-                        false,
-                        cx,
-                    )),
-            )
-            .child(self.field("selection-amount", "Expand / contract (px)", false))
-            .child(
-                row()
-                    .child(self.command_button(
-                        "pixels-expand",
-                        "Expand",
-                        Command::ExpandSelection { amount },
-                        no_bounds,
-                        false,
-                        cx,
-                    ))
-                    .child(self.command_button(
-                        "pixels-contract",
-                        "Contract",
-                        Command::ContractSelection { amount },
-                        no_bounds,
-                        false,
-                        cx,
-                    )),
-            )
-            .child(
-                row()
-                    .items_end()
-                    .child(self.field("feather", "Feather px", false))
-                    .child(self.command_button(
-                        "pixels-feather",
-                        "Feather",
-                        Command::FeatherSelection { amount: feather },
-                        no_bounds,
-                        false,
-                        cx,
-                    )),
-            )
-            .child(
-                row()
-                    .child(self.command_button(
-                        "pixels-fill",
-                        "Fill",
-                        Command::FillSelection,
-                        !state.can_edit_pixels,
-                        false,
-                        cx,
-                    ))
-                    .child(self.command_button(
-                        "pixels-clear",
-                        "Clear pixels",
-                        Command::ClearSelectedPixels,
-                        !state.has_pixel_selection || !state.can_edit_pixels,
-                        false,
-                        cx,
-                    )),
-            )
-    }
-    fn layers_section(&self, state: &Snapshot, cx: &Context<Self>) -> Div {
-        let mut list = div()
-            .id("layers-scroll")
-            .flex()
-            .flex_col()
-            .gap(px(3.))
-            .max_h(px(255.))
-            .overflow_y_scroll()
-            .min_h_0();
-        for item in &state.layer_rows {
-            let Some(layer) = state.layer(&item.id) else {
-                continue;
-            };
-            let id = layer.id.clone();
-            let selected = state.is_selected(&id);
-            let drag_target = self
-                .layer_drag
-                .as_ref()
-                .and_then(|d| d.destination.as_ref())
-                .filter(|(target, _)| target == &id)
-                .map(|(_, side)| *side);
-            let mut entry = row()
-                .gap(px(4.))
-                .h(px(40.))
-                .w_full()
-                .flex_shrink_0()
-                .pl(px(5. + item.depth as f32 * 14.))
-                .pr(px(6.))
-                .rounded(px(5.))
-                .bg(rgb(if selected { 0x363e58 } else { 0x282c35 }))
-                .relative();
-            if let Some(side) = drag_target {
-                entry = if side == "into" {
-                    entry.border_1().border_color(rgb(ACCENT))
-                } else {
-                    entry.child(
-                        div()
-                            .absolute()
-                            .left_0()
-                            .right_0()
-                            .h(px(2.))
-                            .bg(rgb(ACCENT))
-                            .when(side == "above", |d| d.top_0())
-                            .when(side == "below", |d| d.bottom_0()),
-                    )
-                };
-            }
-            if layer.kind() == "group" {
-                entry = entry.child(
-                    self.probe(
-                        format!("collapse-{id}"),
-                        self.raw_button(
-                            format!("collapse-button-{id}"),
-                            if item.collapsed { "▸" } else { "▾" },
-                            false,
-                            cx,
-                        )
-                        .ghost()
-                        .w(px(16.))
-                        .on_click(cx.listener({
-                            let id = id.clone();
-                            move |this, _, window, cx| {
-                                if this.busy {
-                                    return;
-                                }
-                                this.commit_active_fields(window, cx);
-                                this.send(Command::ToggleGroupExpansion { id: id.clone() })
-                            }
-                        })),
-                    )
-                    .on_mouse_down(MouseButton::Left, |_, _, cx| cx.stop_propagation()),
-                );
-            }
-            entry = entry.child(icon("grip", 14.).text_color(rgb(MUTED))).child(
-                self.probe(
-                    format!("visibility-{id}"),
-                    self.raw_button(format!("visibility-button-{id}"), "", false, cx)
-                        .ghost()
-                        .w(px(20.))
-                        .icon(
-                            icon(if layer.visible { "eye" } else { "eyeOff" }, 16.)
-                                .text_color(rgb(if item.visible { ACCENT } else { MUTED })),
-                        )
-                        .on_click(cx.listener({
-                            let id = id.clone();
-                            let visible = !layer.visible;
-                            move |this, _, window, cx| {
-                                if this.busy {
-                                    return;
-                                }
-                                this.commit_active_fields(window, cx);
-                                this.send(Command::Select {
-                                    id: Some(id.clone()),
-                                    mode: SelectionMode::Replace,
-                                });
-                                this.patch(json!({"visible":visible}));
-                            }
-                        })),
-                )
-                .on_mouse_down(MouseButton::Left, |_, _, cx| cx.stop_propagation()),
-            );
-            if layer.mask_source_id.is_some() {
-                entry = entry.child(div().text_color(rgb(ACCENT)).child("↳"));
-            }
-            entry = entry
-                .child(
-                    icon(
-                        match layer.kind() {
-                            "text" => "text",
-                            "image" => "image",
-                            "paint" => "brush",
-                            _ => "layers",
-                        },
-                        16.,
-                    )
-                    .text_color(rgb(ACCENT)),
-                )
-                .child(
-                    div()
-                        .flex_1()
-                        .min_w_0()
-                        .text_size(px(12.))
-                        .text_ellipsis()
-                        .child(layer.name.clone()),
-                );
-            if layer.locked {
-                entry = entry.child(icon("lock", 14.).text_color(rgb(MUTED)));
-            }
-            if let Some(mask) = &layer.mask {
-                entry = entry.child(
-                    self.probe(
-                        format!("mask-row-{id}"),
-                        self.raw_button(
-                            format!("mask-row-button-{id}"),
-                            "",
-                            selected && state.paint_target == "mask",
-                            cx,
-                        )
-                        .w(px(24.))
-                        .h(px(26.))
-                        .icon(icon("mask", 16.))
-                        .opacity(if mask["enabled"].as_bool() == Some(true) {
-                            1.
-                        } else {
-                            0.4
-                        })
-                        .on_click(cx.listener({
-                            let id = id.clone();
-                            move |this, _, window, cx| {
-                                if this.busy {
-                                    return;
-                                }
-                                this.commit_active_fields(window, cx);
-                                this.send(Command::Select {
-                                    id: Some(id.clone()),
-                                    mode: SelectionMode::Replace,
-                                });
-                                this.send(Command::SetPaintTarget {
-                                    target: PaintTarget::Mask,
-                                });
-                            }
-                        })),
-                    )
-                    .on_mouse_down(MouseButton::Left, |_, _, cx| cx.stop_propagation()),
-                );
-            }
-            list = list.child(
-                self.probe(format!("layer-{id}"), entry)
-                    .w_full()
-                    .flex_shrink_0()
-                    .on_mouse_down(
-                        MouseButton::Left,
-                        cx.listener(move |this, event, window, cx| {
-                            this.layer_down(id.clone(), event, window, cx)
-                        }),
-                    ),
-            );
-        }
-        if state.document.layers.is_empty() {
-            list = list.child(hint("Import an image or add a layer to begin.").p(px(12.)));
-        }
-        let mut panel=section("Layers").child(row().gap(px(5.)).child(self.command_button("add-paint","Paint",Command::AddPaintLayer,false,false,cx)).child(self.command_button("add-gradient","Gradient",Command::AddGradient,false,false,cx)).child(self.command_button("add-folder","Folder",Command::AddGroup,false,false,cx)).child(label(state.document.layers.len().to_string())))
-            .child(hint("Shift: range · Ctrl/⌘: toggle · Drag rows: reorder · Drop on a folder: file inside").text_size(px(10.)))
-            .child(self.probe("layer-list",list))
-            .child(row().gap(px(5.)).child(self.command_button("group","Group",Command::GroupSelected,state.selection.ids.is_empty(),false,cx))
-                .child(self.icon_button("raise","up","Raise selected layers".into(),Action::Command(Command::Reorder{direction:1}),!state.unlocked_selection(),false,cx))
-                .child(self.icon_button("lower","down","Lower selected layers".into(),Action::Command(Command::Reorder{direction:-1}),!state.unlocked_selection(),false,cx))
-                .child(self.command_button("duplicate","Duplicate",Command::Duplicate,state.selection.ids.is_empty(),false,cx))
-                .child(self.icon_button("delete","trash","Delete selected unlocked layers".into(),Action::Command(Command::Remove),!state.unlocked_selection(),false,cx)));
-        if !state.selection.ids.is_empty() {
-            let mut filing = row().flex_wrap().gap(px(4.)).child(
-                self.command_button(
-                    "out-of-folder",
-                    "Out of folder",
-                    Command::MoveToGroup { parent_id: None },
-                    !state
-                        .document
-                        .layers
-                        .iter()
-                        .any(|l| state.is_selected(&l.id) && l.parent_id.is_some()),
-                    false,
-                    cx,
-                ),
-            );
-            for folder in state
-                .document
-                .layers
-                .iter()
-                .filter(|l| l.kind() == "group" && !state.is_selected(&l.id))
-            {
-                filing = filing.child(self.command_button(
-                    &format!("into-{}", folder.id),
-                    &format!("Into {}", folder.name),
-                    Command::MoveToGroup {
-                        parent_id: Some(folder.id.clone()),
-                    },
-                    false,
-                    false,
-                    cx,
-                ));
-            }
-            panel = panel.child(filing);
-        }
-        if state.selection.ids.len() > 1 {
-            panel=panel.child(hint(format!("{} layers selected",state.selection.ids.len())).text_color(rgb(ACCENT))).child(hint("Drag with Move or use arrow keys to move together. Select one layer to resize, rotate, or paint. Locked layers stay in place."));
-        }
-        panel
-    }
-    fn mask_sections(&self, state: &Snapshot, layer: &LayerInfo, cx: &Context<Self>) -> Div {
-        let mut mask = section(if layer.kind() == "group" {
-            "Folder mask"
-        } else {
-            "Layer mask"
-        });
-        if let Some(value) = &layer.mask {
-            let enabled = value["enabled"].as_bool().unwrap_or(true);
-            let linked = value["linked"].as_bool().unwrap_or(true);
-            mask=mask.child(row().child(self.command_button("paint-content",if layer.kind()=="group"{"Folder"}else{"Layer pixels"},Command::SetPaintTarget{target:PaintTarget::Content},false,state.paint_target=="content",cx)).child(self.command_button("paint-mask","Mask",Command::SetPaintTarget{target:PaintTarget::Mask},layer.locked,state.paint_target=="mask",cx)))
-                .child(hint(if enabled{"Paint Hide to conceal; Reveal to restore. X swaps modes. Eraser reverses the mode."}else{"Mask disabled. Enable it to paint."}))
-                .child(row().child(self.command_button("mask-reset-reveal","Reveal all",Command::ResetMask{base:MaskMode::Reveal},layer.locked,false,cx)).child(self.command_button("mask-reset-hide","Hide all",Command::ResetMask{base:MaskMode::Hide},layer.locked,false,cx)))
-                .when(layer.kind()!="group",|d|d.child(self.command_button("mask-link",if linked{"Linked to layer"}else{"Independent mask"},Command::ToggleMaskLink,layer.locked,linked,cx)))
-                .child(row().child(self.command_button("mask-enabled",if enabled{"Disable"}else{"Enable"},Command::UpdateLayer{patch:json!({"mask":{"enabled":!enabled}})},layer.locked,false,cx)).child(self.command_button("mask-remove","Remove mask",Command::RemoveMask,layer.locked,false,cx)));
-        } else {
-            mask = mask
-                .child(self.command_button(
-                    "mask-add",
-                    "Add mask",
-                    Command::AddMask {
-                        base: MaskMode::Reveal,
-                    },
-                    layer.locked,
-                    false,
-                    cx,
-                ))
-                .child(hint(
-                    "Hide or restore areas while keeping the original pixels.",
-                ));
-        }
-        column()
-            .gap_0()
-            .child(mask)
-            .when(layer.kind() != "group", |d| {
-                d.child(
-                    section("Clipping")
-                        .child(self.command_button(
-                            "clipping",
-                            if layer.mask_source_id.is_some() {
-                                "Release clipping mask"
-                            } else {
-                                "Clip to layer below"
-                            },
-                            Command::ToggleClippingMask,
-                            !state.can_toggle_clipping,
-                            false,
-                            cx,
-                        ))
-                        .child(self.select(
-                            "mask-source",
-                            "Live mask source",
-                            layer.locked || state.mask_source_ids.is_empty(),
-                        )),
-                )
-            })
-    }
-    fn inspector(&self, cx: &Context<Self>) -> Stateful<Div> {
-        let mut panel = div()
-            .id("inspector-scroll")
-            .track_scroll(&self.inspector_scroll)
-            .flex()
-            .flex_col()
-            .w(px(280.))
-            .h_full()
-            .flex_shrink_0()
-            .bg(rgb(PANEL))
-            .border_l_1()
-            .border_color(rgb(LINE))
-            .overflow_y_scroll();
-        let Some(state) = &self.state else {
-            return panel;
-        };
-        panel = panel.child(self.color_section(state, cx));
-        if state.has_pixel_selection || matches!(state.tool, Tool::Marquee | Tool::Lasso) {
-            panel = panel.child(self.selection_section(state, cx));
-        }
-        panel = panel.child(self.layers_section(state, cx));
-        if state.selection.ids.len() == 1
-            && let Some(layer) = state.selected()
-        {
-            let locked = layer.locked;
-            panel = panel
-                .child(
-                    section("Properties")
-                        .child(self.field("name", "Name", locked))
-                        .child(self.slider("opacity", "Opacity", layer.opacity * 100., "%", locked))
-                        .child(
-                            row()
-                                .items_end()
-                                .child(self.select(
-                                    "blend",
-                                    "Blend mode",
-                                    locked || layer.kind() == "group",
-                                ))
-                                .child(self.command_button(
-                                    "lock",
-                                    if locked { "Unlock layer" } else { "Lock layer" },
-                                    Command::UpdateLayer {
-                                        patch: json!({"locked":!locked}),
-                                    },
-                                    false,
-                                    locked,
-                                    cx,
-                                )),
-                        ),
-                )
-                .child(self.mask_sections(state, layer, cx));
-            if layer.kind() != "group" {
-                panel = panel.child(
-                    section("Transform")
-                        .child(
-                            row()
-                                .child(self.field("x", "X", locked))
-                                .child(self.field("y", "Y", locked)),
-                        )
-                        .child(
-                            row()
-                                .child(self.field("width", "Width", locked))
-                                .child(self.field("height", "Height", locked)),
-                        )
-                        .child(
-                            row()
-                                .items_end()
-                                .child(self.field("rotation", "Rotation °", locked))
-                                .child(self.command_button(
-                                    "flip-x",
-                                    "Flip X",
-                                    Command::UpdateLayer {
-                                        patch: json!({"flipX":!layer.flip_x}),
-                                    },
-                                    locked,
-                                    false,
-                                    cx,
-                                ))
-                                .child(self.command_button(
-                                    "flip-y",
-                                    "Flip Y",
-                                    Command::UpdateLayer {
-                                        patch: json!({"flipY":!layer.flip_y}),
-                                    },
-                                    locked,
-                                    false,
-                                    cx,
-                                )),
-                        ),
-                );
-                if layer.kind() == "text" {
-                    panel = panel.child(
-                        section("Text")
-                            .child(
-                                self.probe(
-                                    "text-editor",
-                                    Textarea::new(&self.text)
-                                        .small()
-                                        .bg(rgb(0x191c22))
-                                        .text_size(px(12.))
-                                        .aria_label("Layer text")
-                                        .h(px(80.))
-                                        .disabled(locked || self.busy),
-                                ),
-                            )
-                            .child(self.field("font-size", "Font size", locked))
-                            .child(self.select("font", "Font family", locked)),
-                    );
-                }
-                if let Some(fill) = layer.fill() {
-                    let property = if layer.kind() == "gradient" {
-                        "from"
-                    } else {
-                        "color"
-                    };
-                    let mut section = section("Fill").child(
-                        row()
-                            .child(
-                                self.probe(
-                                    "layer-color",
-                                    self.raw_button("layer-color-button", "", false, cx)
-                                        .bg(hex_color(fill))
-                                        .w(px(33.))
-                                        .h(px(33.))
-                                        .custom(
-                                            ButtonCustomVariant::new(cx)
-                                                .color(hex_color(fill))
-                                                .hover(hex_color(fill)),
-                                        )
-                                        .disabled(locked)
-                                        .on_click(cx.listener(|this, _, window, cx| {
-                                            this.act(Action::Color(ColorTarget::Layer), window, cx)
-                                        })),
-                                ),
-                            )
-                            .child(
-                                self.probe(
-                                    "use-foreground",
-                                    self.raw_button(
-                                        "use-foreground-button",
-                                        "Use foreground color",
-                                        false,
-                                        cx,
-                                    )
-                                    .disabled(locked)
-                                    .on_click(cx.listener(
-                                        move |this, _, window, cx| {
-                                            if this.busy {
-                                                return;
-                                            }
-                                            this.commit_active_fields(window, cx);
-                                            this.engine.request(Operation::ForegroundFill {
-                                                key: property,
-                                            });
-                                        },
-                                    )),
-                                ),
-                            ),
-                    );
-                    if layer.kind() == "gradient" {
-                        section = section.child(
-                            self.probe(
-                                "gradient-end",
-                                self.raw_button(
-                                    "gradient-end-button",
-                                    "Use foreground for end color",
-                                    false,
-                                    cx,
-                                )
-                                .disabled(locked)
-                                .on_click(cx.listener(
-                                    move |this, _, window, cx| {
-                                        if this.busy {
-                                            return;
-                                        }
-                                        this.commit_active_fields(window, cx);
-                                        this.engine
-                                            .request(Operation::ForegroundFill { key: "to" });
-                                    },
-                                )),
-                            ),
-                        );
-                    }
-                    panel = panel.child(section);
-                }
-                panel = panel.child(
-                    section("Adjustments")
-                        .child(self.slider(
-                            "brightness",
-                            "Brightness",
-                            layer.brightness * 100.,
-                            "%",
-                            locked,
-                        ))
-                        .child(self.slider(
-                            "saturation",
-                            "Saturation",
-                            layer.saturation * 100.,
-                            "%",
-                            locked,
-                        ))
-                        .child(self.slider("blur", "Gaussian blur", layer.blur, "px", locked)),
-                );
-            }
-        }
-        panel
+        rail.child(self.foreground_swatch(cx, true).mt(px(8.)).flex_shrink_0())
     }
     fn footer(&self, cx: &Context<Self>) -> Div {
         let state = self.state.as_ref();
         row()
-            .h(px(28.))
+            .h(px(30.))
             .flex_shrink_0()
-            .px(px(14.))
+            .px(px(18.))
+            .gap(px(16.))
             .border_t_1()
             .border_color(rgb(LINE))
+            .text_size(px(11.))
+            .text_color(rgb(MUTED))
+            .child(div().w(px(62.)).flex_shrink_0().child(
+                format!("{}%",state.map(|s|(s.viewport.zoom*100.).round() as u32).unwrap_or(100)),
+            ))
             .child(
                 self.probe(
                     "canvas-size",
@@ -943,68 +504,335 @@ impl Desktop {
                         false,
                         cx,
                     )
-                    .h(px(22.))
+                    .ghost()
+                    .h(px(24.))
+                    .text_size(px(11.))
+                    .text_color(rgb(MUTED))
                     .tooltip("Canvas Size (Ctrl/⌘+Alt+C)")
-                    .disabled(self.busy)
                     .on_click(
                         cx.listener(|this, _, window, cx| this.act(Action::CanvasSize, window, cx)),
                     ),
                 ),
             )
+            .child(div().flex_shrink_0().child("sRGB · Transparent"))
+            .child(div().flex_1())
             .child(
                 div()
-                    .flex_1()
                     .min_w_0()
-                    .ml(px(12.))
-                    .text_size(px(10.))
-                    .text_color(rgb(if self.busy { ACCENT } else { MUTED }))
                     .text_ellipsis()
+                    .text_color(rgb(if self.busy { ACCENT } else { MUTED }))
                     .child(if self.busy {
                         "Working…".into()
                     } else {
                         self.notice.clone()
                     }),
             )
+    }
+    fn layers_panel(&self, cx: &Context<Self>) -> Div {
+        let mut panel = column()
+            .gap_0()
+            .w(px(self.layers_width))
+            .h_full()
+            .flex_shrink_0()
+            .bg(rgb(PANEL));
+        let Some(state) = &self.state else {
+            return panel;
+        };
+        let layer = state.selected();
+        let locked = layer.is_none_or(|l| l.locked);
+        panel = panel
             .child(
-                self.probe(
-                    "zoom-out",
-                    self.raw_button("zoom-out-button", "−", false, cx)
-                        .h(px(22.))
-                        .w(px(26.))
-                        .on_click(cx.listener(|this, _, _, _| {
-                            this.engine.request(Operation::ZoomBy {
-                                factor: 0.8,
-                                point: None,
-                            });
-                        })),
-                ),
-            )
-            .child(div().w(px(35.)).text_size(px(10.)).text_center().child(
-                format!("{}%",state.map(|s|(s.viewport.zoom*100.).round() as u32).unwrap_or(100)),
-            ))
-            .child(
-                self.probe(
-                    "zoom-in",
-                    self.raw_button("zoom-in-button", "+", false, cx)
-                        .h(px(22.))
-                        .w(px(26.))
-                        .on_click(cx.listener(|this, _, _, _| {
-                            this.engine.request(Operation::ZoomBy {
-                                factor: 1.25,
-                                point: None,
-                            });
-                        })),
-                ),
+                row()
+                    .h(px(52.))
+                    .px(px(18.))
+                    .border_b_1()
+                    .border_color(rgb(LINE))
+                    .child(div().font_weight(FontWeight::SEMIBOLD).child("Layers"))
+                    .child(label(state.document.layers.len().to_string())),
             )
             .child(
-                self.probe(
-                    "fit",
-                    self.raw_button("fit-button", "Fit", false, cx)
-                        .h(px(22.))
-                        .on_click(cx.listener(|this, _, window, cx| {
-                            this.act(Action::Command(Command::Fit), window, cx)
-                        })),
+                column()
+                    .gap(px(8.))
+                    .p(px(12.))
+                    .flex_shrink_0()
+                    .border_b_1()
+                    .border_color(rgb(LINE))
+                    .child(
+                        row()
+                            .child(label("Blend").w(px(42.)))
+                            .child(self.blend_picker(
+                                locked
+                                    || state.selection.ids.len() != 1
+                                    || layer.is_none_or(|l| l.kind() == "group"),
+                                cx,
+                            )),
+                    )
+                    .child(self.slider(
+                        "opacity",
+                        "Opacity",
+                        layer.map(|l| l.opacity * 100.).unwrap_or(100.),
+                        "%",
+                        locked,
+                    )),
+            )
+            .child(
+                self.probe("layer-list", self.layer_list(state, cx))
+                    .flex_1()
+                    .min_h_0()
+                    .overflow_hidden()
+                    .w_full(),
+            );
+        let entity = cx.entity();
+        let props = entity.clone();
+        let effects = entity;
+        let effect_open = cx.entity();
+        let props_open = cx.entity();
+        panel.child(
+            row()
+                .gap(px(4.))
+                .h(px(48.))
+                .px(px(8.))
+                .flex_shrink_0()
+                .border_t_1()
+                .border_color(rgb(LINE))
+                .child(self.icon_button(
+                    "add-paint",
+                    "layer-add",
+                    "New paint layer".into(),
+                    Action::Command(Command::AddPaintLayer),
+                    false,
+                    false,
+                    cx,
+                ))
+                .child(self.icon_button(
+                    "add-folder",
+                    "folder-add",
+                    "New folder".into(),
+                    Action::Command(Command::AddGroup),
+                    false,
+                    false,
+                    cx,
+                ))
+                .child(self.icon_button(
+                    "mask-menu",
+                    "mask",
+                    if state.has_pixel_selection {
+                        "Add layer mask (the selection becomes black)".into()
+                    } else {
+                        "Add layer mask".into()
+                    },
+                    Action::Command(Command::AddMask {
+                        base: picsie_core::model::MaskMode::Reveal,
+                    }),
+                    locked
+                        || state.selection.ids.len() != 1
+                        || layer.is_none_or(|l| l.mask.is_some()),
+                    false,
+                    cx,
+                ))
+                .child(
+                    self.probe(
+                        "adjustments-menu",
+                        Popover::new("adjustments-popover")
+                            .open(self.open_palette == Some("adjustments-menu"))
+                            .on_open_change(move |open, window, cx| {
+                                effect_open.update(cx, |this, cx| {
+                                    this.open_palette = if *open {
+                                        Some("adjustments-menu")
+                                    } else {
+                                        None
+                                    };
+                                    if !*open {
+                                        this.commit_active_fields(window, cx);
+                                        window.focus(&this.focus, cx);
+                                    }
+                                    cx.notify();
+                                })
+                            })
+                            .anchor(Anchor::BottomLeft)
+                            .trigger(
+                                self.raw_button("adjustments-trigger", "", false, cx)
+                                    .with_size(gpui_kit::component::Size::Size(px(24.)))
+                                    .ghost()
+                                    .icon(icon("adjustments", 18.))
+                                    .w(px(30.))
+                                    .disabled(layer.is_none())
+                                    .tooltip("Adjustments"),
+                            )
+                            .content(move |_, _, cx| {
+                                effects.update(cx, |this, _| {
+                                    section("Adjustments")
+                                        .w(px(330.))
+                                        .child(this.slider(
+                                            "brightness",
+                                            "Brightness",
+                                            0.,
+                                            "%",
+                                            false,
+                                        ))
+                                        .child(this.slider(
+                                            "saturation",
+                                            "Saturation",
+                                            0.,
+                                            "%",
+                                            false,
+                                        ))
+                                        .child(this.slider(
+                                            "blur",
+                                            "Gaussian blur",
+                                            0.,
+                                            "px",
+                                            false,
+                                        ))
+                                })
+                            }),
+                    ),
+                )
+                .child(
+                    self.probe(
+                        "properties-menu",
+                        Popover::new("layer-properties-popover")
+                            .open(self.open_palette == Some("properties-menu"))
+                            .on_open_change(move |open, window, cx| {
+                                props_open.update(cx, |this, cx| {
+                                    this.open_palette =
+                                        if *open { Some("properties-menu") } else { None };
+                                    if !*open {
+                                        this.commit_active_fields(window, cx);
+                                        window.focus(&this.focus, cx);
+                                    }
+                                    cx.notify();
+                                })
+                            })
+                            .anchor(Anchor::BottomLeft)
+                            .trigger(
+                                self.raw_button("layer-properties-trigger", "", false, cx)
+                                    .with_size(gpui_kit::component::Size::Size(px(24.)))
+                                    .ghost()
+                                    .icon(icon("more", 18.))
+                                    .w(px(30.))
+                                    .disabled(layer.is_none())
+                                    .tooltip("Layer properties"),
+                            )
+                            .content(move |_, _, cx| {
+                                props.update(cx, |this, cx| {
+                                    let mut d = section("Layer Properties").w(px(300.));
+                                    if let Some(state) = &this.state
+                                        && let Some(layer) = state.selected()
+                                    {
+                                        d = d
+                                            .child(this.field("name", "Name", layer.locked))
+                                            .child(this.mask_sections(state, layer, cx))
+                                            .child(this.command_button(
+                                                "lock",
+                                                if layer.locked {
+                                                    "Unlock layer"
+                                                } else {
+                                                    "Lock layer"
+                                                },
+                                                Command::UpdateLayer {
+                                                    patch: json!({"locked":!layer.locked}),
+                                                },
+                                                false,
+                                                layer.locked,
+                                                cx,
+                                            ));
+                                        if layer.fill().is_some() {
+                                            d = d.child(this.layer_swatch(cx)).child(
+                                                this.probe(
+                                                    "use-foreground",
+                                                    this.raw_button(
+                                                        "use-foreground-button",
+                                                        "Use foreground color",
+                                                        false,
+                                                        cx,
+                                                    )
+                                                    .on_click(cx.listener(|this, _, window, cx| {
+                                                        this.commit_active_fields(window, cx);
+                                                        let key = if this
+                                                            .state
+                                                            .as_ref()
+                                                            .and_then(|s| s.selected())
+                                                            .is_some_and(|l| l.kind() == "gradient")
+                                                        {
+                                                            "from"
+                                                        } else {
+                                                            "color"
+                                                        };
+                                                        this.engine.request(
+                                                            Operation::ForegroundFill { key },
+                                                        );
+                                                    })),
+                                                ),
+                                            );
+                                        }
+                                        if layer.kind() == "gradient" {
+                                            d = d.child(
+                                                this.probe(
+                                                    "gradient-end",
+                                                    this.raw_button(
+                                                        "gradient-end-button",
+                                                        "Use foreground for end color",
+                                                        false,
+                                                        cx,
+                                                    )
+                                                    .on_click(cx.listener(|this, _, _, _| {
+                                                        this.engine.request(
+                                                            Operation::ForegroundFill { key: "to" },
+                                                        );
+                                                    })),
+                                                ),
+                                            );
+                                        }
+                                    }
+                                    d
+                                })
+                            }),
+                    ),
+                )
+                .child(div().flex_1())
+                .child(
+                    self.icon_button(
+                        "delete",
+                        "trash",
+                        if state.paint_target == "mask" {
+                            "Delete layer mask"
+                        } else {
+                            "Delete selected layers"
+                        }
+                        .into(),
+                        Action::Command(if state.paint_target == "mask" {
+                            Command::RemoveMask
+                        } else {
+                            Command::Remove
+                        }),
+                        !state.unlocked_selection(),
+                        false,
+                        cx,
+                    ),
                 ),
+        )
+    }
+    fn panel_edge(&self, cx: &Context<Self>) -> Stateful<Div> {
+        self.probe("layers-resize", div().w(px(1.)).h_full().bg(rgb(LINE)))
+            .flex_shrink_0()
+            .relative()
+            .child(
+                div()
+                    .absolute()
+                    .top_0()
+                    .left(px(-4.))
+                    .w(px(8.))
+                    .h_full()
+                    .cursor(CursorStyle::ResizeLeftRight)
+                    .on_mouse_down(
+                        MouseButton::Left,
+                        cx.listener(|this, event: &MouseDownEvent, _, cx| {
+                            this.panel_drag =
+                                Some((f32::from(event.position.x), this.layers_width));
+                            cx.stop_propagation();
+                        }),
+                    ),
             )
     }
 }
@@ -1037,9 +865,10 @@ impl Render for Desktop {
                             .flex_1()
                             .min_w_0()
                             .h_full()
-                            .child(self.probe("canvas", self.canvas_view(cx)).size_full()),
+                            .child(self.canvas_workspace(cx)),
                     )
-                    .child(self.inspector(cx)),
+                    .child(self.panel_edge(cx))
+                    .child(self.layers_panel(cx)),
             )
             .child(self.footer(cx))
             .children(modal)

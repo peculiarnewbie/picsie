@@ -1,10 +1,29 @@
-//! Icons reused unchanged from src/ui/icons.tsx.
+//! Existing tool icons and Kit Lucide equivalents of Compositor's panel actions.
 use gpui_kit::{AssetSource, SharedString};
 use std::borrow::Cow;
 pub struct Assets;
+gpui_kit::assets::icon_assets!(
+    PanelIcons,
+    [SquarePlus, FolderPlus, Folder, Contrast, Ellipsis, Link]
+);
 impl AssetSource for Assets {
     fn load(&self, path: &str) -> anyhow::Result<Option<Cow<'static, [u8]>>> {
+        if let Some(bytes) = PanelIcons.load(path)? {
+            return Ok(Some(bytes));
+        }
         match path {
+            "picsie/align-left.svg" => Ok(Some(Cow::Borrowed(include_bytes!(
+                "../assets/icons/align-left.svg"
+            )))),
+            "picsie/align-center.svg" => Ok(Some(Cow::Borrowed(include_bytes!(
+                "../assets/icons/align-center.svg"
+            )))),
+            "picsie/align-right.svg" => Ok(Some(Cow::Borrowed(include_bytes!(
+                "../assets/icons/align-right.svg"
+            )))),
+            "picsie/wand.svg" => Ok(Some(Cow::Borrowed(include_bytes!(
+                "../assets/icons/wand.svg"
+            )))),
             "picsie/check.svg" => Ok(Some(Cow::Borrowed(include_bytes!(
                 "../assets/icons/check.svg"
             )))),
@@ -96,6 +115,10 @@ impl AssetSource for Assets {
         }
     }
     fn list(&self, path: &str) -> anyhow::Result<Vec<SharedString>> {
-        gpui_kit::assets::Assets.list(path)
+        let mut paths = gpui_kit::assets::Assets.list(path)?;
+        paths.extend(PanelIcons.list(path)?);
+        paths.sort();
+        paths.dedup();
+        Ok(paths)
     }
 }

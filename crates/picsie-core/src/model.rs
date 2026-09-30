@@ -4,6 +4,8 @@ use serde::{Deserialize, Serialize};
 use std::{collections::HashSet, sync::Arc};
 use ts_rs::TS;
 
+// Project/LayerGroups, Compositor 609dbeae: 10,000 layers. MIT © 2026 Wonder Assembly LLC.
+pub const MAX_LAYERS: usize = 10_000;
 pub const MAX_DIMENSION: u32 = 8192;
 pub const MAX_PIXELS: u64 = 24_000_000;
 pub const MAX_FILE_BYTES: u64 = 96 * 1024 * 1024;
@@ -68,7 +70,7 @@ pub enum FontFamily {
     Serif,
     Monospace,
 }
-#[derive(Clone, Copy, Debug, PartialEq, Serialize, Deserialize, TS)]
+#[derive(Clone, Copy, Debug, PartialEq, Eq, Hash, Serialize, Deserialize, TS)]
 #[serde(rename_all = "kebab-case")]
 pub enum Blend {
     SourceOver,
@@ -87,6 +89,43 @@ pub enum Blend {
     Saturation,
     Color,
     Luminosity,
+    LinearBurn,
+    LinearDodge,
+    VividLight,
+    LinearLight,
+    PinLight,
+    HardMix,
+    Subtract,
+    Divide,
+}
+impl Blend {
+    /// LayerAppearance.swift: source menu/shortcut order, retaining v1 Normal encoding.
+    pub const ALL: [Self; 24] = [
+        Self::SourceOver,
+        Self::Darken,
+        Self::Multiply,
+        Self::ColorBurn,
+        Self::LinearBurn,
+        Self::Lighten,
+        Self::Screen,
+        Self::ColorDodge,
+        Self::LinearDodge,
+        Self::Overlay,
+        Self::SoftLight,
+        Self::HardLight,
+        Self::VividLight,
+        Self::LinearLight,
+        Self::PinLight,
+        Self::HardMix,
+        Self::Difference,
+        Self::Exclusion,
+        Self::Subtract,
+        Self::Divide,
+        Self::Hue,
+        Self::Saturation,
+        Self::Color,
+        Self::Luminosity,
+    ];
 }
 #[derive(Clone, Copy, Debug, PartialEq, Serialize, Deserialize, TS)]
 pub enum Sampling {
@@ -337,6 +376,9 @@ pub struct Layer {
     pub saturation: f64,
     pub blur: f64,
     pub content: Arc<Content>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    #[ts(optional)]
+    pub text_layout: Option<crate::text::TextLayout>,
     #[ts(skip)]
     pub strokes: Vec<Arc<Stroke>>,
     #[serde(skip_serializing_if = "Option::is_none")]
@@ -351,12 +393,13 @@ pub struct Document {
     #[ts(skip)]
     pub id: String,
     #[serde(default = "default_resolution")]
-    #[ts(skip)]
     pub resolution: f64,
     pub name: String,
     pub width: u32,
     pub height: u32,
     pub layers: Vec<Layer>,
+    #[serde(default)]
+    pub guides: Vec<crate::placement::CanvasGuide>,
 }
 fn default_resolution() -> f64 {
     72.
@@ -414,12 +457,16 @@ impl Layer {
             saturation: 1.,
             blur: 0.,
             content: Arc::new(content),
+            text_layout: None,
             strokes: vec![],
             mask: None,
         }
     }
     pub fn validate(&self) -> Result<()> {
         dimensions(self.width, self.height)?;
+        if let Some(layout) = &self.text_layout {
+            layout.validate()?;
+        }
         ensure!(uuid::Uuid::parse_str(&self.id).is_ok(), "Invalid layer ID");
         ensure!(
             !self.name.is_empty() && self.name.chars().count() <= 200,
@@ -526,6 +573,7 @@ impl Document {
             width,
             height,
             layers: vec![],
+            guides: vec![],
         };
         doc.validate()?;
         Ok(doc)
@@ -537,6 +585,25 @@ impl Document {
             "Unsupported Picsie project version"
         );
         dimensions(self.width, self.height)?;
+        ensure!(
+            self.guides.len() <= 10000
+                && self
+                    .guides
+                    .iter()
+                    .all(|g| uuid::Uuid::parse_str(&g.id).is_ok()
+                        && g.position.is_finite()
+                        && g.position.abs() <= 100000.),
+            "Invalid alignment guides"
+        );
+        ensure!(
+            self.guides
+                .iter()
+                .map(|g| &g.id)
+                .collect::<HashSet<_>>()
+                .len()
+                == self.guides.len(),
+            "Duplicate guide IDs"
+        );
         ensure!(
             uuid::Uuid::parse_str(&self.id).is_ok(),
             "Invalid document ID"
@@ -550,8 +617,8 @@ impl Document {
             "Invalid document name"
         );
         ensure!(
-            self.layers.len() <= 100,
-            "The editor supports up to 100 layers"
+            self.layers.len() <= crate::model::MAX_LAYERS,
+            "The editor supports up to 10,000 layers"
         );
         let mut ids = HashSet::new();
         for layer in &self.layers {
@@ -643,7 +710,7 @@ impl Document {
         found
     }
     pub fn metadata(&self) -> serde_json::Value {
-        serde_json::json!({"format":self.format,"version":self.version,"name":self.name,"width":self.width,"height":self.height,"layers":self.layers.iter().map(Layer::metadata).collect::<Vec<_>>()})
+        serde_json::json!({"format":self.format,"version":self.version,"name":self.name,"width":self.width,"height":self.height,"resolution":self.resolution,"layers":self.layers.iter().map(Layer::metadata).collect::<Vec<_>>(),"guides":self.guides})
     }
     pub fn replace(&mut self, layer: Layer) {
         if let Some(value) = self.layers.iter_mut().find(|v| v.id == layer.id) {

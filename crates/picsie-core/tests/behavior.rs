@@ -220,6 +220,8 @@ fn compositor_pixel_marquee_lasso_and_clear() {
     assert_eq!(pix(&e.history.document, 10., 10.), [255, 0, 0, 255]);
     cmd(&mut e, json!({"type":"setTool","tool":"lasso"}));
     cmd(&mut e, json!({"type":"setSelectionMode","mode":"replace"}));
+    // Upstream begins outlines directly; pointer input now moves an existing outline.
+    cmd(&mut e, json!({"type":"deselectPixels"}));
     pointer(&mut e, Phase::Down, 0., 0.);
     pointer(&mut e, Phase::Move, 30., 0.);
     pointer(&mut e, Phase::Move, 0., 30.);
@@ -308,7 +310,11 @@ fn compositor_type_click_edits_text_under_the_pointer() {
     // Clicking away from any text starts a new text layer, as upstream's drag/click does.
     cmd(&mut e, json!({"type":"setTool","tool":"text"}));
     pointer(&mut e, Phase::Down, 400., 400.);
+    pointer(&mut e, Phase::Up, 400., 400.);
     assert_eq!(e.history.document.layers.len(), 2);
+    assert!(e.text_editing());
+    cmd(&mut e, json!({"type":"cancelText"}));
+    assert_eq!(e.history.document.layers.len(), 1);
 }
 
 /// Adapted from Compositor LayerAppearanceTests.opacityDragIsOneUndoAndKeepsSources: a slider
@@ -400,6 +406,8 @@ fn compositor_feather_softens_the_selection_and_what_it_clips() {
         selection.feather > 0.,
         "featherSelection left the selection hard-edged"
     );
+    // Pointer replacement must start without an existing outline under the press.
+    cmd(&mut e, json!({"type":"deselectPixels"}));
     // Coverage across a vertical edge of the selection, to see whether it fades.
     cmd(&mut e, json!({"type":"setTool","tool":"marquee"}));
     pointer(&mut e, Phase::Down, 20., 0.);
@@ -441,6 +449,7 @@ fn feather_stacks_clamps_and_resets_with_a_new_outline() {
     cmd(&mut e, json!({"type":"featherSelection","amount":200}));
     assert_eq!(e.history.pixel_selection.as_ref().unwrap().feather, 250.);
     cmd(&mut e, json!({"type":"setTool","tool":"marquee"}));
+    cmd(&mut e, json!({"type":"deselectPixels"}));
     pointer(&mut e, Phase::Down, 10., 10.);
     pointer(&mut e, Phase::Up, 40., 40.);
     assert_eq!(e.history.pixel_selection.as_ref().unwrap().feather, 0.);
@@ -471,6 +480,7 @@ fn feather_requires_a_selection_and_validates_its_amount() {
     assert_eq!(e.history.pixel_selection.as_ref().unwrap().feather, 0.);
     // An outline in progress keeps its draft; the feather is refused.
     cmd(&mut e, json!({"type":"selectAllPixels"}));
+    cmd(&mut e, json!({"type":"setSelectionMode","mode":"add"}));
     pointer(&mut e, Phase::Down, 10., 10.);
     cmd(&mut e, json!({"type":"featherSelection","amount":6}));
     assert!(e.selection_draft().is_some());
@@ -1011,7 +1021,11 @@ fn reordering_forms_stable_block_and_layer_limit_is_atomic() {
     assert_eq!(e.history.info().undo_count, count);
     undo(&mut e);
     assert_eq!(e.history.document.layers, layers);
-    let mut e = editor((0..100).map(|_| layer("A")).collect());
+    let mut e = editor(
+        (0..picsie_core::model::MAX_LAYERS)
+            .map(|_| layer("A"))
+            .collect(),
+    );
     let before = e.history.document.clone();
     assert!(e.command(Command::AddPaintLayer).is_err());
     assert!(e.command(Command::Duplicate).is_err());
@@ -1133,6 +1147,7 @@ fn compositor_insertion_and_duplication_preserve_assets_and_transforms() {
 fn masks_hide_reveal_disable_remove_and_opacity_preserve_original_pixels() {
     let mut e = editor(vec![layer("A")]);
     cmd(&mut e, json!({"type":"addMask","base":"reveal"}));
+    cmd(&mut e, json!({"type":"setTool","tool":"brush"}));
     cmd(&mut e, json!({"type":"setBrush","size":30,"opacity":1}));
     pointer(&mut e, Phase::Down, 40., 30.);
     pointer(&mut e, Phase::Up, 40., 30.);
@@ -1154,6 +1169,7 @@ fn masks_hide_reveal_disable_remove_and_opacity_preserve_original_pixels() {
     assert_eq!(pix(&e.history.document, 40., 30.), [255, 0, 0, 255]);
     let mut e = editor(vec![layer("A")]);
     cmd(&mut e, json!({"type":"addMask","base":"reveal"}));
+    cmd(&mut e, json!({"type":"setTool","tool":"brush"}));
     cmd(&mut e, json!({"type":"setBrush","size":30,"opacity":0.5}));
     pointer(&mut e, Phase::Down, 40., 30.);
     pointer(&mut e, Phase::Up, 40., 30.);
@@ -1166,6 +1182,7 @@ fn masks_hide_reveal_disable_remove_and_opacity_preserve_original_pixels() {
 fn compositor_raster_mask_expands_on_paint_and_roundtrips() {
     let mut editor = editor(vec![layer("A")]);
     cmd(&mut editor, json!({"type":"addMask","base":"reveal"}));
+    cmd(&mut editor, json!({"type":"setTool","tool":"brush"}));
     let initial = editor.selected().unwrap().mask.as_ref().unwrap();
     assert_eq!(
         (
@@ -1256,6 +1273,7 @@ fn mask_reset_eraser_cancel_locks_groups_and_extreme_coordinates() {
         let mut e = editor(vec![l]);
         if mask {
             cmd(&mut e, json!({"type":"addMask","base":"reveal"}));
+            cmd(&mut e, json!({"type":"setTool","tool":"brush"}));
         } else {
             cmd(&mut e, json!({"type":"setTool","tool":"brush"}));
         }
@@ -1279,6 +1297,7 @@ fn mask_reset_eraser_cancel_locks_groups_and_extreme_coordinates() {
     let before = e.history.document.clone();
     cmd(&mut e, json!({"type":"addMask","base":"reveal"}));
     cmd(&mut e, json!({"type":"setTool","tool":"brush"}));
+    cmd(&mut e, json!({"type":"setTool","tool":"brush"}));
     pointer(&mut e, Phase::Down, 20., 20.);
     pointer(&mut e, Phase::Up, 30., 30.);
     assert_eq!(e.history.document, before);
@@ -1287,6 +1306,7 @@ fn mask_reset_eraser_cancel_locks_groups_and_extreme_coordinates() {
 fn mask_duplicate_edits_are_independent_and_roundtrip() {
     let mut e = editor(vec![layer("A")]);
     cmd(&mut e, json!({"type":"addMask","base":"reveal"}));
+    cmd(&mut e, json!({"type":"setTool","tool":"brush"}));
     pointer(&mut e, Phase::Down, 40., 30.);
     pointer(&mut e, Phase::Up, 40., 30.);
     let original = e.selected().unwrap().clone();

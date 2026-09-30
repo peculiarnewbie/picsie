@@ -1,7 +1,7 @@
 # Picsie desktop
 
-The default Picsie application, with a Rust / GPUI Kit UI matching the existing
-QuickGUI editor. GPUI Kit is pinned to
+The default Picsie application, with a Rust / GPUI Kit UI following the pinned
+Compositor shell and tool controls. GPUI Kit is pinned to
 **0.7.0**, with its matching GPUI 0.3.7 snapshot in this crate's Cargo.lock. The
 crate has its own workspace so toolkit dependencies do not affect the Node addon.
 The pinned Linux backend has a small local X11 frame-wakeup adaptation; see
@@ -19,8 +19,10 @@ npm run dev -- --open /path/to/project.picsie
 npm run dev -- first.picsie second.electropic
 ```
 
-The full header, tool rail, context controls, layers, inspector, color picker,
-Canvas Size dialog, file dialogs, and unsaved-document workflow are ported. The
+Compositor’s compact header, grouped tool rail, 42-pixel tool bars, resizable
+Layers panel, native thumbnails and status bar replace the original scrolling
+inspector. Color, Canvas Size and Image Size forms, file dialogs and the
+unsaved-document workflow remain available. The
 QuickGUI application remains available through `npm run dev:quickgui`. See the
 [parity record](../../docs/gpui-ui-parity.md) for scope and verification.
 See the [performance comparison](../../docs/desktop-performance.md) for measured
@@ -50,9 +52,10 @@ atlas. There are no preview files, encoded image loops, JavaScript buffers, or
 Node-API calls. Compositing and brushes still use CPU Skia; full viewport copies
 and uploads remain. This is not a GPU image-processing implementation.
 
-The layout keeps the old 64 px tool rail, 280 px scrolling inspector, 52 px header,
-46 px context bar, and 28 px footer. Enter commits layer text; Shift+Enter inserts
-a newline. Inputs retain their own text editing and clipboard behavior. Shift
+The native layout follows Compositor: a 56 px tool rail, resizable 252 px Layers
+panel, 42 px tool header and 30 px footer, with an 800×520 minimum window. Type edits directly on the canvas, with installed-font search, alignment,
+tracking/leading and point/paragraph boxes. Enter commits; Shift+Enter inserts
+a newline; Escape cancels. Optional rulers, guides, grid and snapping are in View. Inputs retain their own text editing and clipboard behavior. Shift
 preserves proportions when resizing. Ctrl/Cmd-wheel zooms around the cursor;
 plain scrolling pans. File actions work while a text field is focused.
 
@@ -97,6 +100,7 @@ The frame-wakeup script additionally checks hidden/inactive CPU use and verifies
 that pending edits and input recover after remapping/refocusing a real window.
 For system-installed tools use `--tools /usr`. Install `xvfb`, `xdotool`,
 `imagemagick`, and `dbus-x11` alongside the GTK portal to run the Linux harness.
+Install `xclip` to also exercise image paste from an external clipboard owner.
 
 The default build stages a standalone `picsie` (`picsie.exe` on Windows) and
 packages it with cargo-packager 0.11.8. Linux generates a `.deb` and `.tar.gz`;

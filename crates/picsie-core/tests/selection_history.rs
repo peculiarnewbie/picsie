@@ -188,6 +188,8 @@ fn selection_noops_saved_revisions_and_branching() {
     command(&mut e, Command::FeatherSelection { amount: 250 });
     assert_eq!(e.history.revision, revision);
     assert!(e.history.info().can_redo);
+    // A press inside an existing outline now moves it; deselect to draw a fresh ellipse.
+    command(&mut e, Command::DeselectPixels);
     command(
         &mut e,
         Command::SetMarqueeKind {

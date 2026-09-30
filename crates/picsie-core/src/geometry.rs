@@ -90,11 +90,67 @@ pub fn handles(l: &Layer, zoom: f64) -> Vec<(&'static str, Point)> {
     h
 }
 pub fn hit_handle(l: &Layer, p: Point, zoom: f64) -> Option<&'static str> {
-    handles(l, zoom)
-        .into_iter()
-        .filter(|(_, v)| v.distance(p) * zoom <= 6.)
-        .min_by(|a, b| a.1.distance(p).total_cmp(&b.1.distance(p)))
-        .map(|(k, _)| k)
+    HandleGeometry::new(l, zoom, true).hit(p)
+}
+/// TransformOverlayGeometry.hit, Compositor 609dbeae, MIT © 2026 Wonder Assembly LLC.
+/// The entire edge is a resize target, with a ten-screen-point reach. Geometry is
+/// shared with native pointer feedback so a displayed cursor describes the actual hit.
+#[derive(Clone, Debug, Serialize, Deserialize, TS)]
+pub struct HandleGeometry {
+    #[serde(rename = "centers")]
+    pub points: Vec<Point>,
+    pub zoom: f64,
+    pub rotation: bool,
+}
+impl HandleGeometry {
+    pub fn new(layer: &Layer, zoom: f64, rotation: bool) -> Self {
+        Self {
+            points: handles(layer, zoom).into_iter().map(|(_, p)| p).collect(),
+            zoom,
+            rotation,
+        }
+    }
+    pub fn hit(&self, point: Point) -> Option<&'static str> {
+        let reach = if self.rotation {
+            10.
+        } else {
+            (self.points[0]
+                .distance(self.points[2])
+                .min(self.points[0].distance(self.points[6]))
+                * self.zoom
+                / 3.)
+                .min(10.)
+        };
+        let near = |p: Point| p.distance(point) * self.zoom <= reach;
+        if self.rotation && near(self.points[8]) {
+            return Some("rotate");
+        }
+        if let Some(index) = self.points[..8].iter().position(|p| near(*p)) {
+            return Some(HANDLES[index].0);
+        }
+        for (start, end, index) in [(0, 2, 1), (2, 4, 3), (4, 6, 5), (6, 0, 7)] {
+            let (a, b) = (self.points[start], self.points[end]);
+            let (dx, dy) = (b.x - a.x, b.y - a.y);
+            let length = dx * dx + dy * dy;
+            if length <= 0. {
+                continue;
+            }
+            let t = ((point.x - a.x) * dx + (point.y - a.y) * dy) / length;
+            if (0. ..=1.).contains(&t) && near(Point::new(a.x + t * dx, a.y + t * dy)) {
+                return Some(HANDLES[index].0);
+            }
+        }
+        None
+    }
+    pub fn resize_direction(&self, handle: &str) -> usize {
+        let index = HANDLES.iter().position(|h| h.0 == handle).unwrap_or(0);
+        let a = self.points[0];
+        let b = self.points[2];
+        let angle = (b.y - a.y).atan2(b.x - a.x);
+        let offsets = [1., 2., 3., 0., 1., 2., 3., 0.];
+        ((angle / std::f64::consts::FRAC_PI_4 + offsets[index]).round() as i32).rem_euclid(4)
+            as usize
+    }
 }
 pub fn resize(l: &Layer, handle: &str, p: Point, preserve: bool, from_center: bool) -> Layer {
     let &(_, hx, hy) = HANDLES

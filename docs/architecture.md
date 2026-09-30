@@ -17,6 +17,13 @@ and tests include the desktop crate. Releases build native Linux/Windows install
 and portable archives. `dev:quickgui` and `build:quickgui` preserve the explicit
 parity reference; the native app has no QuickGUI, JavaScript, or Node-API runtime.
 
+On 2026-09-30 the user explicitly requested following **Compositor's UI** before
+adding more features. The pinned SwiftUI/AppKit sources now guide the native
+shell, tool bars and Layers panel. QuickGUI remains a historical migration and
+performance comparison, not the current layout target. GPUI Kit remains the UI
+toolkit. Unsupported Compositor controls are omitted rather than given invented
+behavior; platform adaptations are recorded in [the UI record](gpui-ui-parity.md).
+
 The desktop's pinned GPUI Linux backend includes a local implementation of X11
 frame waking, so a completed preview can request the normal toolkit draw without
 waiting for its periodic monitor timer. The timer and GPU presentation settings
@@ -57,6 +64,14 @@ results. Only preview delivery coalesces. A bounded notification channel wakes
 the UI when a frame or result is ready; there is no idle polling. The UI owns the
 presented GPUI image and evicts retired atlas entries. No preview files or encoded
 image transport are used. Compositing and brushes remain CPU Skia.
+
+Canvas hover receives a small Rust `CursorMap` containing handle centers, guide
+positions, pickable bounds and brush diameter. The desktop asks that Rust geometry
+for pointer feedback and paints the brush outline as a UI overlay, without an
+engine command or raster render for each hover. Text caret visibility crosses as
+a typed presentation command while Rust retains glyph/caret geometry. Image and
+mask thumbnails remain Rust-owned BGRA resources in the existing mailbox; view
+preferences contain no document pixels or authoritative edit state.
 
 The retained QuickGUI reference:
 
@@ -99,7 +114,7 @@ crates/picsie-core/tests/  Rust behavior and pinned Compositor fixtures
 tests/                        Actual-addon integration and old project fixtures
 ```
 
-`src/core/` has been removed. There are **zero legacy TypeScript engine exemptions**. New projects use `.picsie` files and the `picsie` format marker. Existing `.electropic` v1 projects remain readable and writable, retaining their original marker when saved. Their vector stroke masks and embedded PNG assets are preserved internally in Rust for compatibility. New masks use Rust-owned grayscale assets, and the Rust package adapter reads/writes the supported `.comp` raster/folder/mask subset. New brush strokes follow the upstream software coverage path and retain immutable native images; they do not encode PNGs during painting or preview. Folder raster masks and live mask links round-trip through both formats. Tip rasterization, incremental source tile publishing, GPU brush coverage, and richer `.comp` features remain fidelity work; see [the source map](compositor-port.md).
+`src/core/` has been removed. There are **zero legacy TypeScript engine exemptions**. New projects use `.picsie` files and the `picsie` format marker. Existing `.electropic` v1 projects remain readable and writable, retaining their original marker when saved. Their vector stroke masks and embedded PNG assets are preserved internally in Rust for compatibility. New masks use Rust-owned grayscale assets, and the Rust package adapter reads/writes the supported `.comp` raster/folder/mask/text/guide subset. New brush strokes follow the upstream software coverage path and retain immutable native images; they do not encode PNGs during painting or preview. Folder raster masks and live mask links round-trip through both formats. Tip rasterization, incremental source tile publishing, GPU brush coverage, and richer `.comp` features remain fidelity work; see [the source map](compositor-port.md).
 
 ## Enforcement
 
@@ -113,3 +128,35 @@ Build on the target OS/architecture; only the native Linux x64 package has been
 exercised here. Native releases do not use QuickGUI's updater or packaging.
 
 The guard is structural lint, not a semantic proof. Review must identify the Rust implementation, pinned upstream source/fixtures, command boundary and resource owner. Reject engine logic hidden in a UI file. UI changes require inspecting actual native screenshots, especially alignment.
+
+
+The 2026-09-30 feature pass keeps the same boundary: clipboard copy/cut rendering,
+paste decoding, floating selection transforms, magic wand, layer merging and Image
+Size execute in the Rust desktop worker. PNG bytes appear only in the native system
+clipboard exchange; previews still use uncompressed BGRA memory. Pixel-selection
+outlines and floating assets stay in Rust. New bridge contracts are generated from
+Rust; the retained Node addon offers asynchronous raster command execution without
+exposing image buffers to JavaScript. See the corresponding source-map section for
+upstream fixtures, native controls and remaining adaptations.
+
+
+Document guides, snapping targets and text layout now live in Rust. Native text
+input still belongs to GPUI Kit: a caret-positioned input owns typing, IME and
+local undo, while typed text/selection/navigation commands drive Rust drafts and
+SkParagraph glyph geometry. Rust paints the in-canvas glyphs, caret, selection,
+handles, guides and grid. Small cached ruler BGRA resources travel alongside
+layer thumbnails; no new encoded preview path or JavaScript engine was added.
+
+The retained QuickGUI text-content/property commands adapt to the same Rust text
+draft and commit transaction; this preserves its controls without a second text
+engine. New desktop text operations use the typed worker commands directly.
+
+The layers/masks/color pass keeps palette state, visibility swipe transactions,
+thumbnail coverage selections, mask copy/placement/distortion and all blend
+algorithms in Rust. Blend hover previews use a document clone for presentation;
+exports and project saves retain the committed document. The desktop worker
+samples the displayed composite into a one-pixel Skia surface; only a hex color
+and small metadata return to the UI. The floating picker owns its working HSB
+form, target identity and position, while OK applies a typed engine command.
+No image pixels or mask grids cross into JavaScript. New addon raster selection,
+distortion, placement and background-fill commands execute asynchronously.

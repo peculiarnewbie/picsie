@@ -1,19 +1,24 @@
 //! Forms follow src/ui/canvas-size*.ts and Compositor's CanvasSizeSheet / ColorPickerSheet.
 //! MIT © 2026 Wonder Assembly LLC. Only transient form calculations live here.
 mod color;
+mod image;
 use super::*;
 use color::{Hsb, parse_hex};
 use gpui_kit::component::checkbox::Checkbox;
+use image::ImageDraft;
 use picsie_core::canvas_size::CanvasSizeOptions;
 #[derive(Clone)]
 pub(super) enum ColorTarget {
     Foreground,
+    Background,
+    Text,
     Layer,
 }
 #[derive(Clone)]
 pub(super) enum Modal {
     New,
     Canvas(CanvasDraft),
+    Image(ImageDraft),
     Color(ColorDraft),
     Close,
 }
@@ -22,6 +27,7 @@ impl Modal {
         match self {
             Self::New => "new",
             Self::Canvas(_) => "canvas-size",
+            Self::Image(_) => "image-size",
             Self::Color(_) => "color",
             Self::Close => "close",
         }
@@ -66,11 +72,15 @@ impl CanvasDraft {
 }
 #[derive(Clone)]
 pub(super) struct ColorDraft {
-    target: ColorTarget,
+    pub(super) target: ColorTarget,
     title: String,
-    hsb: Hsb,
+    pub(super) hsb: Hsb,
+    original: String,
+    pub(super) text_id: Option<String>,
     drag: Option<&'static str>,
 }
+pub(super) const COLOR_PANEL_WIDTH: f32 = 540.;
+pub(super) const COLOR_PANEL_HEIGHT: f32 = 340.;
 const ANCHORS: [&str; 9] = [
     "Top left",
     "Top center",
@@ -114,9 +124,31 @@ impl Desktop {
         window: &mut Window,
         cx: &mut Context<Self>,
     ) {
+        if self.busy {
+            return;
+        }
         let Some(state) = &self.state else { return };
+        if state.paint_target == "mask"
+            && matches!(target, ColorTarget::Foreground | ColorTarget::Background)
+        {
+            return;
+        }
         let (title, color) = match target {
-            ColorTarget::Foreground => ("Foreground".to_owned(), state.color.as_str()),
+            ColorTarget::Foreground => ("Foreground Color".to_owned(), state.color.as_str()),
+            ColorTarget::Background => (
+                "Background Color".to_owned(),
+                state.background_color.as_str(),
+            ),
+            ColorTarget::Text => (
+                "Text color".to_owned(),
+                if state.text_editing {
+                    state.current_text.content["color"]
+                        .as_str()
+                        .unwrap_or("#000000")
+                } else {
+                    state.color.as_str()
+                },
+            ),
             ColorTarget::Layer => {
                 let Some(layer) = state.selected() else {
                     return;
@@ -126,11 +158,19 @@ impl Desktop {
             }
         };
         self.modal = Some(Modal::Color(ColorDraft {
-            target,
+            target: target.clone(),
             title,
             hsb: Hsb::from_hex(color).unwrap_or_default(),
+            original: color.to_owned(),
+            text_id: (state.text_editing || matches!(target, ColorTarget::Layer))
+                .then(|| state.selected().unwrap().id.clone()),
             drag: None,
         }));
+        let size = window.viewport_size();
+        self.color_position[0] =
+            self.color_position[0].clamp(0., (f32::from(size.width) - COLOR_PANEL_WIDTH).max(0.));
+        self.color_position[1] = self.color_position[1]
+            .clamp(28., (f32::from(size.height) - COLOR_PANEL_HEIGHT).max(28.));
         self.notice.clear();
         self.sync_color_fields(window, cx);
         window.focus(&self.modal_focus, cx);
@@ -143,10 +183,14 @@ impl Desktop {
         self.modal = None;
         self.closing = false;
         self.close_after_save = false;
-        window.focus(&self.focus, cx);
+        if self.state.as_ref().is_some_and(|s| s.text_editing) {
+            self.text.read(cx).focus_handle(cx).focus(window, cx);
+        } else {
+            window.focus(&self.focus, cx);
+        }
         cx.notify();
     }
-    fn apply_modal(&mut self, window: &mut Window, cx: &mut Context<Self>) {
+    pub(super) fn apply_modal(&mut self, window: &mut Window, cx: &mut Context<Self>) {
         if self.busy {
             return;
         }
@@ -174,6 +218,10 @@ impl Desktop {
                     crate::open_editor(document, None, cx)?;
                     self.cancel_modal(window, cx);
                 }
+                Modal::Image(draft) => {
+                    anyhow::ensure!(draft.valid(), "Invalid image dimensions or resolution");
+                    self.blocking(Operation::ResizeImage(draft.options()));
+                }
                 Modal::Canvas(draft) => {
                     anyhow::ensure!(
                         draft.valid(),
@@ -182,6 +230,7 @@ impl Desktop {
                     let fill = match draft.fill.as_str() {
                         "transparent" => None,
                         "foreground" => self.state.as_ref().map(|s| s.color.clone()),
+                        "background" => self.state.as_ref().map(|s| s.background_color.clone()),
                         "black" => Some("#000000".into()),
                         "white" => Some("#ffffff".into()),
                         _ => Some(draft.custom),
@@ -196,7 +245,18 @@ impl Desktop {
                 Modal::Color(draft) => {
                     let value = format!("#{}", draft.hsb.hex());
                     match draft.target {
-                        ColorTarget::Foreground => self.send(Command::SetColor { color: value }),
+                        ColorTarget::Foreground => self.send(Command::SetPaletteColor {
+                            color: value,
+                            background: false,
+                        }),
+                        ColorTarget::Background => self.send(Command::SetPaletteColor {
+                            color: value,
+                            background: true,
+                        }),
+                        ColorTarget::Text => self.send(Command::SetTextColor {
+                            color: value,
+                            draft_id: draft.text_id,
+                        }),
                         ColorTarget::Layer => {
                             let key = if self
                                 .state
@@ -309,7 +369,7 @@ impl Desktop {
         }
         Ok(())
     }
-    fn sync_color_fields(&self, window: &mut Window, cx: &mut Context<Self>) {
+    pub(super) fn sync_color_fields(&self, window: &mut Window, cx: &mut Context<Self>) {
         if let Some(Modal::Color(draft)) = &self.modal {
             self.set_field("color-hex", draft.hsb.hex(), false, window, cx);
             for (key, value) in ["color-r", "color-g", "color-b"]
@@ -373,6 +433,11 @@ impl Desktop {
                 ),
                 420.,
                 column().child(hint("Your project has unsaved edits.")),
+            ),
+            Modal::Image(draft) => (
+                "Image Size".into(),
+                430.,
+                self.image_size_content(draft, cx),
             ),
             Modal::Canvas(draft) => {
                 let mut anchors = column().gap(px(4.));
@@ -438,10 +503,8 @@ impl Desktop {
                             .child(
                                 div()
                                     .absolute()
-                                    .left(px((draft.hsb.s * 256. - 6.).clamp(0., 244.) as f32))
-                                    .top(
-                                        px(((1. - draft.hsb.v) * 256. - 6.).clamp(0., 244.) as f32),
-                                    )
+                                    .left(px((draft.hsb.s * 256. - 6.) as f32))
+                                    .top(px(((1. - draft.hsb.v) * 256. - 6.) as f32))
                                     .size(px(12.))
                                     .rounded_full()
                                     .border_2()
@@ -501,13 +564,89 @@ impl Desktop {
                         cx.stop_propagation();
                     }),
                 );
-                let content=column().child(row().items_start().gap(px(14.)).child(sv).child(strip).child(column().w(px(110.)).gap(px(7.)).child(label("New color")).child(div().size(px(48.)).rounded(px(6.)).bg(hex_color(&draft.hsb.hex())))
-                    .child(self.field("color-r","R",false)).child(self.field("color-g","G",false)).child(self.field("color-b","B",false)).child(self.field("color-hex","#",false))))
-                    .child(hint("Hex accepts RRGGBB or RGB, with or without #. Use the Sample tool to pick from the canvas."));
-                (format!("Color Picker ({})", draft.title), 480., content)
+                let mut fields = column().gap(px(6.));
+                for (key, title, accessibility) in [
+                    ("color-r", "R", "Red"),
+                    ("color-g", "G", "Green"),
+                    ("color-b", "B", "Blue"),
+                    ("color-hex", "#", "Hex color"),
+                ] {
+                    fields = fields.child(
+                        row().gap(px(8.)).child(label(title).w(px(14.))).child(
+                            self.numeric_field(
+                                key,
+                                Input::new(&self.fields[key])
+                                    .small()
+                                    .map(|input| Styled::h(input, px(26.)))
+                                    .bg(rgb(0x202020))
+                                    .text_size(px(12.))
+                                    .aria_label(accessibility)
+                                    .w(px(if key == "color-hex" { 84. } else { 52. })),
+                            ),
+                        ),
+                    );
+                }
+                let preview = div()
+                    .id("color-comparison")
+                    .w(px(64.))
+                    .h(px(64.))
+                    .rounded(px(5.))
+                    .overflow_hidden()
+                    .aria_label("New and current colors")
+                    .child(div().w_full().h(px(32.)).bg(hex_color(&draft.hsb.hex())))
+                    .child(div().w_full().h(px(32.)).bg(hex_color(&draft.original)));
+                let actions =
+                    column()
+                        .gap(px(8.))
+                        .w(px(90.))
+                        .child(
+                            self.probe(
+                                "modal-apply",
+                                self.raw_button("color-apply", "OK", true, cx)
+                                    .w_full()
+                                    .h(px(28.))
+                                    .on_click(cx.listener(|this, _, window, cx| {
+                                        this.apply_modal(window, cx)
+                                    })),
+                            ),
+                        )
+                        .child(
+                            self.probe(
+                                "modal-cancel",
+                                self.raw_button("color-cancel", "Cancel", false, cx)
+                                    .w_full()
+                                    .h(px(28.))
+                                    .on_click(cx.listener(|this, _, window, cx| {
+                                        this.cancel_modal(window, cx)
+                                    })),
+                            ),
+                        );
+                let content = row()
+                    .items_start()
+                    .gap(px(14.))
+                    .child(sv)
+                    .child(div().w(px(34.)).px(px(7.)).child(strip))
+                    .child(
+                        column()
+                            .w(px(180.))
+                            .h(px(256.))
+                            .child(
+                                row()
+                                    .items_start()
+                                    .gap(px(16.))
+                                    .child(preview)
+                                    .child(actions),
+                            )
+                            .child(div().flex_1().min_h(px(12.)))
+                            .child(fields)
+                            .child(hint("Click the canvas to sample").mt(px(8.))),
+                    );
+                (draft.title.clone(), COLOR_PANEL_WIDTH, content.into())
             }
         };
-        let can_apply = !self.busy && !matches!(modal,Modal::Canvas(d) if !d.valid());
+        let can_apply = !self.busy
+            && !matches!(modal,Modal::Canvas(d) if !d.valid())
+            && !matches!(modal,Modal::Image(d) if !d.valid());
         let mut buttons = row().justify_end().child(
             self.probe(
                 "modal-cancel",
@@ -516,6 +655,9 @@ impl Desktop {
                     .on_click(cx.listener(|this, _, window, cx| this.cancel_modal(window, cx))),
             ),
         );
+        if matches!(modal, Modal::Image(_)) {
+            buttons = buttons.justify_start().child(div().flex_1());
+        }
         if matches!(modal, Modal::Close) {
             buttons = buttons.child(
                 self.probe(
@@ -528,6 +670,7 @@ impl Desktop {
         let label = match modal {
             Modal::New => "Create",
             Modal::Canvas(_) => "Resize canvas",
+            Modal::Image(_) => "Resize image",
             Modal::Color(_) => "OK",
             Modal::Close => "Save",
         };
@@ -541,7 +684,16 @@ impl Desktop {
         );
         let popup = column()
             .w(px(width))
-            .p(px(20.))
+            .p(px(if matches!(modal, Modal::Color(_)) {
+                20.
+            } else {
+                24.
+            }))
+            .gap(px(if matches!(modal, Modal::Color(_)) {
+                12.
+            } else {
+                0.
+            }))
             .rounded(px(12.))
             .border_1()
             .border_color(rgb(LINE))
@@ -549,8 +701,17 @@ impl Desktop {
             .text_color(rgb(TEXT))
             .text_size(px(12.))
             .child(
-                div()
-                    .text_size(px(20.))
+                self.probe("color-panel-title", div())
+                    .on_mouse_down(
+                        MouseButton::Left,
+                        cx.listener(|this, event: &MouseDownEvent, _, cx| {
+                            if matches!(this.modal, Some(Modal::Color(_))) {
+                                this.color_panel_drag = Some((event.position, this.color_position));
+                                cx.stop_propagation();
+                            }
+                        }),
+                    )
+                    .text_size(px(16.))
                     .font_weight(FontWeight::SEMIBOLD)
                     .child(title),
             )
@@ -558,7 +719,30 @@ impl Desktop {
             .when(!self.notice.is_empty(), |d| {
                 d.child(hint(self.notice.clone()).text_color(rgb(0xffb49b)))
             })
-            .child(buttons);
+            .when(!matches!(modal, Modal::Color(_)), |d| d.child(buttons));
+        if matches!(modal, Modal::Color(_)) {
+            return Some(
+                self.probe("color-panel", popup)
+                    .occlude()
+                    .absolute()
+                    .left(px(self.color_position[0]))
+                    .top(px(self.color_position[1]))
+                    .on_key_down(cx.listener(|this, event: &KeyDownEvent, window, cx| {
+                        match event.keystroke.key.as_str() {
+                            "escape" => {
+                                this.cancel_modal(window, cx);
+                                cx.stop_propagation();
+                            }
+                            "enter" if window.focused_input(cx).is_none() => {
+                                this.apply_modal(window, cx);
+                                cx.stop_propagation();
+                            }
+                            _ => {}
+                        }
+                    }))
+                    .into_any_element(),
+            );
+        }
         let weak = cx.weak_entity();
         Some(
             gpui_kit::base::Dialog::new(cx)
@@ -588,4 +772,8 @@ fn gradient(angle: f32, from: impl Into<Hsla>, to: impl Into<Hsla>) -> Backgroun
         linear_color_stop(from, 0.),
         linear_color_stop(to, 1.),
     )
+}
+
+pub(super) fn color_rgb(text: &str) -> Option<[u8; 3]> {
+    parse_hex(text)
 }

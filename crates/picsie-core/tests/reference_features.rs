@@ -393,6 +393,7 @@ fn local_brush_smoothing_mask_cap_and_interrupted_commit() {
         },
     );
     let count = e.history.info().undo_count;
+    cmd(&mut e, Command::SetTool { tool: Tool::Brush });
     pointer(&mut e, Phase::Down, 20., 50.);
     pointer(&mut e, Phase::Move, 70., 50.);
     assert_eq!(probe(&e.history.document, 75, 50)[3], 255);
@@ -473,6 +474,7 @@ fn compositor_folder_mask_paint_fill_and_selection_history() {
             opacity: 1.,
         },
     );
+    cmd(&mut e, Command::SetTool { tool: Tool::Brush });
     pointer(&mut e, Phase::Down, 10., 10.);
     pointer(&mut e, Phase::Up, 11., 10.);
     assert_eq!(probe(&e.history.document, 10, 10)[3], 0);

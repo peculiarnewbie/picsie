@@ -21,7 +21,10 @@ pub enum Operation {
         jpeg: bool,
     },
     Import(Vec<PathBuf>),
-    Sample(Point),
+    Sample {
+        point: Point,
+        picker: bool,
+    },
     ContentField {
         key: &'static str,
         value: serde_json::Value,
@@ -39,15 +42,27 @@ pub enum Operation {
         point: Option<Point>,
     },
     ResizeCanvas(picsie_core::canvas_size::CanvasSizeOptions),
+    ResizeImage(picsie_core::image_size::ImageSizeOptions),
+    Copy {
+        merged: bool,
+        cut: bool,
+    },
+    Paste {
+        bytes: Vec<u8>,
+        origin: Option<Point>,
+    },
     Barrier,
 }
 pub enum Outcome {
     Saved { path: PathBuf, flattened: bool },
     Exported(PathBuf),
     Imported(usize),
-    Sampled,
+    Sampled { color: Option<String>, picker: bool },
     Barrier,
     Resized,
+    ImageResized,
+    Copied { bytes: Vec<u8>, origin: Point },
+    Pasted,
 }
 pub struct Completion {
     pub sequence: u64,
@@ -64,6 +79,7 @@ pub struct Frame {
     pub command_ms: f64,
     pub render_ms: f64,
     pub pixels_ms: f64,
+    pub thumbnails: Vec<(String, Arc<picsie_core::thumbnail::Thumbnail>)>,
 }
 struct Request {
     operation: Operation,
@@ -84,11 +100,20 @@ pub struct Engine {
     sequence: u64,
 }
 pub fn preview(editor: &Editor, renderer: &mut Renderer) -> Result<skia_safe::Surface> {
-    renderer.preview(
-        &editor.history.document,
+    let displayed = editor.preview_document();
+    let mut surface = renderer.preview(
+        &displayed,
         &editor.viewport,
-        &editor.selection.ids,
-        editor.tool == Tool::Move,
+        if editor.mask_distortion_corners().is_none()
+            && editor.tool == Tool::Move
+            && (editor.view_options.show_controls || editor.transform_active())
+        {
+            &editor.selection.ids
+        } else {
+            &[]
+        },
+        editor.tool == Tool::Move
+            && (editor.view_options.show_controls || editor.transform_active()),
         if editor.paint_target == PaintTarget::Mask {
             editor.selected_id()
         } else {
@@ -103,7 +128,11 @@ pub fn preview(editor: &Editor, renderer: &mut Renderer) -> Result<skia_safe::Su
         },
         editor.history.pixel_selection.as_ref(),
         editor.selection_draft().as_ref(),
-    )
+    )?;
+    editor.draw_mask_distortion(surface.canvas());
+    editor.draw_placement(surface.canvas());
+    editor.draw_text_editor(surface.canvas());
+    Ok(surface)
 }
 /// GPUI RenderImage takes straight-alpha BGRA bytes on all supported backends.
 pub fn bgra(surface: &mut skia_safe::Surface) -> Result<Vec<u8>> {
@@ -115,6 +144,36 @@ fn operate(
     operation: Operation,
 ) -> Result<Option<Outcome>> {
     match operation {
+        Operation::Copy { merged, cut } => {
+            editor.commit_transform()?;
+            if cut && editor.history.pixel_selection.is_none() {
+                anyhow::bail!("Select pixels before cutting");
+            }
+            let copied = editor
+                .copy_pixels(merged)?
+                .ok_or_else(|| anyhow::anyhow!("There are no selected pixels to copy"))?;
+            let bytes = picsie_core::render::encode(&copied.image, false)?;
+            if cut {
+                editor.command(Command::ClearSelectedPixels)?;
+            }
+            Ok(Some(Outcome::Copied {
+                bytes,
+                origin: copied.origin,
+            }))
+        }
+        Operation::Paste { bytes, origin } => {
+            ensure!(
+                bytes.len() <= 96_000_000,
+                "Clipboard image exceeds the 96 MB limit"
+            );
+            let image = picsie_core::render::decode(&bytes)?;
+            editor.paste_pixels(image, origin, "Paste")?;
+            Ok(Some(Outcome::Pasted))
+        }
+        Operation::ResizeImage(options) => {
+            editor.command(Command::ResizeImage { options })?;
+            Ok(Some(Outcome::ImageResized))
+        }
         Operation::Commands(commands) => {
             for command in commands {
                 editor.command(command)?;
@@ -122,6 +181,8 @@ fn operate(
             Ok(None)
         }
         Operation::Save(path) => {
+            editor.finish_text()?;
+            editor.commit_transform()?;
             editor.finish_gesture()?;
             let revision = editor.history.revision.clone();
             files::save_project(&path, &editor.history.document)?;
@@ -132,22 +193,26 @@ fn operate(
                 && editor.history.document.layers.iter().any(|l| {
                     matches!(
                         l.content.as_ref(),
-                        Content::Text { .. } | Content::Shape { .. } | Content::Gradient { .. }
-                    )
+                        Content::Shape { .. } | Content::Gradient { .. }
+                    ) || matches!(l.content.as_ref(), Content::Text { color, .. } if picsie_core::render::color(color).a() != 255)
                 });
             Ok(Some(Outcome::Saved { path, flattened }))
         }
         Operation::Export { path, jpeg } => {
+            editor.finish_text()?;
+            editor.commit_transform()?;
             editor.finish_gesture()?;
             let bytes = renderer.export(&editor.history.document, jpeg)?;
             files::atomic_write(&path, &bytes)?;
             Ok(Some(Outcome::Exported(path)))
         }
         Operation::Import(paths) => {
+            editor.finish_text()?;
             editor.finish_gesture()?;
             ensure!(
-                editor.history.document.layers.len() + paths.len() <= 100,
-                "The editor supports up to 100 layers"
+                editor.history.document.layers.len() + paths.len()
+                    <= picsie_core::model::MAX_LAYERS,
+                "The editor supports up to 10,000 layers"
             );
             let layers = paths
                 .iter()
@@ -156,26 +221,49 @@ fn operate(
             editor.import_layers(layers)?;
             Ok(Some(Outcome::Imported(paths.len())))
         }
-        Operation::Sample(point) => {
+        Operation::Sample { point, picker } => {
             let point = geometry::to_document(&editor.history.document, &editor.viewport, point);
             ensure!(
                 point.x.is_finite() && point.y.is_finite(),
                 "Invalid sample point"
             );
-            if point.x >= 0.
+            let color = if point.x >= 0.
                 && point.y >= 0.
                 && point.x < editor.history.document.width as f64
                 && point.y < editor.history.document.height as f64
             {
-                let pixel = renderer.sample(&editor.history.document, point)?;
-                editor.command(Command::SetColor {
-                    color: format!("#{:02x}{:02x}{:02x}", pixel[0], pixel[1], pixel[2]),
+                let pixel = renderer.sample(&editor.preview_document(), point)?;
+                (pixel[3] > 0).then(|| format!("#{:02x}{:02x}{:02x}", pixel[0], pixel[1], pixel[2]))
+            } else {
+                None
+            };
+            if !picker && let Some(color) = &color {
+                editor.command(Command::SetSampledForeground {
+                    color: color.clone(),
                 })?;
             }
-            Ok(Some(Outcome::Sampled))
+            Ok(Some(Outcome::Sampled { color, picker }))
         }
         Operation::ContentField { key, value } => {
-            if let Some(layer) = editor.selected() {
+            if matches!(editor.current_text().content.as_ref(), Content::Text { .. })
+                && matches!(key, "text" | "fontSize" | "fontFamily")
+            {
+                let patch = match key {
+                    "text" => picsie_core::text::TextPatch {
+                        text: value.as_str().map(str::to_owned),
+                        ..Default::default()
+                    },
+                    "fontSize" => picsie_core::text::TextPatch {
+                        font_size: value.as_f64(),
+                        ..Default::default()
+                    },
+                    _ => picsie_core::text::TextPatch {
+                        font_name: value.as_str().map(str::to_owned),
+                        ..Default::default()
+                    },
+                };
+                editor.command(Command::UpdateText { patch })?;
+            } else if let Some(layer) = editor.selected() {
                 let mut content = layer.metadata()["content"].clone();
                 content[key] = value;
                 editor.command(Command::UpdateLayer {
@@ -230,6 +318,8 @@ fn operate(
             Ok(Some(Outcome::Resized))
         }
         Operation::Barrier => {
+            editor.finish_text()?;
+            editor.commit_transform()?;
             editor.finish_gesture()?;
             Ok(Some(Outcome::Barrier))
         }
@@ -254,6 +344,8 @@ impl Engine {
                     }
                 };
                 let mut renderer = Renderer::default();
+                let mut thumbnails = picsie_core::thumbnail::Thumbnails::default();
+                let mut rulers = picsie_core::placement::Rulers::default();
                 let mut sequence = 0;
                 let mut pending_since = None;
                 let mut command_ms = 0.;
@@ -305,11 +397,21 @@ impl Engine {
                         let render_ms = started.elapsed().as_secs_f64() * 1000.;
                         let started = Instant::now();
                         let pixels = bgra(&mut surface)?;
+                        let pixels_ms = started.elapsed().as_secs_f64() * 1000.;
+                        let mut thumbnails =
+                            thumbnails.update(&editor.history.document, &mut renderer)?;
+                        thumbnails.extend(rulers.update(
+                            &editor.history.document,
+                            &editor.viewport,
+                            editor.display_scale,
+                            editor.view_options.rulers,
+                        )?);
                         Ok(Frame {
                             pixels,
                             width: surface.width() as u32,
                             height: surface.height() as u32,
-                            pixels_ms: started.elapsed().as_secs_f64() * 1000.,
+                            pixels_ms,
+                            thumbnails,
                             render_ms,
                             command_ms,
                             state: Snapshot::capture(&editor)?,
@@ -563,6 +665,118 @@ mod tests {
         );
     }
     #[test]
+    fn picker_samples_displayed_blend_preview_without_palette_or_history_mutation() {
+        let mut worker = worker();
+        worker.send(vec![
+            Command::SetViewport {
+                viewport: picsie_core::geometry::Viewport {
+                    width: 64.,
+                    height: 48.,
+                    zoom: 1.,
+                    pan: Point::default(),
+                },
+            },
+            Command::AddGradient,
+        ]);
+        for key in ["from", "to"] {
+            worker.request(Operation::ContentField {
+                key,
+                value: json!("#ff0000"),
+            });
+        }
+        worker.send(vec![Command::AddGradient]);
+        for key in ["from", "to"] {
+            worker.request(Operation::ContentField {
+                key,
+                value: json!("#0000ff"),
+            });
+        }
+        let state = flush(&mut worker);
+        let count = state.history.undo_count;
+        worker.send(vec![Command::PreviewBlendMode {
+            id: state.selection.ids.last().cloned(),
+            mode: Some(picsie_core::model::Blend::Multiply),
+        }]);
+        let sequence = worker.request(Operation::Sample {
+            point: Point::new(32., 24.),
+            picker: true,
+        });
+        let event = complete(&worker, sequence);
+        assert!(
+            matches!(event.result, Ok(Outcome::Sampled { color: Some(ref c), picker: true }) if c == "#000000")
+        );
+        assert_eq!(event.state.color, state.color);
+        assert_eq!(event.state.history.undo_count, count);
+        assert_eq!(event.state.selected().unwrap().blend, "source-over");
+        let sequence = worker.request(Operation::Sample {
+            point: Point::new(-1., 0.),
+            picker: false,
+        });
+        let event = complete(&worker, sequence);
+        assert!(matches!(
+            event.result,
+            Ok(Outcome::Sampled { color: None, .. })
+        ));
+        assert_eq!(event.state.color, state.color);
+    }
+    #[test]
+    fn queued_text_draft_and_guides_commit_before_native_save() {
+        let directory = tempfile::tempdir().unwrap();
+        let path = directory.path().join("draft.comp");
+        let mut worker = worker();
+        worker.send(vec![
+            Command::SetViewport {
+                viewport: picsie_core::geometry::Viewport {
+                    width: 64.,
+                    height: 48.,
+                    zoom: 1.,
+                    pan: Point::default(),
+                },
+            },
+            Command::AddGuide {
+                axis: picsie_core::placement::GuideAxis::Vertical,
+                position: 16.,
+            },
+            Command::SetTool { tool: Tool::Text },
+            Command::Pointer {
+                samples: vec![
+                    PointerSample {
+                        phase: Phase::Down,
+                        point: Point::new(5., 5.),
+                        modifiers: Modifiers::default(),
+                    },
+                    PointerSample {
+                        phase: Phase::Up,
+                        point: Point::new(5., 5.),
+                        modifiers: Modifiers::default(),
+                    },
+                ],
+            },
+            Command::UpdateText {
+                patch: picsie_core::text::TextPatch {
+                    text: Some("Saved draft".into()),
+                    font_size: Some(16.),
+                    tracking: Some(2.),
+                    ..Default::default()
+                },
+            },
+        ]);
+        let sequence = worker.request(Operation::Save(path.clone()));
+        let saved = complete(&worker, sequence);
+        assert!(!saved.state.text_editing);
+        assert_eq!(saved.state.history.undo_count, 2);
+        assert!(!saved.state.history.dirty);
+        let reopened = picsie_core::comp::open(&path).unwrap();
+        assert_eq!(reopened.guides[0].position, 16.);
+        assert_eq!(
+            reopened.layers[0].text_layout.as_ref().unwrap().tracking,
+            2.
+        );
+        assert!(
+            matches!(reopened.layers[0].content.as_ref(), Content::Text { text, .. } if text == "Saved draft")
+        );
+    }
+    #[test]
     fn property_drag_is_one_undo_even_across_frames() {
         let mut worker = worker();
         worker.send(vec![Command::AddGradient]);
@@ -660,5 +874,54 @@ mod tests {
         assert!(failed.state.history.dirty);
         worker.send(vec![Command::Undo]);
         assert!(flush(&mut worker).document.layers.is_empty());
+    }
+    #[test]
+    fn clipboard_cut_paste_and_resize_retain_order_and_recover_from_bad_images() {
+        let mut worker = worker();
+        worker.send(vec![Command::AddGradient, Command::SelectAllPixels]);
+        let count = flush(&mut worker).history.undo_count;
+        let copying = worker.request(Operation::Copy {
+            merged: false,
+            cut: true,
+        });
+        let copied = complete(&worker, copying);
+        assert_eq!(copied.state.history.undo_count, count + 1);
+        let Ok(Outcome::Copied { bytes, origin }) = copied.result else {
+            panic!("copy completion");
+        };
+        assert_eq!(origin, Point::default());
+        let original = picsie_core::render::decode(&bytes).unwrap();
+        assert_eq!((original.width(), original.height()), (64, 48));
+        let invalid = worker.request(Operation::Paste {
+            bytes: vec![1, 2, 3],
+            origin: None,
+        });
+        assert!(complete(&worker, invalid).result.is_err());
+        let pasted = worker.request(Operation::Paste {
+            bytes,
+            origin: Some(origin),
+        });
+        let result = complete(&worker, pasted);
+        assert!(matches!(result.result, Ok(Outcome::Pasted)));
+        assert_eq!(result.state.document.layers.len(), 2);
+        assert!(!result.state.has_pixel_selection);
+        let resizing = worker.request(Operation::ResizeImage(
+            picsie_core::image_size::ImageSizeOptions {
+                width: 128,
+                height: 96,
+                resolution: 300.,
+                sampling: picsie_core::model::Sampling::Nearest,
+            },
+        ));
+        let result = complete(&worker, resizing);
+        assert!(matches!(result.result, Ok(Outcome::ImageResized)));
+        assert_eq!(result.state.document.width, 128);
+        assert_eq!(result.state.document.resolution, 300.);
+        worker.send(vec![Command::Undo, Command::Undo, Command::Undo]);
+        let restored = flush(&mut worker);
+        assert_eq!(restored.document.width, 64);
+        assert_eq!(restored.document.layers.len(), 1);
+        assert!(restored.has_pixel_selection);
+        assert_eq!(restored.selected().unwrap().content["kind"], "gradient");
     }
 }

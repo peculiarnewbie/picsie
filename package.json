@@ -1,12 +1,12 @@
 {
   "name": "picsie-compositor",
-  "version": "0.1.0",
+  "version": "0.2.0",
   "private": true,
   "type": "module",
   "scripts": {
     "dev": "node scripts/desktop.mjs dev",
     "build": "node scripts/desktop.mjs package",
-    "check": "npm run check:reference && npm run check:desktop",
+    "check": "npm run check:registry && npm run check:reference && npm run check:desktop",
     "test": "npm run test:reference && npm run test:desktop",
     "test:quickgui": "npm run check:architecture && npm run build:native && quickgui test",
     "smoke": "npm run check:architecture && npm run build:native && tsx scripts/render-demo.ts",
@@ -23,7 +23,9 @@
     "build:quickgui": "npm run check:architecture && npm run build:native && node scripts/patch-quickgui-nsis.mjs && quickgui build",
     "check:reference": "npm run check:architecture && cargo fmt --all --check && cargo check --workspace && tsc --noEmit",
     "test:reference": "npm run check:architecture && npm run build:native && npm run test:architecture && cargo test -p picsie-core && tsx --test tests/*.test.ts",
-    "setup:packager": "cargo install cargo-packager --version 0.11.8 --locked"
+    "setup:packager": "cargo install cargo-packager --version 0.11.8 --locked",
+    "registry:update": "node scripts/compositor-registry.mjs",
+    "check:registry": "node scripts/compositor-registry.mjs --check"
   },
   "dependencies": {
     "@quickgui/native": "0.1.6",
