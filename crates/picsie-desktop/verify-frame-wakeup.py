@@ -10,6 +10,7 @@ import json
 import os
 from pathlib import Path
 import signal
+import shutil
 import subprocess
 import sys
 import time
@@ -114,7 +115,8 @@ try:
     checks.append({'check': 'input and canvas recover after focus returns'})
     screen.x.XDestroyWindow(screen.display, auxiliary)
     screen.flush()
-    subprocess.run(['magick', 'import', '-window', window, str(out/'recovered.png')], env=env, check=True)
+    screenshot = ['magick', 'import'] if shutil.which('magick', path=env['PATH']) else ['import']
+    subprocess.run([*screenshot, '-window', window, str(out/'recovered.png')], env=env, check=True)
     (out/'report.json').write_text(json.dumps({'checks': checks, 'passed': len(checks)}, indent=2)+'\n')
     print(json.dumps(checks, indent=2), flush=True)
 finally:

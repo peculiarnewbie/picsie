@@ -119,6 +119,8 @@ screen presentation. The original isolated transport measurement is retained as
 
 Linux X11 and extracted Linux packages have been exercised using software Vulkan;
 the desktop has also been verified with AMD hardware rendering under Xvfb.
-Physical display presentation, macOS, Windows, Wayland, and HiDPI behavior still
-need platform validation. macOS app/DMG packaging is available locally but is
+Windows CI has passed compilation, the native Rust tests, NSIS/portable packaging,
+and extracted executable version/help/error checks. Physical display presentation,
+macOS/Windows editor interaction, Wayland, and HiDPI behavior still need platform
+validation. macOS app/DMG packaging is available locally but is
 unverified, registers no project associations, and is outside the release matrix.

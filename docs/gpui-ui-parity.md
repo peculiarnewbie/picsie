@@ -85,6 +85,7 @@ and metadata, and passed all 56 workflow checks against the extracted installer.
 Screenshots at both window sizes were inspected. CI repeats package and workflow
 verification and checks hidden/inactive frame waking.
 
-macOS, Windows, Wayland, HiDPI, physical display presentation, and non-Linux package
-execution remain unverified. The [initial transport experiment](gpui-kit-experiment.md)
+Windows CI passed native compilation, all 13 Rust tests, NSIS/portable packaging,
+and extracted executable checks. macOS, Windows editor interaction, Wayland, HiDPI,
+physical display presentation, and macOS package execution remain unverified. The [initial transport experiment](gpui-kit-experiment.md)
 preserves the narrower historical measurements separately.

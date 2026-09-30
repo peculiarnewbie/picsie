@@ -150,7 +150,9 @@ matching the existing New/Open window workflow; `--open` remains compatible.
 The shared engine still validates and reads all project contents. QuickGUI remains
 the explicit UI parity reference. No automatic updater has been ported; native
 upgrades use release downloads. Linux package verification exercises extracted
-artifacts; Windows/macOS execution and macOS file-open callbacks remain unverified.
+artifacts; Windows native compilation, tests and package executable checks also
+passed in CI. Windows/macOS editor interaction and macOS file-open callbacks remain
+unverified.
 
 The pinned `CompositorApplicationDelegate.swift` open-URL callback,
 `Document/ProjectWorkspace.swift` URL routing, and `ProjectWorkspaceTests.swift`

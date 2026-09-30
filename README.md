@@ -183,8 +183,10 @@ layout and alignment. See [the parity record](docs/gpui-ui-parity.md) and
 [desktop setup](crates/picsie-desktop/README.md).
 
 Linux X11 has been exercised with software Vulkan and an AMD hardware adapter
-under Xvfb. Physical display presentation, macOS/Windows execution, Wayland,
-HiDPI, signing, and notarization still need platform validation.
+under Xvfb. Windows CI passed native compilation, 13 Rust tests, NSIS/portable
+packaging, and executable checks outside the checkout. Physical display
+presentation, macOS/Windows editor interaction, Wayland, HiDPI, signing, and
+notarization still need platform validation.
 
 ## Release
 
