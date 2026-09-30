@@ -1,0 +1,11 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<mime-info xmlns="http://www.freedesktop.org/standards/shared-mime-info">
+  <mime-type type="application/x-picsie">
+    <comment>Picsie project</comment>
+    <glob pattern="*.picsie"/>
+  </mime-type>
+  <mime-type type="application/x-electropic">
+    <comment>Legacy Electropic project</comment>
+    <glob pattern="*.electropic"/>
+  </mime-type>
+</mime-info>

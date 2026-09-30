@@ -11,6 +11,12 @@ all image/file work. The TypeScript rules below continue to govern the retained
 QuickGUI application. See [the experiment report](gpui-kit-experiment.md) and
 [the parity record](gpui-ui-parity.md).
 
+On 2026-09-30 the user authorized making this the default application. `npm run dev`
+launches Rust / GPUI Kit; `npm run build` packages its native binary. Default checks
+and tests include the desktop crate. Releases build native Linux/Windows installers
+and portable archives. `dev:quickgui` and `build:quickgui` preserve the explicit
+parity reference; the native app has no QuickGUI, JavaScript, or Node-API runtime.
+
 The desktop's pinned GPUI Linux backend includes a local implementation of X11
 frame waking, so a completed preview can request the normal toolkit draw without
 waiting for its periodic monitor timer. The timer and GPU presentation settings
@@ -23,8 +29,9 @@ boundary remain the same.
 
 | Responsibility                                                                  | Implementation         |
 | ------------------------------------------------------------------------------- | ---------------------- |
+| GPUI Kit views, controls, dialogs, shortcuts, transient forms and focus         | Rust desktop UI        |
 | QuickGUI views, controls, dialogs, shortcuts, accessibility, display formatting | TypeScript             |
-| Transient forms, focus and open panels                                          | TypeScript             |
+| QuickGUI transient forms, focus and open panels                                 | TypeScript             |
 | Native loading, generated types, batched input, metadata subscriptions          | Thin TypeScript bridge |
 | Documents, layers, masks, selection, edit transactions, undo/redo               | Rust                   |
 | Document geometry, transforms, brushes, filters, compositing, pixel caches      | Rust                   |
@@ -33,6 +40,25 @@ boundary remain the same.
 Rust is authoritative. The UI receives metadata with image contents and brush point arrays removed. It cannot set assets or strokes through a property patch. Opening a picker belongs to the UI; decoding the selected file belongs to Rust. Canvas-size form calculations remain transient UI state; Rust validates and applies the actual resize. `@napi-rs/canvas` is a development dependency used only for independent pixel checks and icon tooling.
 
 ## Runtime boundary
+
+The default application:
+
+```mermaid
+flowchart LR
+    UI[Rust / GPUI Kit] -->|Commands and pointer samples| Worker[Rust engine worker]
+    Worker --> Core[picsie-core / CPU Skia]
+    Worker -->|Sanitized metadata and completion events| UI
+    Core -->|Owned BGRA pixels| Mailbox[Bounded latest-frame mailbox]
+    Mailbox -->|GPUI RenderImage / GPU upload| UI
+```
+
+The worker executes commands in order, retaining all pointer samples and file
+results. Only preview delivery coalesces. A bounded notification channel wakes
+the UI when a frame or result is ready; there is no idle polling. The UI owns the
+presented GPUI image and evicts retired atlas entries. No preview files or encoded
+image transport are used. Compositing and brushes remain CPU Skia.
+
+The retained QuickGUI reference:
 
 ```mermaid
 flowchart LR
@@ -49,7 +75,7 @@ Rust model/command types generate `src/engine/types.ts` through `ts-rs`. napi-rs
 
 Rendering, image import, canvas resize, file parsing, saves, exports and color sampling run in Node-API worker tasks. A save carries its captured revision, so later edits remain dirty. Imports reject a changed document revision instead of applying stale decoded results. Closing a window releases its native owner, rejects outstanding results, and frees surfaces and frame resources after the last worker finishes. No image bytes or per-pixel calls cross JavaScript.
 
-## Preview transport and its limits
+## QuickGUI reference preview transport and its limits
 
 QuickGUI 0.1.6's public `Image` node accepts an image source string. Its raw `ImageSource` API is for native window/system icons, not the canvas view, and the extension ABI has no public shared-texture primitive. The current integration therefore publishes **32-bit uncompressed TIFF frame buffers from Rust**, then sends only the path to QuickGUI's native image loader.
 
@@ -62,6 +88,8 @@ QuickGUI decodes image paths asynchronously and paints nothing while a load is i
 ## Layout and compatibility
 
 ```text
+crates/picsie-desktop/     Default Rust UI, engine worker and memory preview transport
+scripts/desktop.mjs       Default launch, build and native packaging
 app.tsx                       QuickGUI startup and window lifecycle
 src/ui/                       UI and transient form state
 src/engine/                   Native loader, generated types, command adapter
@@ -77,6 +105,11 @@ tests/                        Actual-addon integration and old project fixtures
 
 `npm run check:architecture` restricts production JS/TS to the UI and bridge, rejects engine/pixel dependencies, pixel APIs, binary UI storage, imports from tooling/tests, and computed module imports. The policy contains no legacy imports, pixel snippets or frozen engine exemptions. Never add an exemption or JS fallback to implement an engine feature.
 
-Dev/build/test entry points run the guard. CI builds the Rust addon, checks Rust and TypeScript, runs the architecture regression suite, Rust behavior tests, and real-addon tests under Node and Bun. Build on the target OS/architecture; only the Linux x64 package has been exercised here.
+Dev/build/test entry points run the guard. CI checks and tests the native desktop,
+packages it, and exercises the extracted Linux installer through real window
+input. It also builds the reference Rust addon, checks TypeScript, and runs the
+architecture suite, Rust behavior tests, and real-addon tests under Node and Bun.
+Build on the target OS/architecture; only the native Linux x64 package has been
+exercised here. Native releases do not use QuickGUI's updater or packaging.
 
 The guard is structural lint, not a semantic proof. Review must identify the Rust implementation, pinned upstream source/fixtures, command boundary and resource owner. Reject engine logic hidden in a UI file. UI changes require inspecting actual native screenshots, especially alignment.

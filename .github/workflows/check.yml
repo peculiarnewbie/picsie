@@ -3,7 +3,7 @@ on: [push, pull_request]
 permissions:
   contents: read
 jobs:
-  architecture-and-tests:
+  engine-and-reference:
     # Namespace runner profile; the Namespace GitHub App must be installed on this repository.
     runs-on: namespace-profile-peculiarnewbie
     steps:
@@ -23,11 +23,20 @@ jobs:
         run: sudo apt-get update && sudo apt-get install -y libfontconfig-dev libfreetype-dev
       - run: npm ci
       - run: npm run build:native
-      - run: npm run check
-      - run: npm test
+      - run: npm run check:reference
+      - run: npm run test:reference
       - run: npm run test:bun
   desktop-ui:
-    runs-on: namespace-profile-peculiarnewbie
+    name: Native app ${{ matrix.target }}
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - target: linux-x64
+            runner: namespace-profile-peculiarnewbie
+          - target: windows-x64
+            runner: windows-latest
+    runs-on: ${{ matrix.runner }}
     env:
       CARGO_BUILD_JOBS: 2
     steps:
@@ -35,27 +44,52 @@ jobs:
       - uses: actions/setup-node@v7
         with:
           node-version: 24
+          cache: npm
       - uses: dtolnay/rust-toolchain@stable
         with:
           components: rustfmt
       - uses: Swatinem/rust-cache@v2
         with:
           workspaces: crates/picsie-desktop
+          cache-all-crates: true
+      - uses: actions/setup-python@v6
+        with:
+          python-version: "3.13"
       - name: Install desktop build and verification dependencies
+        if: runner.os == 'Linux'
         run: >-
           sudo apt-get update && sudo apt-get install -y
           build-essential clang pkg-config libssl-dev libfontconfig-dev libfreetype-dev
           libx11-dev libxcb1-dev libxkbcommon-dev libxkbcommon-x11-dev libwayland-dev
           libvulkan-dev mesa-vulkan-drivers xvfb xdotool imagemagick dbus-x11
           xdg-desktop-portal xdg-desktop-portal-gtk
-      - run: node scripts/check-architecture.mjs
-      - run: cargo fmt --manifest-path crates/picsie-desktop/Cargo.toml --check
-      - run: cargo test --locked --manifest-path crates/picsie-desktop/Cargo.toml
-      - run: cargo build --locked --release --manifest-path crates/picsie-desktop/Cargo.toml
-      - run: python3 crates/picsie-desktop/verify.py --software
+      - name: Install NSIS
+        if: runner.os == 'Windows'
+        shell: pwsh
+        run: |
+          choco install nsis -y --no-progress
+          "C:\Program Files (x86)\NSIS" | Out-File -FilePath $env:GITHUB_PATH -Encoding utf8 -Append
+      - run: npm ci
+      - run: npm run check:desktop
+      - run: npm run test:desktop
+      - run: npm run setup:packager
+      - run: npm run build
+      - run: python scripts/verify-desktop-package.py --target ${{ matrix.target }}
+      - name: Verify the installed native application
+        if: runner.os == 'Linux'
+        run: >-
+          python3 crates/picsie-desktop/verify.py --software
+          --binary artifacts/desktop-package-verification/linux-x64/deb/usr/bin/picsie
+          --output artifacts/desktop/verification
+      - name: Verify X11 frame waking
+        if: runner.os == 'Linux'
+        run: >-
+          python3 crates/picsie-desktop/verify-frame-wakeup.py --tools /usr
+          --binary artifacts/desktop-package-verification/linux-x64/deb/usr/bin/picsie
+          --output artifacts/desktop/frame-wakeup
       - uses: actions/upload-artifact@v7
-        if: always()
+        if: always() && runner.os == 'Linux'
         with:
           name: desktop-ui-verification
-          path: artifacts/gpui-parity/verification/
+          path: artifacts/desktop/
           if-no-files-found: ignore

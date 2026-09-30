@@ -1,8 +1,17 @@
 # Changelog
 
 Release notes live here under each `## x.y.z` heading (a ` - YYYY-MM-DD` date may follow).
-Packaging copies the section of the version being released into the GitHub release and the
-signed update appcast. Keep each section under 16 KiB.
+Native packaging copies the version section into the draft GitHub release.
+Keep each section under 16 KiB.
+
+## Unreleased
+
+- Make Rust / GPUI Kit the default application for development, builds, checks, and releases.
+- Keep the QuickGUI UI behind explicit parity-reference commands.
+- Package native Linux Debian/portable archives and Windows NSIS/portable archives with checksums, icons, project associations, and notices.
+- Accept multiple project paths from desktop file associations, preserve `--open`, and expose native `--help`/`--version`.
+- Verify extracted native packages and exercise the Linux installer application in CI.
+- Retain preview pixels and wake completed X11 frames on demand; measured performance is recorded in docs/desktop-gimp-experiments.md.
 
 ## 0.1.0 - 2026-09-23
 

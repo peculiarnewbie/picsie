@@ -6,7 +6,9 @@ This project ports Robbie Tilton's Compositor to a Rust engine and GPUI Kit UI, 
 
 The user has authorized migrating the UI to **Rust / GPUI Kit**, with UI and workflow parity
 against the existing QuickGUI application (2026-09-29). The new application is in
-`crates/picsie-desktop`; the QuickGUI application remains the parity reference. Rust owns
+`crates/picsie-desktop` and is the default for development, packaging, and releases;
+the QuickGUI application remains the parity reference through `dev:quickgui` and
+`build:quickgui`. Rust owns
 the editor engine and image processing in both applications. Read [docs/architecture.md](docs/architecture.md)
 before implementing features. The TypeScript boundary below still applies to the legacy UI.
 

@@ -1,5 +1,8 @@
+#![cfg_attr(target_os = "windows", windows_subsystem = "windows")]
+
 mod assets;
 mod engine;
+mod launch;
 mod measure;
 mod state;
 mod ui;
@@ -12,6 +15,8 @@ use std::path::PathBuf;
 fn open_editor(document: Document, path: Option<PathBuf>, cx: &mut App) -> anyhow::Result<()> {
     gpui_kit::open_window(
         WindowOptions {
+            // Match the installed Linux desktop entry for window grouping and icons.
+            app_id: Some("picsie".into()),
             window_bounds: Some(WindowBounds::Windowed(Bounds::centered(
                 None,
                 size(px(1280.), px(860.)),
@@ -30,25 +35,35 @@ fn open_editor(document: Document, path: Option<PathBuf>, cx: &mut App) -> anyho
     Ok(())
 }
 fn main() -> anyhow::Result<()> {
-    let arguments = std::env::args().skip(1).collect::<Vec<_>>();
-    if arguments
-        .iter()
-        .any(|arg| arg == "--measure" || arg == "--measure-moving")
-    {
-        return measure::run(arguments.iter().any(|arg| arg == "--measure-moving"));
-    }
-    let path = arguments
-        .iter()
-        .position(|arg| arg == "--open")
-        .and_then(|i| arguments.get(i + 1))
-        .map(PathBuf::from);
-    let document = match &path {
-        Some(path) => picsie_core::files::open_project(path)?,
-        None => demo_document(),
+    let paths = match launch::parse(std::env::args_os().skip(1))? {
+        launch::Launch::Help => {
+            println!(
+                "Picsie {}\n\nUsage: picsie [--open PATH] [PROJECT ...]\n\nOpen .picsie, .electropic, or .comp projects, each in its own window.\nWith no project, open the sample composition.\n\n  -h, --help       Show this help\n  -V, --version    Show the version\n  --              Treat remaining arguments as paths",
+                env!("CARGO_PKG_VERSION")
+            );
+            return Ok(());
+        }
+        launch::Launch::Version => {
+            println!("Picsie {}", env!("CARGO_PKG_VERSION"));
+            return Ok(());
+        }
+        launch::Launch::Measure { moving } => return measure::run(moving),
+        launch::Launch::Projects(paths) => paths,
+    };
+    let documents = if paths.is_empty() {
+        vec![(demo_document(), None)]
+    } else {
+        paths
+            .into_iter()
+            .map(|path| {
+                picsie_core::files::open_project(&path).map(|document| (document, Some(path)))
+            })
+            .collect::<anyhow::Result<Vec<_>>>()?
     };
     gpui_kit::application()
         .with_assets(assets::Assets)
         .run(move |cx| {
+            cx.set_app_identity("dev.peculiarnewbie.picsie", "Picsie");
             gpui_kit::init(cx);
             Theme::change(ThemeMode::Dark, None, cx);
             Theme::update(cx, |theme| {
@@ -72,7 +87,9 @@ fn main() -> anyhow::Result<()> {
                 theme.colors.slider_thumb = rgb(0xedf0fc).into();
             });
             ui::menus::install(cx);
-            open_editor(document, path, cx).expect("open Picsie window");
+            for (document, path) in documents {
+                open_editor(document, path, cx).expect("open Picsie window");
+            }
         });
     Ok(())
 }

@@ -1,6 +1,7 @@
 # Picsie desktop
 
-Rust / GPUI Kit UI matching the existing QuickGUI editor. GPUI Kit is pinned to
+The default Picsie application, with a Rust / GPUI Kit UI matching the existing
+QuickGUI editor. GPUI Kit is pinned to
 **0.7.0**, with its matching GPUI 0.3.7 snapshot in this crate's Cargo.lock. The
 crate has its own workspace so toolkit dependencies do not affect the Node addon.
 The pinned Linux backend has a small local X11 frame-wakeup adaptation; see
@@ -10,15 +11,17 @@ presentation mode and queue depth keep their original settings.
 From the repository root, in a graphical desktop session:
 
 ```sh
-npm run dev:desktop
+npm run dev
 # Or: bash crates/picsie-desktop/run.sh
 # Open a project directly:
-bash crates/picsie-desktop/run.sh --open /path/to/project.picsie
+npm run dev -- --open /path/to/project.picsie
+# Desktop file associations pass positional paths:
+npm run dev -- first.picsie second.electropic
 ```
 
 The full header, tool rail, context controls, layers, inspector, color picker,
 Canvas Size dialog, file dialogs, and unsaved-document workflow are ported. The
-QuickGUI application remains available through `npm run dev`. See the
+QuickGUI application remains available through `npm run dev:quickgui`. See the
 [parity record](../../docs/gpui-ui-parity.md) for scope and verification.
 See the [performance comparison](../../docs/desktop-performance.md) for measured
 startup, input latency, memory, and frame transport against QuickGUI.
@@ -66,12 +69,23 @@ these include a C/C++ toolchain, pkg-config, fontconfig, FreeType, OpenSSL,
 libxkbcommon, X11/Wayland development libraries, and Vulkan support. First builds
 also obtain the Skia binaries. The initial dependency build is substantial.
 
+Ubuntu build dependencies:
+
+```sh
+sudo apt-get install build-essential clang pkg-config libssl-dev libfontconfig-dev libfreetype-dev \
+  libx11-dev libxcb1-dev libxkbcommon-dev libxkbcommon-x11-dev libwayland-dev libvulkan-dev
+sudo apt-get install mesa-vulkan-drivers xdg-desktop-portal xdg-desktop-portal-gtk
+```
+
 ```sh
 npm run build:desktop
+npm run setup:packager # Install pinned cargo-packager once
+npm run build         # Native installers, portable archives and checksums
 npm run check:desktop
 npm run test:desktop
 python3 crates/picsie-desktop/verify.py --software
 python3 crates/picsie-desktop/verify-frame-wakeup.py
+python3 scripts/verify-desktop-package.py --target linux-x64
 ```
 
 The verification script uses a real application, Xvfb, xdotool, ImageMagick, and a
@@ -81,6 +95,20 @@ It cleans up only its own processes. Use `--display` for an unused X display,
 `--binary` for another build, and `--tools` for an extracted tools directory.
 The frame-wakeup script additionally checks hidden/inactive CPU use and verifies
 that pending edits and input recover after remapping/refocusing a real window.
+For system-installed tools use `--tools /usr`. Install `xvfb`, `xdotool`,
+`imagemagick`, and `dbus-x11` alongside the GTK portal to run the Linux harness.
+
+The default build stages a standalone `picsie` (`picsie.exe` on Windows) and
+packages it with cargo-packager 0.11.8. Linux generates a `.deb` and `.tar.gz`;
+Windows generates an NSIS installer and `.zip`. Icons, project file associations,
+Compositor notices, and available Cargo dependency licenses are included. Package
+verification extracts these artifacts and runs the binary outside the checkout.
+The executable embeds its UI assets and does not require Node, Bun, or QuickGUI.
+Default `check`/`test` also retain engine and reference-addon coverage.
+
+`package.json` and this crate's package version must match; packaging enforces
+this, and `picsie --version` reports the crate version. Native releases use manual
+upgrades from download packages. The QuickGUI updater is not linked into this app.
 
 `PICSIE_TRACE_DIR=/absolute/path` enables atomic per-window JSON snapshots and
 control geometry for inspection. Production runs do not write these traces.
@@ -89,6 +117,8 @@ screen presentation. The original isolated transport measurement is retained as
 `bash crates/picsie-desktop/run.sh --measure`; see the
 [experiment report](../../docs/gpui-kit-experiment.md) for its limits.
 
-Linux X11 has been exercised using software Vulkan and verified AMD hardware
-rendering under Xvfb. Physical display presentation, macOS, Windows, Wayland,
-HiDPI behavior, and desktop packaging require platform validation.
+Linux X11 and extracted Linux packages have been exercised using software Vulkan;
+the desktop has also been verified with AMD hardware rendering under Xvfb.
+Physical display presentation, macOS, Windows, Wayland, and HiDPI behavior still
+need platform validation. macOS app/DMG packaging is available locally but is
+unverified, registers no project associations, and is outside the release matrix.

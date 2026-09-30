@@ -202,6 +202,7 @@ try:
     processes.append(app)
     wait(lambda s: s.get('state') is not None, 'startup')
     focus('Color studies.*Picsie')
+    check('native window matches installed Picsie desktop identity', window_id in x('search', '--onlyvisible', '--class', '^picsie$').splitlines())
     check('936×734 native canvas and eleven tools', state()['controls']['canvas'] == [64.,98.,936.,734.] and len([k for k in state()['controls'] if k.startswith('tool-')]) == 11)
     shot('01-layout.png')
     click('new')

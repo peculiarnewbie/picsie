@@ -1,5 +1,9 @@
 # Preview transport: the update-in-place deep dive
 
+Historical QuickGUI design record. As of 2026-09-30, the default app is Rust /
+GPUI Kit and uses BGRA memory uploads. The path below remains in the explicit
+QuickGUI parity reference; see [the current architecture](architecture.md).
+
 Status: design record, 2026-09-23. Question: how should canvas frames reach the screen in the
 long term, replacing the per-frame TIFF file handoff? Short answer: keep the shipped
 stacked-frame mitigation now, and pursue a small **core change in QuickGUI's open-source host**
@@ -27,8 +31,8 @@ afterward: stable 61.15–61.18. That fix is presentation-only; the copy cost ab
 ## Hard constraints (unchanged)
 
 This section records the production stack decision at the date above. The subsequent
-user-authorized [GPUI Kit experiment](gpui-kit-experiment.md) evaluates a Rust UI in a
-separate application; it does not change the shipping preview path.
+user-authorized [GPUI Kit experiment](gpui-kit-experiment.md) led to the default
+Rust application. These constraints still govern the retained QuickGUI reference.
 
 - Pixels stay out of JavaScript: no per-pixel JS calls, no JSON/base64 image transport, no JS
   renderer. Rust owns buffers and lifetimes; JS sees metadata and opaque resource paths.
@@ -42,19 +46,19 @@ Read from the installed packages and cross-checked against quickgui.dev and
 [github.com/egoist/quickgui](https://github.com/egoist/quickgui) (public, MIT OR Apache-2.0 —
 the shipped `libquickgui_host.so` is built from `crates/quickgui-host` in that repo):
 
-| Capability | Verdict | Evidence |
-| --- | --- | --- |
-| `Image.source: string` (path, `file://`, base64 `data:` URL) | The only node-level pixel input | `JSX.ImageProps`, quickgui.dev Image reference |
-| Same source string after in-place file overwrite | **Stale** — no reload | probe, phase 2 |
-| `file://…#rev` or `?rev` cache-busting | **Fails to load** — falls back blank | probe, phases 3–4 |
-| base64 `data:` URL updates | Works (probe phase 5), but ships encoded bytes through the JS protocol — violates the boundary and is larger than the file path | probe |
-| `NativeImageSource` raw RGBA8 (`data` + width/height) | Exists, but only for window/tray/dock icons (`performNativeWindowImageAction`), not for nodes | `binding-types.ts`, `system.ts` |
-| `Shader` node | Procedural WGSL with one fixed 16-float uniform; no texture binding | `ShaderProps`, `normalizeShaderParameters` |
-| Load/decode completion event | None on `Image` (only `AvatarImage.onLoadingStatusChange`) | `solid/src/index.ts` |
-| Shared textures, fds, shared memory in the ABI | None | full read of `ffi.ts`, `protocol.ts`, `binding.ts` |
-| `quickgui_create_embedded_view` | A platform sub-window, not a texture slot | `binding.ts` `createHostedEmbeddedView` |
-| Extension components | JSON subtree/IPC rendering, not pixel injection | `extension.ts`, extension templates |
-| Newer upstream version with a fix | None — 0.1.6 is the latest published | npm registry |
+| Capability                                                   | Verdict                                                                                                                         | Evidence                                           |
+| ------------------------------------------------------------ | ------------------------------------------------------------------------------------------------------------------------------- | -------------------------------------------------- |
+| `Image.source: string` (path, `file://`, base64 `data:` URL) | The only node-level pixel input                                                                                                 | `JSX.ImageProps`, quickgui.dev Image reference     |
+| Same source string after in-place file overwrite             | **Stale** — no reload                                                                                                           | probe, phase 2                                     |
+| `file://…#rev` or `?rev` cache-busting                       | **Fails to load** — falls back blank                                                                                            | probe, phases 3–4                                  |
+| base64 `data:` URL updates                                   | Works (probe phase 5), but ships encoded bytes through the JS protocol — violates the boundary and is larger than the file path | probe                                              |
+| `NativeImageSource` raw RGBA8 (`data` + width/height)        | Exists, but only for window/tray/dock icons (`performNativeWindowImageAction`), not for nodes                                   | `binding-types.ts`, `system.ts`                    |
+| `Shader` node                                                | Procedural WGSL with one fixed 16-float uniform; no texture binding                                                             | `ShaderProps`, `normalizeShaderParameters`         |
+| Load/decode completion event                                 | None on `Image` (only `AvatarImage.onLoadingStatusChange`)                                                                      | `solid/src/index.ts`                               |
+| Shared textures, fds, shared memory in the ABI               | None                                                                                                                            | full read of `ffi.ts`, `protocol.ts`, `binding.ts` |
+| `quickgui_create_embedded_view`                              | A platform sub-window, not a texture slot                                                                                       | `binding.ts` `createHostedEmbeddedView`            |
+| Extension components                                         | JSON subtree/IPC rendering, not pixel injection                                                                                 | `extension.ts`, extension templates                |
+| Newer upstream version with a fix                            | None — 0.1.6 is the latest published                                                                                            | npm registry                                       |
 
 The probe (interactive app + button-driven strategies + screen capture) lives in
 `artifacts/inplace-test/`; it is the acceptance harness for whichever option below ships.
@@ -77,8 +81,8 @@ an upstream PR (preferred — every QuickGUI app showing live imagery benefits) 
 fork whose `libquickgui_host` we build in CI. Three shapes, in increasing payoff:
 
 1. **`reloadRevision` on `Image` (minimum viable, ~small).** A numeric property that, when it
-   changes, re-reads the current `source` path *while retaining the existing texture until the
-   new one finishes decoding*. This is literally "update in place": one file overwritten in
+   changes, re-reads the current `source` path _while retaining the existing texture until the
+   new one finishes decoding_. This is literally "update in place": one file overwritten in
    place, one node, no blank gap. It deletes the flicker class of bug for all apps and lets us
    drop the stacking hack and the unique-path churn.
 2. **Raw RGBA8 `Image` source for nodes (medium).** Extend the existing icon path

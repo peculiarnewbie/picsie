@@ -1,47 +1,86 @@
 # Picsie
 
-An experimental port of [Compositor](https://github.com/robbietilton/Compositor), with a Rust editor engine and a native GPUI Kit desktop UI. The TypeScript/[QuickGUI](https://quickgui.dev/docs/typescript) interface remains available as the UI parity reference. This is not a feature-complete Compositor port.
+A desktop image editor with a Rust engine and GPUI Kit interface, porting selected
+functionality from [Compositor](https://github.com/robbietilton/Compositor).
+The TypeScript/[QuickGUI](https://quickgui.dev/docs/typescript) application remains
+available as the UI parity reference. This is not a feature-complete Compositor port.
 
-**Architecture requirement: TypeScript/JavaScript is for UI and a thin native bridge only. All new engine and image-processing code must be Rust.** The [architecture decision](docs/architecture.md) defines ownership, enforcement, and migration. [AGENTS.md](AGENTS.md) makes it mandatory for future implementation work.
+Rust owns editor state, history, geometry, brushes, Skia rendering, codecs and
+project files. The native UI calls the engine directly and presents BGRA frames
+through GPUI. The [architecture decision](docs/architecture.md) and
+[AGENTS.md](AGENTS.md) define ownership and enforcement. TypeScript/JavaScript in
+the reference application remains restricted to UI and a thin native bridge.
 
-The source of truth for editor behavior is Compositor, pinned to revision `609dbeae2ef68ef4fc82d67e4981a49852eb6e13`. The [source map and remaining deviations](docs/compositor-port.md) distinguish translated routines from the independently written prototype subsystems.
+Compositor, pinned to `609dbeae2ef68ef4fc82d67e4981a49852eb6e13`, is the source of
+truth for editor behavior. The [source map](docs/compositor-port.md) records
+translated routines and remaining prototype deviations. GIMP is a secondary
+functionality and performance reference, never a UX reference.
 
-The reference UI uses QuickGUI's native Solid renderer, windows, menus, dialogs, inputs, and captured pointer events. There is no browser or webview. The Rust engine owns editing state, history, geometry, Skia rendering, image codecs and project files. QuickGUI receives metadata and paths to native uncompressed frame buffers; pixels stay out of JavaScript.
+## Run
 
-## Rust desktop UI
-
-The GPUI Kit desktop now implements the QuickGUI editor's UI and workflows against
-our existing Rust engine. Run `npm run dev:desktop` in a graphical session. The
-QuickGUI version remains available with `npm run dev`.
-
-See [desktop setup](crates/picsie-desktop/README.md) and the
-[UI parity record](docs/gpui-ui-parity.md) for controls, validation, and platform limits.
-
-## Run the QuickGUI reference
-
-QuickGUI currently recommends **macOS 14+, Bun 1.4+, and Xcode Command Line Tools**. Versions are pinned to QuickGUI 0.1.6, Solid 2.0.0-rc.8, and TypeScript 7.0.2; the Solid prerelease version matters.
+Use a current Rust toolchain, a C/C++ linker, and Node 22+ for repository tooling.
+The native application itself does not need Node, Bun, or QuickGUI. First builds
+obtain Skia binaries and compile the pinned GPUI dependencies.
 
 ```sh
 npm ci
-npm run build:native
-bun run dev
+npm run dev
+# Open projects directly, each in its own window:
+npm run dev -- --open /path/to/project.picsie
+npm run dev -- first.picsie second.electropic
 ```
 
-The first window contains an editable sample composition. Use **New** to create a transparent canvas. Each new or opened project gets its own native window.
-Use **Open** for `.picsie` and legacy `.electropic` files, or **Open .comp** for Compositor directory packages.
+Run in a graphical desktop session; there is no HTTP dev server. The first window
+contains an editable sample composition. **New** creates a transparent canvas.
+**Open** accepts `.picsie` and legacy `.electropic` files; **Open .comp** accepts
+Compositor directory packages.
+
+Linux requires a C/C++ toolchain, clang, pkg-config, OpenSSL, fontconfig, FreeType,
+X11/Wayland and libxkbcommon development libraries, and a Vulkan driver. Native
+file dialogs need `xdg-desktop-portal` plus a chooser backend, such as
+`xdg-desktop-portal-gtk`. See [desktop setup](crates/picsie-desktop/README.md) for
+an Ubuntu dependency command and verification tools.
+
+## Build and check
 
 ```sh
-npm run check:architecture # UI/Rust boundary, with no legacy exemptions
-npm run check          # Architecture guard, Rust, and TypeScript
-npm test               # Rust behavior tests and actual-addon tests under Node
-npm run test:bun        # Actual-addon integration tests under Bun
-npm run smoke          # Render sample artwork and a canvas preview into artifacts/
-bun run build          # Build Rust and package for the host platform into dist/
+npm run build:desktop   # Compile the native release binary
+npm run setup:packager  # Install pinned cargo-packager 0.11.8 once
+npm run build           # Native packages and checksums in dist/<platform>-<arch>/
+npm run check           # Architecture, engine/reference types, and native desktop
+npm test                # Architecture tests, Rust behavior, Node addon, desktop tests
+npm run test:bun        # Actual-addon integration under Bun
+npm run smoke           # Render sample artwork into artifacts/
 ```
 
-Rust 1.88+ and a C/C++ linker are required to build the addon. The first build downloads Skia binaries (or builds Skia from source if unavailable). Node 22+ supports the development tests. Bun is required for QuickGUI development and packaging. Build on the target OS and architecture: the Skia dependency includes a platform-specific native addon. The Linux build is experimental and requires a graphical session; this project is a desktop application and has no HTTP dev server.
+Build on the target OS and architecture. Linux produces a Debian installer and a
+portable `.tar.gz`; Windows produces an NSIS installer and portable `.zip`.
+The macOS packaging path produces an application bundle and DMG, but has not been
+validated and is not in the release matrix. Packages include dependency license
+records, available license files, and Compositor attribution. Linux packages
+register `.picsie` and `.electropic` project types.
 
-Dev/build/test commands enforce the architecture policy. Production TypeScript is restricted to UI or native bridge locations; pixel APIs/dependencies are rejected and there are no legacy engine exemptions. CI runs the guard, its regression tests, typechecking, and application tests. See [the enforcement limits and review requirements](docs/architecture.md#enforcement).
+`dev:desktop` remains an alias for the default launch. `check:desktop` and
+`test:desktop` are available for focused native work. The default checks include
+both applications so the retained reference and its Rust bridge stay usable.
+
+## QuickGUI parity reference
+
+```sh
+npm run dev:quickgui
+npm run build:quickgui
+npm run test:quickgui
+```
+
+QuickGUI 0.1.6, Solid 2.0.0-rc.8 and TypeScript 7.0.2 stay pinned. Bun 1.4+ is
+required for this reference application's development and packaging. Its native
+Node addon is built by these commands; Rust still owns all image processing.
+The Windows QuickGUI packaging command applies the existing NSIS compatibility
+patch. QuickGUI release uploads and its updater are not part of the native app.
+
+See the [UI parity record](docs/gpui-ui-parity.md),
+[performance comparison](docs/desktop-performance.md), and
+[GIMP experiments](docs/desktop-gimp-experiments.md) for measured coverage and limits.
 
 ## Working features
 
@@ -66,7 +105,7 @@ For a visual walkthrough, see the [five-flow UX tour](docs/ux-tour.md) with step
 1. Import an image, or start with the included composition.
 2. Select a layer in the panel or click its bounds using Move. Shift-click a layer row to select a range; Ctrl/Cmd-click toggles individual layers. Shift-click on the canvas toggles layers. Locked and hidden layers are skipped by canvas hit testing.
 3. Drag the canvas with Brush, Eraser, Rectangle, or Ellipse selected. Click with Text to create a text layer, then edit its content in the inspector.
-4. Change the foreground color, then use **Use foreground color** to recolor an existing shape or text layer. Gradient layers expose both endpoint colors.
+4. Change the foreground color, then use **Fill with foreground** to recolor an existing shape or text layer. Gradient layers expose both endpoint colors.
 5. Drag a layer’s dotted grip to reorder it. Selected layers move and duplicate together; copies retain the originals' placement. New layers insert above the active layer. Locked layers stay put. Select one layer for resize/rotate handles, painting, or inspector edits.
 6. Use **Add mask** in the inspector, then **Hide** or **Reveal** in the toolbar. **X** swaps modes; Eraser reverses the current mode. **Layer pixels** returns to content painting. Removing or disabling a mask restores the original content.
    **Linked** in the mask panel controls whether the mask follows layer transforms. Select the mask and use Move to place an unlinked mask independently.
@@ -76,27 +115,27 @@ For a visual walkthrough, see the [five-flow UX tour](docs/ux-tour.md) with step
 
 Tool shortcuts work while the canvas has focus. Standard text shortcuts remain available in inputs.
 
-| Shortcut            | Action                             |
-| ------------------- | ---------------------------------- |
-| V / B / E           | Move / Brush / Eraser              |
-| U / O / T           | Rectangle / Ellipse / Text         |
-| H / I               | Hand / Sample merged color         |
-| C / M / L           | Crop / Marquee / Lasso             |
-| [ / ]               | Brush size                         |
-| Shift-click with Brush | Line from previous stroke endpoint |
-| Ctrl/⌘+Shift+I / Ctrl/⌘+D | Invert / deselect pixels |
-| Ctrl/⌘+Alt+G | Create/release clipping mask |
-| Arrow / Shift+Arrow | Nudge 1 / 10 pixels                |
-| Delete / Escape     | Clear selected pixels or delete layer / Cancel gesture or selection |
-| ⌘N / ⌘O / ⇧⌘O       | New / Open project / Import images |
-| ⌘S / ⇧⌘S / ⌥⌘S      | Save / Save as / Export PNG        |
-| ⌘Z / ⇧⌘Z            | Undo / Redo canvas edit            |
-| ⌘J / ⇧⌘N            | Duplicate / New paint layer        |
-| ⌘[ / ⌘]             | Lower / Raise layer                |
-| ⌥⌘C                 | Canvas Size                        |
-| ⌘0 / ⌘1             | Fit canvas / Actual size           |
+| Shortcut                  | Action                                                              |
+| ------------------------- | ------------------------------------------------------------------- |
+| V / B / E                 | Move / Brush / Eraser                                               |
+| U / O / T                 | Rectangle / Ellipse / Text                                          |
+| H / I                     | Hand / Sample merged color                                          |
+| C / M / L                 | Crop / Marquee / Lasso                                              |
+| [ / ]                     | Brush size                                                          |
+| Shift-click with Brush    | Line from previous stroke endpoint                                  |
+| Ctrl/⌘+Shift+I / Ctrl/⌘+D | Invert / deselect pixels                                            |
+| Ctrl/⌘+Alt+G              | Create/release clipping mask                                        |
+| Arrow / Shift+Arrow       | Nudge 1 / 10 pixels                                                 |
+| Delete / Escape           | Clear selected pixels or delete layer / Cancel gesture or selection |
+| ⌘N / ⌘O / ⇧⌘O             | New / Open project / Import images                                  |
+| ⌘S / ⇧⌘S / ⌥⌘S            | Save / Save as / Export PNG                                         |
+| ⌘Z / ⇧⌘Z                  | Undo / Redo canvas edit                                             |
+| ⌘J / ⇧⌘N                  | Duplicate / New paint layer                                         |
+| ⌘[ / ⌘]                   | Lower / Raise layer                                                 |
+| ⌥⌘C                       | Canvas Size                                                         |
+| ⌘0 / ⌘1                   | Fit canvas / Actual size                                            |
 
-Use Ctrl in place of ⌘ on Linux, with the canvas focused. QuickGUI 0.1.6 does not implement Linux application menus; the toolbar and canvas shortcuts provide these actions. Scroll pans; Ctrl/⌘+scroll zooms around the viewport center. The inspector can scroll to reveal additional properties.
+Use Ctrl in place of ⌘ on Linux and Windows, with the canvas focused. Linux uses the visible controls and canvas shortcuts in place of application menus. Scroll pans; Ctrl/⌘+scroll zooms around the cursor. The inspector scrolls to reveal additional properties.
 
 ## Scope and limits
 
@@ -106,42 +145,66 @@ Still to port: polygonal lasso and wand/object selections, selection move/transf
 
 Canvas Size currently offers pixels and percent; physical-unit controls are not yet exposed. The history budget counts encoded PNG assets, grayscale masks, unique retained pixel-selection buffers, and estimated vector-stroke storage. It does not measure all native allocations.
 
-The editor supports up to 100 layers, 8192 pixels per dimension, 24 megapixels per surface, and 96 MB per project/import file. These bounds keep this prototype usable; it is not intended for very large production files. Rust worker tasks render through Skia. QuickGUI displays uncompressed native TIFF resources; this still involves native copies and is not direct GPU texture sharing. Large images and dense painting can therefore lag. Pixel buffers are cached within a 96 MB budget, preview requests are coalesced, and idle windows do not continually render. Performance work should move to tiled rendering and direct texture updates before extending those limits.
+The editor supports up to 100 layers, 8192 pixels per dimension, 24 megapixels
+per surface, and 96 MB per project/import file. These limits are not intended for
+very large production files. A Rust worker owns each editor and renders through
+CPU Skia. Retained compositing reuses unchanged pixels, previews coalesce into a
+bounded latest-frame mailbox, and completed frames wake the UI. GPUI presents
+BGRA memory through a GPU upload; viewport copies and uploads remain. Brushes and
+image processing are still on the CPU. The QuickGUI reference retains its native
+uncompressed TIFF transport.
 
 ## Structure
 
-The engine is independent of the QuickGUI UI:
-
 ```text
-app.tsx                       Startup and native window lifecycle
-src/ui/                       UI, controls, dialogs and transient forms
-src/engine/                   Generated contracts and thin native adapter
-crates/picsie-core/        Rust model, commands, geometry, history, Skia and files
-crates/picsie-native/      Node-API addon and asynchronous worker tasks
-crates/picsie-core/tests/  Engine behavior and upstream fixtures
-tests/                        Node/Bun integration and legacy project fixtures
+crates/picsie-desktop/     Default Rust / GPUI Kit application and engine worker
+crates/picsie-core/        Shared model, commands, geometry, history, Skia and files
+crates/picsie-core/tests/  Engine behavior and pinned upstream fixtures
+scripts/desktop.mjs       Native launch, build and packaging entry point
+app.tsx                   QuickGUI reference startup and window lifecycle
+src/ui/                   Reference UI, controls, dialogs and transient forms
+src/engine/               Generated contracts and thin native adapter
+crates/picsie-native/      Reference Node-API addon and worker tasks
+tests/                    Node/Bun integration and legacy project fixtures
 ```
 
 ## Validation
 
-The migrated behavior suite runs in Rust, with real-addon tests under both Node and Bun. Rust/TypeScript checks, sample rendering and Linux native packaging are also checked. The packaged application was also run on an isolated X11 display using Xvfb, Mesa software Vulkan, and the GTK file-dialog portal.
+CI tests the Rust engine, the native desktop, architecture guards, reference
+TypeScript types, and the actual addon under Node and Bun. Its native job builds
+release packages, checks the extracted binaries and package metadata, then drives
+the extracted Debian application through real X11 input and GTK portal dialogs.
 
-Native interaction checks covered anchored canvas expansion, relative sizing and ratio lock, undo/redo selection restoration, range selection, group movement and duplication, drag insertion and reordering, anchored edge resizing, rotation snapping, mask hiding/revealing and disabling, plus the earlier opacity, shape, brush/eraser, undo, text, blend, and fit-to-window checks. Layouts were inspected at 1280 × 860 and 960 × 640. A project was saved and reopened through native file dialogs. Its PNG export was byte-for-byte equal to rendering the saved project through the compositor.
+The native workflow harness covers 56 checks, including controls, selections,
+painting, masks, crop, transforms, multiple windows, save/reopen, export, and dirty
+close/quit prompts. The frame-wakeup harness checks hidden/inactive CPU use and
+edit recovery after remapping/refocusing. Actual screenshots are inspected for
+layout and alignment. See [the parity record](docs/gpui-ui-parity.md) and
+[desktop setup](crates/picsie-desktop/README.md).
 
-The earlier screenshot pass caught and fixed font-dependent tool icons, inconsistent button and field alignment, shrinking layer rows, a clipped New canvas dialog, missing select labels and popup colors, and text edits losing characters. The new crop, mask, folder, selection, and `.comp` paths are tested through the real addon; this workspace lacks a graphical display for fresh window screenshots. See the [native screenshots and test notes](docs/native-testing.md). **macOS execution, signing, and notarization remain unverified.**
+Linux X11 has been exercised with software Vulkan and an AMD hardware adapter
+under Xvfb. Physical display presentation, macOS/Windows execution, Wayland,
+HiDPI, signing, and notarization still need platform validation.
 
 ## Release
 
-Releases are built by GitHub Actions: Linux on the [Namespace](https://namespace.so) runner profile `namespace-profile-peculiarnewbie`, Windows on the GitHub-hosted `windows-latest` runner (Namespace profiles are bound to one OS; a Windows profile can replace it in [release.yml](.github/workflows/release.yml)). The Namespace GitHub App must be installed on this repository.
+[The release workflow](.github/workflows/release.yml) builds the native application
+for Linux x64 on the Namespace runner and Windows x64 on `windows-latest`.
+The Namespace GitHub App must be installed on this repository.
 
-1. Bump `version` in `package.json` and add a `## x.y.z - YYYY-MM-DD` section to [CHANGELOG.md](CHANGELOG.md). The changelog section becomes the release notes and appcast description.
-2. Tag the release `v<version>` and push the tag. The release workflow refuses tags that do not match `package.json`.
-3. Each target runs the architecture guard, Rust/TypeScript checks, and the Node/Bun addon tests, then runs `quickgui build --upload`. This packages Linux (`tar.gz`, `install.sh`, `.deb`) and Windows (NSIS installer and portable archive), signs the Sparkle-compatible appcast, and uploads everything to a **draft** GitHub release.
-4. After both targets have uploaded, publish the draft to make the update feed live: `gh release edit v<version> --draft=false`.
+1. Bump `version` in both `package.json` and `crates/picsie-desktop/Cargo.toml`,
+   update its Cargo.lock, and add a dated version section to [CHANGELOG.md](CHANGELOG.md).
+2. Tag `v<version>` and push the tag. CI checks the tag, package and binary versions.
+3. Both targets run checks and tests, build native packages, verify extracted
+   binaries, and upload artifacts. A final job uploads the packages and SHA-256
+   checksums to one **draft** GitHub release with the changelog's release notes.
+4. Review the artifacts, then publish the draft when ready.
 
-The updater's private signing key is the `QUICKGUI_UPDATER_PRIVATE_KEY` repository secret (the contents of the `quickgui-update.key` file from `npx quickgui keygen`); its public half is committed in [quickgui.config.ts](quickgui.config.ts). Installed apps read the appcast and `install.sh`/`latest-*.txt` pointers from `releases/latest/download`, so nothing moves until the draft is published. Windows installers are unsigned (SmartScreen will warn), macOS is not built, and Windows/Linux packages have only been smoke-tested through the app's own checks.
-
-Windows packaging carries [scripts/patch-quickgui-nsis.mjs](scripts/patch-quickgui-nsis.mjs) (applied on `npm install`): QuickGUI 0.1.6's NSIS generator writes `InstallDirRegKey SHCTX`, which makensis rejects because `InstallDirRegKey` never accepts `SHCTX` as its root key. Remove the patch once an upstream QuickGUI release fixes the generator.
+The native application currently uses manual upgrades from release downloads.
+It does not use the QuickGUI Sparkle appcast or `QUICKGUI_UPDATER_PRIVATE_KEY`.
+Existing QuickGUI installations do not automatically migrate to this native app.
+Windows installers are unsigned; macOS is not in the release matrix. No release
+is published by ordinary branch pushes.
 
 ## Attribution
 
