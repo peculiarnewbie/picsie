@@ -746,7 +746,7 @@ impl Desktop {
         } else {
             f32::from(position.y)
         };
-        for row in &state.layer_rows {
+        for row in state.layer_rows.iter() {
             if let Some(&[left, top, width, height]) = bounds.get(&format!("layer-{}", row.id)) {
                 let eligible = if drag.mask {
                     row.id != drag.id

@@ -1,5 +1,5 @@
 //! Desktop transport only. The worker owns the existing editor and all raster/file work.
-use crate::state::Snapshot;
+use crate::state::{Snapshot, SnapshotPublisher};
 use anyhow::{Result, ensure};
 use picsie_core::{
     editor::{Command, Editor, PaintTarget, Tool},
@@ -80,7 +80,8 @@ pub struct Frame {
     pub render_ms: f64,
     pub pixels_ms: f64,
     pub thumbnails_ms: f64,
-    pub thumbnails: Vec<(String, Arc<picsie_core::thumbnail::Thumbnail>)>,
+    pub snapshot_ms: f64,
+    pub thumbnails: picsie_core::thumbnail::ThumbnailSet,
 }
 struct Request {
     operation: Operation,
@@ -347,6 +348,10 @@ impl Engine {
                 let mut renderer = Renderer::default();
                 let mut thumbnails = picsie_core::thumbnail::Thumbnails::default();
                 let mut rulers = picsie_core::placement::Rulers::default();
+                let mut snapshots = SnapshotPublisher::default();
+                let mut source_thumbnails = Arc::new(Vec::new());
+                let mut ruler_thumbnails = Vec::new();
+                let mut published_thumbnails = source_thumbnails.clone();
                 let mut sequence = 0;
                 let mut pending_since = None;
                 let mut command_ms = 0.;
@@ -369,7 +374,7 @@ impl Engine {
                             let result = result
                                 .map(|value| value.expect("operation result"))
                                 .map_err(|e| e.to_string());
-                            match Snapshot::capture(&editor) {
+                            match snapshots.capture(&editor) {
                                 Ok(state) => {
                                     let _ = events_tx.send(Completion {
                                         sequence,
@@ -410,24 +415,46 @@ impl Engine {
                         let pixels = bgra(&mut surface)?;
                         let pixels_ms = started.elapsed().as_secs_f64() * 1000.;
                         let started = Instant::now();
-                        let mut thumbnails =
-                            thumbnails.update(&editor.history.document, &mut renderer)?;
-                        thumbnails.extend(rulers.update(
+                        let sources = thumbnails.update(&editor.history.document, &mut renderer)?;
+                        let next_rulers = rulers.update(
                             &editor.history.document,
                             &editor.viewport,
                             editor.display_scale,
                             editor.view_options.rulers,
-                        )?);
+                        )?;
+                        if !Arc::ptr_eq(&sources, &source_thumbnails)
+                            || next_rulers.len() != ruler_thumbnails.len()
+                            || next_rulers.iter().zip(&ruler_thumbnails).any(
+                                |((id, image), (old_id, old_image))| {
+                                    id != old_id || !Arc::ptr_eq(image, old_image)
+                                },
+                            )
+                        {
+                            published_thumbnails = Arc::new(
+                                sources
+                                    .iter()
+                                    .cloned()
+                                    .chain(next_rulers.iter().cloned())
+                                    .collect(),
+                            );
+                            source_thumbnails = sources;
+                            ruler_thumbnails = next_rulers;
+                        }
+                        let thumbnails_ms = started.elapsed().as_secs_f64() * 1000.;
+                        let started = Instant::now();
+                        let state = snapshots.capture(&editor)?;
+                        let snapshot_ms = started.elapsed().as_secs_f64() * 1000.;
                         Ok(Frame {
                             pixels,
                             width: surface.width() as u32,
                             height: surface.height() as u32,
                             pixels_ms,
-                            thumbnails_ms: started.elapsed().as_secs_f64() * 1000.,
-                            thumbnails,
+                            thumbnails_ms,
+                            snapshot_ms,
+                            thumbnails: published_thumbnails.clone(),
                             render_ms,
                             command_ms,
-                            state: Snapshot::capture(&editor)?,
+                            state,
                             sequence,
                             queued_at,
                         })

@@ -3,6 +3,7 @@
 mod interaction_polish;
 mod layer_polish;
 mod operations;
+pub mod publication;
 pub use interaction_polish::TransformField;
 mod placement;
 mod text;

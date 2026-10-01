@@ -462,7 +462,7 @@
           "polish": "partial",
           "verification": "unverified",
           "behavior": "Fit, Actual Pixels and \u00d71.25 zoom controls",
-          "gap": "Controls work through the Rust viewport; dedicated Zoom tool and editable percent field remain separate gaps. The eighth performance pass rewrites layer queries and retained projection. The previous 1,000-complex-layer metadata bottleneck is reduced from 675.7 ms to 12.6 ms desktop capture in the focused acceptance check. Full stress-matrix repetition, physical display timing and cross-platform cadence remain unverified.",
+          "gap": "Controls work through the Rust viewport; dedicated Zoom tool and editable percent field remain separate gaps. The ninth performance pass publishes typed shared metadata without changing viewport/rendering semantics. Three native 1,000-layer launches and four broader files (including 24 MP) are recorded, along with variable GIMP controls and an untimed reference-gesture failure. Full stress-matrix repetition, physical display timing, post-paint large scenes and cross-platform cadence remain unverified.",
           "evidence": [
             "crates/picsie-core/examples/performance_stress.rs",
             "docs/desktop-gimp-experiments.md",
@@ -470,12 +470,18 @@
             "crates/picsie-core/examples/performance_snapshot_parts.rs",
             "scripts/compare-stress-navigation.py",
             "crates/picsie-core/src/layer_index.rs",
-            "crates/picsie-core/src/render/projection.rs"
+            "crates/picsie-core/src/render/projection.rs",
+            "crates/picsie-core/src/editor/publication.rs",
+            "crates/picsie-core/tests/publication.rs",
+            "crates/picsie-desktop/examples/performance_frames.rs"
           ],
           "upstream": [
             "Compositor/Document/LayerGroups.swift",
             "Compositor/Document/LiveLayerMask.swift",
-            "Compositor/Rendering/LiveMaskRenderer.swift"
+            "Compositor/Rendering/LiveMaskRenderer.swift",
+            "Compositor/Rendering/CanvasViewport.swift",
+            "Compositor/Rendering/EditorCanvas.swift",
+            "Compositor/UI/NativeLayerList.swift"
           ]
         },
         {
@@ -497,7 +503,7 @@
           "polish": "partial",
           "verification": "unverified",
           "behavior": "Hand drag pans; Space temporarily pans and restores prior tool",
-          "gap": "Closed-hand feedback needs dedicated native verification. The eighth pass removes per-row/per-option document cloning and virtualizes the layer list; focused 1,000-layer pan observations are recorded in the performance report. Fit/400% trajectories, off-canvas content, physical display cadence and post-paint/Undo workflows still require broader performance testing.",
+          "gap": "Closed-hand feedback needs dedicated native verification. The ninth pass reuses metadata, thumbnails and inspector inputs across viewport updates. Three focused native launches improve observed revisited pan from 21.5 to 47.5 updates/s; four broader navigation files pass, including scattered 1,000-layer and 24 MP layouts. These are framebuffer observations, not physical FPS. Fit/400% trajectories, off-canvas content, p95 display cadence and large post-paint/Undo workflows still need broader testing.",
           "evidence": [
             "crates/picsie-core/examples/performance_stress.rs",
             "docs/desktop-gimp-experiments.md",
@@ -505,12 +511,18 @@
             "crates/picsie-core/examples/performance_snapshot_parts.rs",
             "scripts/compare-stress-navigation.py",
             "crates/picsie-core/src/layer_index.rs",
-            "crates/picsie-core/src/render/projection.rs"
+            "crates/picsie-core/src/render/projection.rs",
+            "crates/picsie-core/src/editor/publication.rs",
+            "crates/picsie-core/tests/publication.rs",
+            "crates/picsie-desktop/examples/performance_frames.rs"
           ],
           "upstream": [
             "Compositor/Document/LayerGroups.swift",
             "Compositor/Document/LiveLayerMask.swift",
-            "Compositor/Rendering/LiveMaskRenderer.swift"
+            "Compositor/Rendering/LiveMaskRenderer.swift",
+            "Compositor/Rendering/CanvasViewport.swift",
+            "Compositor/Rendering/EditorCanvas.swift",
+            "Compositor/UI/NativeLayerList.swift"
           ]
         },
         {
@@ -2146,7 +2158,7 @@
           "polish": "adapted",
           "verification": "native",
           "behavior": "52-point rows, canvas-shaped cached thumbnails, title/dimensions",
-          "gap": "52-point rows, adjacent 36-point image/30-point mask slots, chain control, disabled-mask mark and accessible list/option labels are implemented. GPUI uniform_list now builds visible rows, following NativeLayerList cell reuse; metadata IDs and hierarchy/clipping queries are indexed. The eighth pass verifies expanded 1,000-layer scrolling, traversal and drag autoscroll, with exact canvas restoration. Platform screen-reader/HiDPI behavior, additional row workflows and broader stress coverage remain unverified. The old every-row construction and repeated graph-query costs are retained as historical baseline evidence, not current implementation.",
+          "gap": "52-point rows, 36-point image/30-point mask slots, chain/disabled-mask marks and accessible labels retain the Compositor structure. The ninth pass shares row/document/thumbnail metadata and skips unchanged reconciliation; three stress launches retain list traversal and exact reorder/autoscroll Undo. The full native workflow suite passes 226 checks and screenshots were inspected. Additional row workflows and broader stress coverage, platform screen-reader behavior, physical HiDPI, Windows/macOS GUI and Wayland remain unverified. Older construction/query costs remain historical evidence.",
           "evidence": [
             "crates/picsie-desktop/verify.py",
             "crates/picsie-core/tests/layers_masks_colors.rs",
@@ -2159,7 +2171,10 @@
             "crates/picsie-core/examples/performance_snapshot_parts.rs",
             "scripts/compare-stress-navigation.py",
             "crates/picsie-desktop/src/state.rs",
-            "crates/picsie-core/src/layer_index.rs"
+            "crates/picsie-core/src/layer_index.rs",
+            "crates/picsie-core/src/editor/publication.rs",
+            "crates/picsie-core/tests/publication.rs",
+            "crates/picsie-desktop/examples/performance_frames.rs"
           ],
           "nativeChecks": [
             "inline layer rename commits with Return",
@@ -2170,7 +2185,9 @@
             "Compositor/UI/NativeLayerList.swift",
             "Compositor/Document/LayerGroups.swift",
             "Compositor/Document/LiveLayerMask.swift",
-            "Compositor/Rendering/LiveMaskRenderer.swift"
+            "Compositor/Rendering/LiveMaskRenderer.swift",
+            "Compositor/Rendering/CanvasViewport.swift",
+            "Compositor/Rendering/EditorCanvas.swift"
           ]
         },
         {

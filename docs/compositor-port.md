@@ -597,3 +597,29 @@ stays in Rust; no new transport format, blend math or source sampling is introdu
 Local cross-chunk/prefix tests compare every byte with fresh rendering and check
 cache reuse and external-source invalidation. Earlier-prefix edits still require
 replaying the lower stack; visible-priority scheduling and a pyramid remain gaps.
+
+### Native viewport publication adaptation (2026-10-01)
+
+`editor/publication.rs` owns typed, immutable metadata for the GPUI application.
+The policy follows pinned `Rendering/CanvasViewport.swift` (viewport is separate
+from document pixels), `Rendering/EditorCanvas.swift::synchronizeDisplay/draw`
+(redraw on relevant state changes), and `UI/NativeLayerList.swift::Coordinator.update`
+(reuse unchanged thumbnails/cells and update affected rows). MIT © 2026 Wonder
+Assembly LLC; Compositor revision remains `609dbeae2ef68ef4fc82d67e4981a49852eb6e13`.
+The Rust publisher and sharing/invalidation protocol are transport adaptations,
+not translated Swift algorithms or a new editor-state authority. No viewport,
+interpolation or raster algorithm changes accompany this publication pass.
+
+The worker shares document metadata, row/candidate collections and thumbnails
+across viewport-only updates; inspector synchronization follows changed inputs.
+Cache checks include every authoritative scalar and immutable resource identity,
+including live edits before history commits. Six local publication regressions
+compare consumed metadata with the existing serialized contract and check sharing,
+live edits, Undo, collapsed-target capability queries and pixel-resource changes.
+These are supplemental transport tests, not newly translated upstream fixtures.
+Existing translated viewport/transform/guide and rendering tests remain applicable.
+
+Pinned GIMP `app/display/gimpdisplayshell-scroll.c` and `gimpdisplayshell-scale.c`
+were inspected as secondary performance references: retained viewport pixels and
+cached scale values explain why navigation need not revisit all layer data.
+No GIMP implementation was copied or translated. GIMP's UX is not adopted.

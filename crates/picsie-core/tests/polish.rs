@@ -317,25 +317,19 @@ fn local_mask_thumbnail_selection_enable_reuses_and_raster_edit_invalidates() {
     e.history.document.layers[0].mask = Some(mask(MaskMode::Reveal));
     let mut cache = Thumbnails::default();
     let mut renderer = Renderer::default();
-    let first = cache
-        .update(&e.history.document, &mut renderer)
-        .unwrap()
-        .remove(1)
-        .1;
+    let first = cache.update(&e.history.document, &mut renderer).unwrap()[1]
+        .1
+        .clone();
     e.paint_target = PaintTarget::Mask;
     Arc::make_mut(e.history.document.layers[0].mask.as_mut().unwrap()).enabled = false;
-    let again = cache
-        .update(&e.history.document, &mut renderer)
-        .unwrap()
-        .remove(1)
-        .1;
+    let again = cache.update(&e.history.document, &mut renderer).unwrap()[1]
+        .1
+        .clone();
     assert!(Arc::ptr_eq(&first, &again));
     Arc::make_mut(e.history.document.layers[0].mask.as_mut().unwrap()).base = MaskMode::Hide;
-    let changed = cache
-        .update(&e.history.document, &mut renderer)
-        .unwrap()
-        .remove(1)
-        .1;
+    let changed = cache.update(&e.history.document, &mut renderer).unwrap()[1]
+        .1
+        .clone();
     assert!(!Arc::ptr_eq(&first, &changed));
     e.history.document.layers[0].mask = None;
     assert_eq!(

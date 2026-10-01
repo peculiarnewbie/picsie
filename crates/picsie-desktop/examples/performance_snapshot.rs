@@ -9,7 +9,7 @@ use picsie_core::{
 use serde_json::json;
 use std::{hint::black_box, path::Path, time::Instant};
 
-#[allow(dead_code)]
+#[allow(dead_code, unused_imports)]
 #[path = "../src/state.rs"]
 mod state;
 
@@ -39,6 +39,7 @@ fn main() -> Result<()> {
         }
         let document = serde_json::to_value(&editor.history.document)?;
         let selection = editor.selected_id().map(str::to_owned);
+        let mut publisher = state::SnapshotPublisher::default();
         for phase in ["expanded", "collapsed"] {
             if phase == "collapsed" {
                 if groups.is_empty() {
@@ -53,6 +54,7 @@ fn main() -> Result<()> {
             ensure!(editor.history.info().undo_count == 0);
             let mut plain_ms = vec![];
             let mut desktop_ms = vec![];
+            let mut shared_ms = vec![];
             for sample in 0..12 {
                 let start = Instant::now();
                 let value = black_box(editor.snapshot());
@@ -62,9 +64,14 @@ fn main() -> Result<()> {
                 let value = black_box(state::Snapshot::capture(&editor)?);
                 let desktop = start.elapsed().as_secs_f64() * 1000.;
                 drop(value);
+                let start = Instant::now();
+                let value = black_box(publisher.capture(&editor)?);
+                let shared = start.elapsed().as_secs_f64() * 1000.;
+                drop(value);
                 if sample >= 2 {
                     plain_ms.push(plain);
                     desktop_ms.push(desktop);
+                    shared_ms.push(shared);
                 }
             }
             let snapshot = state::Snapshot::capture(&editor)?;
@@ -74,6 +81,7 @@ fn main() -> Result<()> {
                 "rows": snapshot.layer_rows.len(),
                 "snapshot_json_bytes": serde_json::to_vec(&editor.snapshot())?.len(),
                 "editor_snapshot_ms": plain_ms, "desktop_snapshot_ms": desktop_ms,
+                "desktop_cached_ms": shared_ms,
                 "document_unchanged": true, "selection_unchanged": true,
                 "history_unchanged": true
             }));
@@ -82,7 +90,7 @@ fn main() -> Result<()> {
     println!(
         "{}",
         serde_json::to_string_pretty(&json!({
-            "scope": "Actual Editor::snapshot and desktop Snapshot::capture; no rendering, UI or input latency. Fresh editor per fixture, top folder selected in both phases, two warmups then ten captures per path/phase. Local stress fixtures, not upstream ports.",
+            "scope": "Actual legacy Editor::snapshot, one-off typed Snapshot::capture, and retained SnapshotPublisher::capture; no rendering, UI or input latency. Fresh editor per fixture, top folder selected in both phases, two warmups then ten captures per path/phase. Local stress fixtures, not upstream ports.",
             "results": results
         }))?
     );

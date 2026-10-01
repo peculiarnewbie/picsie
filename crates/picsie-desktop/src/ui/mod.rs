@@ -88,6 +88,7 @@ pub struct Desktop {
     state_sequence: u64,
     image: Option<Arc<RenderImage>>,
     thumbnails: HashMap<String, (Arc<picsie_core::thumbnail::Thumbnail>, Arc<RenderImage>)>,
+    thumbnail_set: Option<picsie_core::thumbnail::ThumbnailSet>,
     bounds: Bounds<Pixels>,
     physical_size: (u32, u32),
     display_scale: f32,
@@ -284,6 +285,7 @@ impl Desktop {
             state_sequence: 0,
             image: None,
             thumbnails: HashMap::new(),
+            thumbnail_set: None,
             bounds: Bounds::default(),
             physical_size: (0, 0),
             display_scale: 1.,
@@ -532,32 +534,46 @@ impl Desktop {
                     self.busy = false;
                 }
                 Ok(frame) => {
-                    self.thumbnails.retain(|id, (_, image)| {
-                        let keep = frame.thumbnails.iter().any(|(new, _)| new == id);
-                        if !keep {
-                            let _ = window.drop_image(image.clone());
+                    let accepted = Instant::now();
+                    if self
+                        .thumbnail_set
+                        .as_ref()
+                        .is_none_or(|old| !Arc::ptr_eq(old, &frame.thumbnails))
+                    {
+                        let ids: HashSet<_> =
+                            frame.thumbnails.iter().map(|(id, _)| id.as_str()).collect();
+                        self.thumbnails.retain(|id, (_, image)| {
+                            let keep = ids.contains(id.as_str());
+                            if !keep {
+                                let _ = window.drop_image(image.clone());
+                            }
+                            keep
+                        });
+                        for (id, thumbnail) in frame.thumbnails.iter() {
+                            if self
+                                .thumbnails
+                                .get(id)
+                                .is_some_and(|(old, _)| Arc::ptr_eq(old, thumbnail))
+                            {
+                                continue;
+                            }
+                            let image = image::RgbaImage::from_raw(
+                                thumbnail.width,
+                                thumbnail.height,
+                                thumbnail.pixels.clone(),
+                            )
+                            .expect("native thumbnail dimensions");
+                            let image = Arc::new(RenderImage::new(vec![image::Frame::new(image)]));
+                            if let Some((_, old)) = self
+                                .thumbnails
+                                .insert(id.clone(), (thumbnail.clone(), image))
+                            {
+                                let _ = window.drop_image(old);
+                            }
                         }
-                        keep
-                    });
-                    for (id, thumbnail) in frame.thumbnails {
-                        if self
-                            .thumbnails
-                            .get(&id)
-                            .is_some_and(|(old, _)| Arc::ptr_eq(old, &thumbnail))
-                        {
-                            continue;
-                        }
-                        let image = image::RgbaImage::from_raw(
-                            thumbnail.width,
-                            thumbnail.height,
-                            thumbnail.pixels.clone(),
-                        )
-                        .expect("native thumbnail dimensions");
-                        let image = Arc::new(RenderImage::new(vec![image::Frame::new(image)]));
-                        if let Some((_, old)) = self.thumbnails.insert(id, (thumbnail, image)) {
-                            let _ = window.drop_image(old);
-                        }
+                        self.thumbnail_set = Some(frame.thumbnails.clone());
                     }
+                    let thumbnails_apply_ms = accepted.elapsed().as_secs_f64() * 1000.;
                     let image = image::RgbaImage::from_raw(frame.width, frame.height, frame.pixels)
                         .expect("native frame dimensions");
                     let image = Arc::new(RenderImage::new(vec![image::Frame::new(image)]));
@@ -566,8 +582,13 @@ impl Desktop {
                     }
                     self.sequence = frame.sequence;
                     self.queued_at = frame.queued_at;
-                    self.frame_metrics = json!({"command_ms":frame.command_ms,"render_ms":frame.render_ms,"pixels_ms":frame.pixels_ms,"thumbnails_ms":frame.thumbnails_ms,"width":frame.width,"height":frame.height});
+                    self.frame_metrics = json!({"command_ms":frame.command_ms,"render_ms":frame.render_ms,"pixels_ms":frame.pixels_ms,"thumbnails_ms":frame.thumbnails_ms,"snapshot_ms":frame.snapshot_ms,"thumbnails_apply_ms":thumbnails_apply_ms,"width":frame.width,"height":frame.height});
+                    let state_apply = Instant::now();
                     self.apply_state(frame.state, frame.sequence, window, cx);
+                    self.frame_metrics["state_apply_ms"] =
+                        json!(state_apply.elapsed().as_secs_f64() * 1000.);
+                    self.frame_metrics["frame_accept_ms"] =
+                        json!(accepted.elapsed().as_secs_f64() * 1000.);
                 }
             }
             cx.notify();
@@ -590,16 +611,24 @@ impl Desktop {
             self.cancel_modal(window, cx);
         }
         let changed = self.selected_id.as_deref() != state.selection.ids.last().map(String::as_str);
+        let controls_changed = self
+            .state
+            .as_ref()
+            .is_none_or(|old| !state.same_controls(old));
         let edit_text = self
             .state
             .as_ref()
             .is_some_and(|previous| state.text_edit_requests > previous.text_edit_requests);
         self.selected_id = state.selection.ids.last().cloned();
-        window.set_window_title(&format!(
-            "{}{} — Picsie",
-            state.document.name,
-            if state.history.dirty { " •" } else { "" }
-        ));
+        if self.state.as_ref().is_none_or(|old| {
+            old.document.name != state.document.name || old.history.dirty != state.history.dirty
+        }) {
+            window.set_window_title(&format!(
+                "{}{} — Picsie",
+                state.document.name,
+                if state.history.dirty { " •" } else { "" }
+            ));
+        }
         let tool_changed = self
             .state
             .as_ref()
@@ -611,7 +640,9 @@ impl Desktop {
         if tool_changed {
             self.notice = self.tool_hint();
         }
-        self.sync_controls(changed, window, cx);
+        if controls_changed {
+            self.sync_controls(changed, window, cx);
+        }
         if self.state.as_ref().is_some_and(|s| s.text_editing)
             && sequence >= self.text_input_sequence
         {

@@ -2024,3 +2024,161 @@ registry validation are recorded alongside the benchmark logs.
 both Rust checks), `npm test`, `npm run test:bun`, and `git diff --check` pass on
 the final sparse-checkpoint sources. The final source/binary hash manifest still
 matches the workspace after verification; tested editor processes were stopped.
+
+## Ninth pass: shared native viewport publication (2026-10-01)
+
+The eighth pass made layer queries and clipping/reorder compositing practical,
+but left the desktop rebuilding and deserializing every layer's JSON metadata
+on each viewport frame. It also revisited all thumbnails, performed quadratic
+membership checks, and rebuilt unchanged inspector choices. This pass profiles
+those phases, replaces that publication path coherently, then measures the final
+implementation. No rendering-quality or viewport-semantics changes are involved.
+
+Pinned Compositor `CanvasViewport.swift`, `EditorCanvas.swift::synchronizeDisplay/draw`,
+`NativeLayerList.swift::Coordinator.update` and applicable existing transform/guide
+fixtures were inspected. Compositor keeps viewport state separate and reuses
+unchanged cells/assets. Pinned GIMP display scroll/scale code was inspected as a
+secondary functionality/performance reference, including its retained display
+pixels and cached scale values. No GIMP implementation was copied or translated.
+The new typed publisher is a Rust transport adaptation, not a literal Swift port.
+
+### Implementation and compatibility
+
+`editor/publication.rs` now constructs read-only native metadata directly in
+Rust. A worker-owned `SnapshotPublisher` shares document metadata, the ID index,
+rows, mask-source candidates and current text data across unchanged publications.
+It always refreshes viewport, cursor, selection feedback and transient state.
+The existing addon/QuickGUI serialized contract is unchanged.
+
+Validation compares the actual document, including uncommitted edits, instead
+of history revision or a list of commands. Every scalar participates; immutable
+content/mask/stroke identities avoid walking source pixels or stroke samples.
+Exhaustive model destructuring makes a newly added field require an explicit
+cache decision. Rows also track collapse state; candidates track the selected
+target independently. The thumbnail producer shares an unchanged collection,
+indexed membership removes quadratic reconciliation, and the desktop skips
+unchanged thumbnail and inspector updates. Rulers still update with the viewport.
+
+Six supplemental local tests compare native metadata with the prior serialized
+contract, including image/mask payload omission, shared viewport publication,
+live edits, Undo/deletion/direct mutation, collapsed-target capabilities,
+session controls and pixel-resource replacement. They are transport regressions,
+not newly translated upstream fixtures. Existing translated rendering, viewport,
+mask, transform and guide tests remain applicable.
+
+### Worker phase experiment
+
+`performance_frames.rs` drives the production worker without GPUI. It separates
+cold composition from warm command/render/readback/thumbnail/snapshot phases.
+Each case has two warmups and ten recorded samples. Document metadata/history
+invariants are checked outside timing. Baseline and final executables are retained
+with source/binary hashes in `artifacts/navigation-publication-2026-10-01/`.
+
+| 8.64 MP / 1,000 complex layers, warm worker phase | Before publication rewrite | After |
+| --- | ---: | ---: |
+| Pan metadata capture | 15.84 ms | 0.150 ms |
+| Pan thumbnail bookkeeping | 3.29 ms | 0.153 ms |
+| Pan render | 5.75 ms | 5.22 ms |
+| Pan frame availability, excluding GPUI/display | 25.42 ms | 6.06 ms |
+| Fit → 100% frame availability | 25.16 ms | 5.21 ms |
+| 100% → Fit frame availability | 30.85 ms | 11.31 ms |
+
+The standalone metadata diagnostic selects the top folder, unlike the worker's
+selected leaf. It measures a retained publication around 0.100 ms expanded /
+0.109 ms collapsed, and one-off typed capture around 1.20 / 1.09 ms. Legacy JSON
+snapshot capture remains around 11 ms. These separate phase medians must not be
+added or subtracted as a decomposition. Cold first composition still takes
+seconds; this pass does not implement visible-priority or multiresolution rendering.
+
+### Native interaction cohorts
+
+The focused cohort uses three fresh launches per app, three recorded observations
+per zoom/resize/list-wheel case per launch, and the existing 100% two-second pan
+trajectory. All three Picsie launches pass: **66 observations**, including exact
+reorder Undo, list traversal and row-drag/autoscroll Undo. GIMP completes two full
+launches and eight earlier validated observations in its remaining launch:
+**42 observations** in total. That launch fails an **untimed** pan-start assertion;
+its screenshot/status shows a Move gesture rather than pan. All completed rows
+and the failure are retained. No failed result is silently removed or retried.
+
+A first ORA setup was interrupted during untimed GIMP import of 1,000 separate
+PNG layers, before any timed sample. Final GIMP controls use the already validated
+native XCF fixtures containing the same baked assets. Initial loading is outside
+interaction timing. The interrupted setup and final cohorts remain separate.
+GIMP complex controls retain their prior limitations: masks/effects/transforms
+are baked, live clipping is absent, and group behavior differs from Picsie.
+
+| Focused 1,000-layer complex file | Eighth-pass Picsie (one launch) | New Picsie (three launches) | Fresh GIMP control |
+| --- | ---: | ---: | ---: |
+| Fit → 100%, observed final frame | 64.6 ms | 40.8 ms (n=9) | 57.4 ms (n=9; 16.6–123.1 ms range) |
+| 100% → Fit, observed final frame | 70.3 ms | 42.7 ms (n=9) | 93.7 ms (n=9; 29.9–151.9 ms range) |
+| Revisited pan, observed updates/s | 21.5 | 47.5 (n=6) | 50.5 (n=4; 26.4–55.0 range) |
+| Adjacent reorder, observed final frame | 158.3 ms | 151.0 ms (n=3) | 1,140.3 ms (n=3; 149.3–1,637.0 ms range) |
+| Row-autoscroll drop, first visible result | 901.6 ms | 910.9 ms (n=3) | Not matched |
+| Row-autoscroll exact Undo | 740.7 ms | 732.4 ms (n=3) | Not matched |
+
+GIMP's focused results vary substantially, with host load/memory pressure recorded
+in its manifests (including approximately 1.34 GiB available and load 10.2 at the
+failed launch's end). These measurements do **not** establish Picsie beating GIMP
+at zoom or reorder. Historical cleaner GIMP controls remain approximately 17 ms
+zoom and 153 ms adjacent reorder; later broad zoom controls below remain near
+17 ms. All valid slow observations, ranges and failure states are preserved.
+
+A separate broader navigation cohort uses one launch per app for four more files,
+three zoom/resize observations each, and three pan trajectories (first visit plus
+two revisits). GIMP uses its supported middle-button pan, which enters the same
+scroll path directly without temporary Space-tool activation. The input protocol
+is recorded in the driver manifest, and this cohort is not pooled with the focused
+Space cohort. **All eight launches / 120 observations pass.**
+
+| Broader file | Picsie Fit → 100% | GIMP Fit → 100% | Picsie revisited pan updates/s | GIMP revisited pan updates/s |
+| --- | ---: | ---: | ---: | ---: |
+| 8.64 MP / 100 simple overlapping layers | 48.1 ms | 16.7 ms | 47.9 | 48.7 |
+| 8.64 MP / 1,000 complex scattered layers | 38.6 ms | 16.8 ms | 49.9 | 50.2 |
+| 24 MP / 300 complex overlapping layers | 47.8 ms | 17.6 ms | 51.9 | 43.7 |
+| 24 MP / 300 complex scattered layers | 38.2 ms | 16.6 ms | 54.4 | 44.7 |
+
+All native timings stop at Xvfb framebuffer observation on RADV RENOIR with software
+WSI presentation. They are observed changes, **not physical display FPS**, a 60 Hz
+p95 guarantee, or a complete stress-matrix claim. The original complete-pixel
+endpoint checks are retained: Picsie exact bytes, GIMP at most one channel step.
+The broader runs cover window shrink/grow as well as navigation. They do not
+cover every earlier-stack reorder, post-paint large scene, 400% trajectory,
+off-canvas crop preview or physical display configuration.
+
+### Native phase diagnostic and UI verification
+
+A separate traced native zoom diagnostic on the 1,000-layer file records three
+samples per direction after two warmups. Tracing serializes metadata before paint;
+its times are not pooled with untraced comparisons. At 100%, median snapshot
+capture is 0.157 ms, thumbnail UI reconciliation 0.0003 ms, state application
+0.0196 ms and total frame acceptance 0.0457 ms. Queue-to-UI-paint is about 30.7 ms,
+while CPU rendering is about 6.0 ms. Fit records similar acceptance costs and
+about 11.8 ms rendering. This points to remaining delivery/frame scheduling
+between the worker and UI paint; it does not isolate an exact GPUI subsystem or
+measure physical presentation. Further work should investigate that boundary,
+not assume more metadata caching will close the remaining zoom gap.
+
+The full real-window suite passes **226 checks**, including layers/masks/colors,
+text, selection, numeric transforms, image distortion, crop, history, clipboard,
+file dialogs and minimum-window controls. Actual `32-transform-controls.png`,
+`27-layers-masks-colors.png` and the focused 1,000-layer `fit.png` were inspected:
+fields, thumbnails/mask slots, selected rows, panel/footer and transform handles
+remain aligned. This workflow suite uses Linux X11/software Vulkan and is separate
+from measured RADV performance launches. No broad cross-platform polish claim is made.
+
+Reproduction tools: `performance_frames.rs`, `performance_snapshot.rs`,
+`compare-stress-navigation.py` (including `--gimp-pan`), and
+`perf/summarize-stress-navigation.py`. Raw samples, partial results, hashes,
+commands/logs, screenshots, native diagnostic script and comparison summaries are
+retained under `artifacts/navigation-publication-2026-10-01/`.
+
+Final validation: `npm test` passes **191 core Rust tests, 17 desktop Rust tests,
+26 actual Node addon/application tests and 7 architecture guards**. Bun passes
+23 actual addon tests. `npm run check`, generated registry validation, the
+standalone architecture guard and `git diff --check` pass. Tested production
+source/binary hashes remain matched after verification. Benchmark/verification
+applications are stopped; source quality and the legacy command contract remain
+unchanged. Remaining performance work includes delivery/frame scheduling, cold
+first composition, broader earlier-stack/post-paint workloads and physical-display
+percentile measurement.

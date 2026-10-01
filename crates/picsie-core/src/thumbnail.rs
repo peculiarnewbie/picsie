@@ -12,6 +12,7 @@ pub struct Thumbnail {
     pub height: u32,
     pub pixels: Vec<u8>,
 }
+pub type ThumbnailSet = Arc<Vec<(String, Arc<Thumbnail>)>>;
 struct Entry {
     layer: Layer,
     canvas: (u32, u32),
@@ -21,6 +22,8 @@ struct Entry {
 pub struct Thumbnails {
     entries: HashMap<String, Entry>,
     masks: HashMap<String, Entry>,
+    document: Option<Document>,
+    published: ThumbnailSet,
 }
 fn same_mask(a: &Layer, b: &Layer) -> bool {
     let (Some(a), Some(b)) = (&a.mask, &b.mask) else {
@@ -77,16 +80,19 @@ fn same_pixels(a: &Layer, b: &Layer) -> bool {
 impl Thumbnails {
     /// Appearance/selection changes reuse the picture, just as NativeLayerList's ThumbnailKey does.
     /// Deleted layers release both their source reference and their small image.
-    pub fn update(
-        &mut self,
-        doc: &Document,
-        renderer: &mut Renderer,
-    ) -> Result<Vec<(String, Arc<Thumbnail>)>> {
+    pub fn update(&mut self, doc: &Document, renderer: &mut Renderer) -> Result<ThumbnailSet> {
+        if self
+            .document
+            .as_ref()
+            .is_some_and(|old| old.retained_eq(doc))
+        {
+            return Ok(self.published.clone());
+        }
         renderer.retain_thumbnail_sources(doc);
-        self.entries
-            .retain(|id, _| doc.layers.iter().any(|l| &l.id == id));
+        let ids: HashMap<_, _> = doc.layers.iter().map(|l| (l.id.as_str(), l)).collect();
+        self.entries.retain(|id, _| ids.contains_key(id.as_str()));
         self.masks
-            .retain(|id, _| doc.layers.iter().any(|l| &l.id == id && l.mask.is_some()));
+            .retain(|id, _| ids.get(id.as_str()).is_some_and(|l| l.mask.is_some()));
         let mut result = Vec::new();
         for layer in &doc.layers {
             let mut mask_thumbnail = None;
@@ -192,7 +198,9 @@ impl Thumbnails {
             result.push((layer.id.clone(), self.entries[&layer.id].image.clone()));
             result.extend(mask_thumbnail);
         }
-        Ok(result)
+        self.document = Some(doc.clone());
+        self.published = Arc::new(result);
+        Ok(self.published.clone())
     }
 }
 #[cfg(test)]
@@ -223,9 +231,9 @@ mod tests {
         doc.layers.push(layer);
         let image = Thumbnails::default()
             .update(&doc, &mut Renderer::default())
-            .unwrap()
-            .remove(0)
-            .1;
+            .unwrap()[0]
+            .1
+            .clone();
         assert_eq!((image.width, image.height), (72, 36));
         let at = |x: usize, y: usize| &image.pixels[(y * 72 + x) * 4..(y * 72 + x) * 4 + 4];
         assert_eq!(at(25, 10), [0, 0, 255, 255]);
@@ -245,22 +253,27 @@ mod tests {
         ));
         let mut thumbs = Thumbnails::default();
         let mut renderer = Renderer::default();
-        let first = thumbs.update(&doc, &mut renderer).unwrap().remove(0).1;
+        let first_set = thumbs.update(&doc, &mut renderer).unwrap();
+        assert!(Arc::ptr_eq(
+            &first_set,
+            &thumbs.update(&doc, &mut renderer).unwrap()
+        ));
+        let first = thumbs.update(&doc, &mut renderer).unwrap()[0].1.clone();
         doc.layers[0].opacity = 0.5;
         doc.layers[0].name = "Renamed".into();
         doc.layers[0].locked = true;
         assert!(Arc::ptr_eq(
             &first,
-            &thumbs.update(&doc, &mut renderer).unwrap().remove(0).1
+            &thumbs.update(&doc, &mut renderer).unwrap()[0].1.clone()
         ));
         doc.layers[0].x += 10.;
-        let moved = thumbs.update(&doc, &mut renderer).unwrap().remove(0).1;
+        let moved = thumbs.update(&doc, &mut renderer).unwrap()[0].1.clone();
         assert!(!Arc::ptr_eq(&first, &moved));
         doc.layers[0].content = Arc::new(Content::Shape {
             shape: Shape::Rectangle,
             color: "#0000ff".into(),
         });
-        let recolored = thumbs.update(&doc, &mut renderer).unwrap().remove(0).1;
+        let recolored = thumbs.update(&doc, &mut renderer).unwrap()[0].1.clone();
         assert!(!Arc::ptr_eq(&moved, &recolored));
         doc.layers[0].mask = Some(Arc::new(crate::model::LayerMask {
             enabled: true,
@@ -272,15 +285,20 @@ mod tests {
         }));
         assert!(Arc::ptr_eq(
             &recolored,
-            &thumbs.update(&doc, &mut renderer).unwrap().remove(0).1
+            &thumbs.update(&doc, &mut renderer).unwrap()[0].1.clone()
         ));
         doc.width = 200;
         assert!(!Arc::ptr_eq(
             &moved,
-            &thumbs.update(&doc, &mut renderer).unwrap().remove(0).1
+            &thumbs.update(&doc, &mut renderer).unwrap()[0].1.clone()
         ));
         doc.layers.clear();
         assert!(thumbs.update(&doc, &mut renderer).unwrap().is_empty());
+        assert_eq!(
+            first_set.len(),
+            1,
+            "a held publication stays immutable after deletion"
+        );
         assert!(thumbs.entries.is_empty());
     }
 }

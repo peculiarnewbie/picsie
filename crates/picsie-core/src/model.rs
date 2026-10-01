@@ -437,6 +437,71 @@ fn stroke_valid(size: f64, opacity: f64, points: &[Point]) -> bool {
             .all(|p| range(p.x, -100000., 100000.) && range(p.y, -100000., 100000.))
 }
 impl Layer {
+    /// Cache identity for immutable resources plus every scalar metadata field.
+    /// Unlike derived equality, this never walks mask pixels or stroke samples.
+    fn retained_eq(&self, other: &Self) -> bool {
+        // Exhaustive destructuring forces new fields to join the cache contract.
+        let Self {
+            id,
+            parent_id,
+            mask_source_id,
+            name,
+            visible,
+            locked,
+            width,
+            height,
+            x,
+            y,
+            scale_x,
+            scale_y,
+            rotation,
+            flip_x,
+            flip_y,
+            opacity,
+            blend,
+            sampling,
+            brightness,
+            saturation,
+            blur,
+            content,
+            text_layout,
+            strokes,
+            mask,
+        } = self;
+        id == &other.id
+            && parent_id == &other.parent_id
+            && mask_source_id == &other.mask_source_id
+            && name == &other.name
+            && visible == &other.visible
+            && locked == &other.locked
+            && width == &other.width
+            && height == &other.height
+            && x == &other.x
+            && y == &other.y
+            && scale_x == &other.scale_x
+            && scale_y == &other.scale_y
+            && rotation == &other.rotation
+            && flip_x == &other.flip_x
+            && flip_y == &other.flip_y
+            && opacity == &other.opacity
+            && blend == &other.blend
+            && sampling == &other.sampling
+            && brightness == &other.brightness
+            && saturation == &other.saturation
+            && blur == &other.blur
+            && text_layout == &other.text_layout
+            && Arc::ptr_eq(content, &other.content)
+            && strokes.len() == other.strokes.len()
+            && strokes
+                .iter()
+                .zip(&other.strokes)
+                .all(|(a, b)| Arc::ptr_eq(a, b))
+            && match (mask, &other.mask) {
+                (Some(a), Some(b)) => Arc::ptr_eq(a, b),
+                (None, None) => true,
+                _ => false,
+            }
+    }
     pub fn new(name: &str, width: u32, height: u32, content: Content) -> Self {
         Self {
             id: id(),
@@ -567,6 +632,32 @@ impl Layer {
     }
 }
 impl Document {
+    pub(crate) fn retained_eq(&self, other: &Self) -> bool {
+        let Self {
+            format,
+            version,
+            id,
+            resolution,
+            name,
+            width,
+            height,
+            layers,
+            guides,
+        } = self;
+        format == &other.format
+            && version == &other.version
+            && id == &other.id
+            && resolution == &other.resolution
+            && name == &other.name
+            && width == &other.width
+            && height == &other.height
+            && guides == &other.guides
+            && layers.len() == other.layers.len()
+            && layers
+                .iter()
+                .zip(&other.layers)
+                .all(|(a, b)| a.retained_eq(b))
+    }
     pub fn new(name: &str, width: u32, height: u32) -> Result<Self> {
         let doc = Self {
             format: "picsie".into(),

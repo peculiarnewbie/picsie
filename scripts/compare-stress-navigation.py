@@ -25,6 +25,8 @@ spec=importlib.util.spec_from_file_location('comparison',ROOT/'scripts/compare-g
 comparison=importlib.util.module_from_spec(spec);spec.loader.exec_module(comparison)
 
 class Screen(comparison.desktop.Screen):
+    def button(self,down,button=1):
+        self.test.XTestFakeButtonEvent(self.display,button,bool(down),0);self.flush()
     def chord(self,name,*modifiers):
         for modifier in modifiers:self.key(modifier,True)
         self.key(name,True);self.key(name,False)
@@ -246,6 +248,12 @@ def launch(app,key,trial,a,base_env):
                     time.sleep(.15)
             comparison.screenshot(wid,folder/'reorder-restored.png',env)
         actual();idle(process.pid)
+        def pan_press():
+            if app=='gimp' and a.gimp_pan=='space':screen.key('space',True);screen.flush()
+            screen.button(True,2 if app=='gimp' and a.gimp_pan=='middle' else 1)
+        def pan_release():
+            screen.button(False,2 if app=='gimp' and a.gimp_pan=='middle' else 1)
+            if app=='gimp' and a.gimp_pan=='space':screen.key('space',False);screen.flush()
         if a.pan_focus=='scene':
             fixture=next(f for f in json.loads((a.fixtures/'fixtures.json').read_text()) if f['key']==key)
             # Generated 4x overlapping sources sit near (width/3,height/3),
@@ -255,19 +263,16 @@ def launch(app,key,trial,a,base_env):
             assert 0<=dx<canvas[2]-140 and 0<=dy<canvas[3]-140
             sx,sy=canvas[0]+70,canvas[1]+70
             screen.move(sx,sy)
-            if app=='gimp':screen.key('space',True);screen.flush()
-            screen.button(True)
+            pan_press()
             for step in range(1,33):screen.move(sx+dx*step/32,sy+dy*step/32);time.sleep(.01)
-            screen.button(False)
-            if app=='gimp':screen.key('space',False);screen.flush()
+            pan_release()
             screen.move(1100,875);idle(process.pid)
         initial=settled(screen,roi)
         comparison.screenshot(wid,folder/'pan-start.png',env)
         initial_pixels=screen.references[repr(roi),initial]
         for iteration in range(3):
             screen.move(canvas[0]+130,canvas[1]+130)
-            if app=='gimp':screen.key('space',True);screen.flush()
-            screen.button(True);time.sleep(.03)
+            pan_press();time.sleep(.03)
             idle(process.pid)
             ready=settled(screen,roi)
             assert screen.matches(screen.references[repr(roi),ready],initial_pixels),'Pan did not begin at restored reference'
@@ -286,8 +291,7 @@ def launch(app,key,trial,a,base_env):
                     time.sleep(.0004)
                 delta=(step if step<=120 else 240-step)*2
                 screen.move(canvas[0]+130+delta,canvas[1]+130+delta/4);inputs.append(time.perf_counter()-start)
-            screen.button(False)
-            if app=='gimp':screen.key('space',False);screen.flush()
+            pan_release()
             released=time.perf_counter();screen.move(1100,875)
             while True:
                 endpoint_pixels=screen.pixels(roi)
@@ -420,6 +424,8 @@ def main():
     p.add_argument('--display',default=':97');p.add_argument('--trials',type=int,default=3);p.add_argument('--samples',type=int,default=4)
     p.add_argument('--warmup-launches',type=int,default=0);p.add_argument('--resume',action='store_true')
     p.add_argument('--gimp-format',choices=['ora','xcf'],default='ora')
+    p.add_argument('--gimp-pan',choices=['space','middle'],default='space',
+                   help='Untimed pan activation; middle enters GIMP scrolling directly')
     p.add_argument('--matcher',type=Path,default=Path('artifacts/perf-stress-2026-10-01/screen-match.so'))
     p.add_argument('--apps',nargs='+',choices=['picsie','gimp'],default=['picsie','gimp'])
     p.add_argument('--pan-focus',choices=['centre','scene'],default='centre')
@@ -433,7 +439,7 @@ def main():
     tools=ROOT/'artifacts/selection-history/tools/usr'
     env={**os.environ,'DISPLAY':a.display,'WINIT_UNIX_BACKEND':'x11','VK_DRIVER_FILES':'/usr/share/vulkan/icd.d/radeon_icd.json','MESA_VK_WSI_DEBUG':'sw','PICSIE_GPU_DIAGNOSTICS':'1','GEGL_USE_OPENCL':'no','PATH':str(tools/'bin')+os.pathsep+os.environ.get('PATH',''),'LD_LIBRARY_PATH':str(tools/'lib')}
     env.pop('WAYLAND_DISPLAY',None)
-    manifest=dict(keys=a.keys,trials=a.trials,apps=a.apps,pan_focus=a.pan_focus,row_drop_view=a.row_drop_view,navigation_only=a.navigation_only,fixture_index_sha256=hashlib.sha256((a.fixtures/'fixtures.json').read_bytes()).hexdigest(),pixel_tolerance={'picsie':0,'gimp':1},matcher_source_sha256=hashlib.sha256((ROOT/'scripts/perf/screen-match.c').read_bytes()).hexdigest(),matcher_binary_sha256=hashlib.sha256(a.matcher.read_bytes()).hexdigest(),gimp_format=a.gimp_format,prepare_source_sha256=hashlib.sha256((ROOT/'scripts/perf/gimp-stress-prepare.py').read_bytes()).hexdigest(),measured_samples_per_zoom_resize_case=a.samples,warmup=f'{a.warmup_launches} whole launch(es) and two zoom/resize cycles. Two reorder warmups normally; complex 300+ layers: zero reorder warmups, one measured reorder/Undo per launch. Each launch calibrates reference frames untimed; first-visit and revisited pans separate, with quiet starting/ending frames and latency from the first posted motion',source_sha256=hashlib.sha256(Path(__file__).read_bytes()).hexdigest(),binary_sha256=hashlib.sha256(a.binary.read_bytes()).hexdigest(),gimp_binary_sha256=hashlib.sha256((a.runtime/'usr/bin/gimp').read_bytes()).hexdigest(),helper_sha256={name:hashlib.sha256((ROOT/'scripts'/name).read_bytes()).hexdigest() for name in ['compare-gimp-performance.py','compare-desktop-performance.py']},fixture_sha256={key:{suffix:hashlib.sha256((a.fixtures/(key+suffix)).read_bytes()).hexdigest() for suffix in ['.picsie','.'+a.gimp_format]+(['.xcf.json'] if a.gimp_format=='xcf' else [])} for key in a.keys},head=subprocess.check_output(['git','rev-parse','HEAD'],text=True).strip(),scope=__doc__)
+    manifest=dict(keys=a.keys,trials=a.trials,apps=a.apps,pan_focus=a.pan_focus,row_drop_view=a.row_drop_view,navigation_only=a.navigation_only,fixture_index_sha256=hashlib.sha256((a.fixtures/'fixtures.json').read_bytes()).hexdigest(),pixel_tolerance={'picsie':0,'gimp':1},matcher_source_sha256=hashlib.sha256((ROOT/'scripts/perf/screen-match.c').read_bytes()).hexdigest(),matcher_binary_sha256=hashlib.sha256(a.matcher.read_bytes()).hexdigest(),gimp_format=a.gimp_format,gimp_pan=a.gimp_pan,prepare_source_sha256=hashlib.sha256((ROOT/'scripts/perf/gimp-stress-prepare.py').read_bytes()).hexdigest(),measured_samples_per_zoom_resize_case=a.samples,warmup=f'{a.warmup_launches} whole launch(es) and two zoom/resize cycles. Two reorder warmups normally; complex 300+ layers: zero reorder warmups, one measured reorder/Undo per launch. Each launch calibrates reference frames untimed; first-visit and revisited pans separate, with quiet starting/ending frames and latency from the first posted motion',source_sha256=hashlib.sha256(Path(__file__).read_bytes()).hexdigest(),binary_sha256=hashlib.sha256(a.binary.read_bytes()).hexdigest(),gimp_binary_sha256=hashlib.sha256((a.runtime/'usr/bin/gimp').read_bytes()).hexdigest(),helper_sha256={name:hashlib.sha256((ROOT/'scripts'/name).read_bytes()).hexdigest() for name in ['compare-gimp-performance.py','compare-desktop-performance.py']},fixture_sha256={key:{suffix:hashlib.sha256((a.fixtures/(key+suffix)).read_bytes()).hexdigest() for suffix in ['.picsie','.'+a.gimp_format]+(['.xcf.json'] if a.gimp_format=='xcf' else [])} for key in a.keys},head=subprocess.check_output(['git','rev-parse','HEAD'],text=True).strip(),scope=__doc__)
     if a.resume:
         assert json.loads((a.output/'manifest.json').read_text())==manifest,'Resume requires identical protocol, source, binary and fixtures'
     else:(a.output/'manifest.json').write_text(json.dumps(manifest,indent=2)+'\n')

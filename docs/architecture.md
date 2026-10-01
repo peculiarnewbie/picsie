@@ -254,3 +254,33 @@ stays in Rust; no new transport format, blend math or source sampling is introdu
 Local cross-chunk/prefix tests compare every byte with fresh rendering and check
 cache reuse and external-source invalidation. Earlier-prefix edits still require
 replaying the lower stack; visible-priority scheduling and a pyramid remain gaps.
+
+### Shared native metadata publication
+
+The subsequent navigation pass moves the desktop's metadata projection into
+`picsie-core::editor::publication`. The engine worker retains a `SnapshotPublisher`
+and sends typed snapshots directly to GPUI, without constructing and deserializing
+a full JSON document each frame. Document metadata, the ID index, visible rows,
+mask-source candidates and current text metadata are immutable shared resources.
+Viewport, cursor, selection feedback and other transient fields remain current on
+every publication. The legacy addon keeps its existing serialized snapshot contract.
+
+Cache validation compares the actual authoritative document, including pending
+gestures, rather than relying on history revision or classifying commands.
+Every scalar layer/document field participates. Immutable content, stroke and mask
+resources compare by identity, so checking an unchanged document never walks
+mask pixels or stroke samples; new resources conservatively invalidate the cache.
+Exhaustive Rust destructuring makes a newly added model field require an explicit
+cache decision. Collapsed rows and selected-target candidate queries have separate
+keys. Previous snapshots remain immutable through edits, deletion and Undo.
+
+The thumbnail producer shares its complete unchanged collection. Deleted source
+and mask entries use indexed membership checks; the worker preserves the joined
+thumbnail/ruler collection when neither changes. The UI skips reconciliation for
+the same collection and uses indexed membership when it changes. Viewport-only
+publications also reuse inspector inputs and avoid rebuilding mask-choice menus
+or resynchronizing unchanged sliders and text fields. Document and session-control
+changes refresh them conservatively. This follows Compositor's separation of
+viewport state and selective layer-cell updates; the typed transport is a Rust
+adaptation. Rendering, interpolation, preview quality and viewport semantics are
+unchanged by this pass.
