@@ -24,9 +24,9 @@ and `ImageSizeSheet.swift` from that revision.
 | --- | --- |
 | Shell | Compact document/navigation bar with platform menus, Fit/100%/zoom; neutral dark surfaces; 42 px tool header; 56 px rail; 30 px status bar; 800×520 minimum. |
 | Tool rail | Upstream order for supported tools, with Paint/Erase and Rectangle/Ellipse modes grouped in their headers. Tools scroll when a short window cannot fit them. |
-| Transform | Auto Select and Show Controls; X/Y/W/H/angle/flips in the top header. Numeric edits and flips open a persistent engine transform, with Apply/Cancel, rather than committing each field separately. Shift preserves proportions. |
+| Transform | Auto Select and Show Controls; X/Y/W/H/angle/flips, ratio lock, percentage scale and sampling in the top header. Numeric edits and flips open a persistent engine transform, with Apply/Cancel, rather than committing each field separately. Shift preserves proportions. |
 | Brush | Paint/Erase modes; size, hardness, opacity, smoothing and foreground/mask controls in the header. Kit sliders and numeric fields share the existing engine settings. |
-| Selection | Marquee/lasso mode, New/Add/Subtract, wand tolerance/sample size/sampling scope/contiguous, expand/contract/feather and Deselect in the header. Clipboard and other operations live in menus. |
+| Selection | Marquee/lasso mode, New/Add/Subtract, wand tolerance/sample size/sampling scope/contiguous, Anti-alias, expand/contract/feather and Deselect in the header. Select Layer Pixels and amount panels are available from Select. Clipboard and other operations live in menus. |
 | Layers | Dedicated panel, initially 252 px, draggable within 202–352 px; blend/opacity above the full-height list; 52 px rows with cached canvas-shaped image/grayscale mask thumbnails and dimensions; plain icon footer. |
 | Secondary properties | Masks/clipping, local adjustment settings, rename/lock/legacy fill properties use Kit popovers instead of occupying the Layers panel. |
 | Type | In-canvas point/paragraph editing; searchable installed fonts, size, color, left/center/right, tracking and leading in the header; compact alignment icons, blinking caret, word/paragraph selection and resize handles that reflow text. |
@@ -41,11 +41,9 @@ an Input embedded in a Popover. Kit owns text editing, clipboard and local undo;
 
 Adaptations and remaining gaps: Linux/Windows menus replace macOS application
 menu/titlebar integration. Existing documents still use separate windows, not
-upstream's project tabs. The foreground palette has one swatch and a modal picker;
-background-color and swap/default controls are not yet ported. Mask rows now show
+upstream's project tabs. The layers/masks/color pass below adds foreground/background swatches, swap/default controls and the movable picker. Mask rows now show
 grayscale thumbnails with a distinct editing-target border. The existing brightness/saturation/blur controls are retained in a palette; these are not upstream's full floating
-adjustment/effect panels. Panel width and view options now persist in platform configuration; tool, brush and font defaults remain session-local. Ratio lock, scale percentage,
-transform sampling and richer shape tools remain absent. No nonfunctional controls were added for those gaps.
+adjustment/effect panels. Panel width and view options now persist in platform configuration; tool, brush and font defaults remain session-local. The 2026-10-01 pass adds ratio lock, scale percentage and transform sampling; richer shape tools remain absent. No nonfunctional controls were added for those gaps.
 
 The preceding shell pass's complete native workflow run passed **90 checks**, including panel resize
 limits, short-window scrolling, all previously verified engine workflows, and
@@ -322,3 +320,55 @@ remain platform adaptations. Accessibility roles/labels are supplied; platform
 screen-reader, Windows/macOS/Wayland and physical HiDPI interaction remain
 unverified. Effect/adjustment child rows depend on the separate missing effect
 stack/adjustment-layer systems and remain explicitly tracked in those areas.
+
+## Selection, crop and transform pass (2026-10-01)
+
+The native UI now follows the pinned selection amount panels and transform
+inspector more closely. Ellipse and polygonal lasso have their source rail icons;
+ellipse/lasso/wand expose Anti-alias; held Shift/Add and Alt/Subtract update the
+header and cursor without changing defaults, and a draft keeps its starting mode.
+Select Layer Pixels is in Select. Expand/Contract/Feather menu panels have the
+source integer ranges/defaults, a slider/value, validation and Cancel/OK; Return
+applies exactly once. Native black/white marching ants advance every 120 ms using
+cached Rust vector resources, without engine edit commands or raster previews.
+
+Transform has live Rust-owned numeric fields, a ratio lock, percentage scale
+about center, Nearest/Smooth/High sampling and one Apply/Cancel transaction.
+Auto Select and Show Controls stay pinned while numeric controls scroll; Apply
+and Cancel remain visible at 800×520, including mask mode. Shift still preserves
+proportions as explicitly requested. Ctrl/Command corner/edge drags distort image
+and floating pixels; Shift constrains free motion; eight handles are shown with
+no rotation stalk, matching the source. Cancel restores pixels and placement;
+Apply resamples at full supported resolution, trims alpha and commits one undo.
+
+Expanded crop previews reveal retained off-canvas artwork and checkerboard over
+the union of original/crop bounds. Control bypasses snapping; a full-canvas frame
+starts a new body drag. Crop Apply preserves source pixels and Cancel leaves the
+document unchanged. The native verification caught and fixed Control routing to
+layer picking, the transform scroller wrapper pushing Apply outside the window,
+and the distortion rotation stalk. Harness updates await actual selector changes,
+scroll to clipped controls, and safely observe pending mask-placement metadata.
+
+The final release binary passed **all 226 combined native checks** on Linux X11
+at 1× with lavapipe software Vulkan: the prior 190 workflows and **36 new
+interaction checks**. `npm run check:architecture`, `npm run check`, `npm test`
+and `npm run test:bun` pass: **168 core Rust tests, 16 desktop Rust tests, 26 Node
+tests (23 actual-addon cases), 23 Bun addon cases**, plus the seven architecture
+regressions. Contracts were regenerated from Rust with `npm run build:native`.
+The source map distinguishes selected translated fixtures from local adapter
+regressions; this is not a running macOS comparison.
+
+Final report, traces and inspected screenshots are under
+`artifacts/desktop/selection-crop-transforms/verification/`; the full log is
+`artifacts/interaction-native-verification.log`. Screenshots 29–35 cover modifier
+feedback, ellipse selection, amount panel, transform fields, distortion, expanded
+crop and minimum window. The earlier focused run passed 35 checks; the final
+combined run additionally verifies the source's hidden distortion rotation handle.
+
+The [registry](compositor-registry.md) now has **200 behavior entries**. Remaining
+material gaps include Apple Vision Object/Select Subject (a cross-platform model
+is a separate feature), group/multi-layer transform boxes, text/group distortion
+and effect-stack warping. Independent-mask Smooth/High placement still shares a
+bilinear backend adapter; image High uses Skia Catmull-Rom rather than a Core
+Graphics quality hint. QuickGUI retains a static outline. Tool defaults remain
+session-local, and Windows/macOS GUI, Wayland and physical HiDPI remain unverified.

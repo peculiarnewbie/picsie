@@ -48,6 +48,7 @@ enum Action {
     New,
     CanvasSize,
     ImageSize,
+    SelectionAmount(&'static str),
     Copy { merged: bool, cut: bool },
     Paste,
     Color(ColorTarget),
@@ -97,6 +98,8 @@ pub struct Desktop {
     cursor_modifiers: picsie_core::editor::Modifiers,
     cursor_hint: picsie_core::feedback::CursorHint,
     caret_blink: Option<Task<()>>,
+    selection_animation: Option<Task<()>>,
+    selection_phase: f64,
     caret_last_input: Instant,
     numeric_edit: Option<&'static str>,
     focus: FocusHandle,
@@ -116,7 +119,7 @@ pub struct Desktop {
     blend_layer: Option<String>,
     blend_scroll: ScrollHandle,
     blend_focus: FocusHandle,
-    list_scroll: ScrollHandle,
+    list_scroll: gpui::UniformListScrollHandle,
     list_autoscroll: Option<Task<()>>,
     fields: HashMap<&'static str, Entity<InputState>>,
     text: Entity<TextareaState>,
@@ -195,6 +198,7 @@ impl Desktop {
             ("canvas-fill", FILLS),
             ("image-unit", IMAGE_UNITS),
             ("image-sampling", SAMPLING),
+            ("transform-sampling", SAMPLING),
             ("wand-sample", WAND_SAMPLES),
             (
                 "crop-ratio",
@@ -244,6 +248,8 @@ impl Desktop {
             ("hardness", 100., 1.),
             ("brush-opacity", 100., 1.),
             ("smoothing", 100., 1.),
+            ("selection-amount", 500., 1.),
+            ("feather", 250., 1.),
         ]
         .into_iter()
         .map(|(key, max, step)| {
@@ -288,6 +294,8 @@ impl Desktop {
             cursor_modifiers: picsie_core::editor::Modifiers::default(),
             cursor_hint: picsie_core::feedback::CursorHint::Arrow,
             caret_blink: None,
+            selection_animation: None,
+            selection_phase: 0.,
             caret_last_input: Instant::now(),
             numeric_edit: None,
             focus,
@@ -311,7 +319,7 @@ impl Desktop {
             blend_layer: None,
             blend_scroll: ScrollHandle::default(),
             blend_focus: cx.focus_handle(),
-            list_scroll: ScrollHandle::default(),
+            list_scroll: gpui::UniformListScrollHandle::new(),
             list_autoscroll: None,
             fields,
             text,
@@ -392,12 +400,12 @@ impl Desktop {
                 let command = match command {
                     Command::ExpandSelection { .. } => Command::ExpandSelection {
                         amount: number(&self.field_value("selection-amount", cx))
-                            .unwrap_or(5.)
+                            .unwrap_or(1.)
                             .clamp(1., 500.) as u32,
                     },
                     Command::ContractSelection { .. } => Command::ContractSelection {
-                        amount: number(&self.field_value("selection-amount", cx))
-                            .unwrap_or(5.)
+                        amount: number(&self.field_value("selection-contract", cx))
+                            .unwrap_or(1.)
                             .clamp(1., 500.) as u32,
                     },
                     Command::FeatherSelection { .. } => Command::FeatherSelection {
@@ -435,6 +443,7 @@ impl Desktop {
             Action::New => self.open_new(window, cx),
             Action::CanvasSize => self.open_canvas_size(window, cx),
             Action::ImageSize => self.open_image_size(window, cx),
+            Action::SelectionAmount(kind) => self.open_selection_amount(kind, window, cx),
             Action::Copy { merged, cut } => self.blocking(Operation::Copy { merged, cut }),
             Action::Paste => self.paste_clipboard(window, cx),
             Action::Color(target) => self.open_color(target, window, cx),
@@ -557,7 +566,7 @@ impl Desktop {
                     }
                     self.sequence = frame.sequence;
                     self.queued_at = frame.queued_at;
-                    self.frame_metrics = json!({"command_ms":frame.command_ms,"render_ms":frame.render_ms,"pixels_ms":frame.pixels_ms,"width":frame.width,"height":frame.height});
+                    self.frame_metrics = json!({"command_ms":frame.command_ms,"render_ms":frame.render_ms,"pixels_ms":frame.pixels_ms,"thumbnails_ms":frame.thumbnails_ms,"width":frame.width,"height":frame.height});
                     self.apply_state(frame.state, frame.sequence, window, cx);
                 }
             }
@@ -598,6 +607,7 @@ impl Desktop {
         self.state = Some(state);
         self.refresh_cursor(cx);
         self.sync_caret_blink(window, cx);
+        self.sync_selection_animation(window, cx);
         if tool_changed {
             self.notice = self.tool_hint();
         }
@@ -635,8 +645,8 @@ impl Desktop {
         }
         if let Some(path) = &self.trace {
             let record = json!({"state":self.state,"sequence":self.sequence,"submittedSequence":self.engine.submitted_sequence(),"busy":self.busy,"notice":self.notice,
-                "modal":self.modal.as_ref().map(Modal::name),"colorPickerPosition":self.color_position,"colorWorking":self.modal.as_ref().and_then(|m| if let Modal::Color(d)=m {Some(format!("#{}",d.hsb.hex()))}else{None}),"renameLayer":self.rename_layer,"listScroll":f32::from(self.list_scroll.offset().y),"blendIndex":self.blend_index,"samplingColor":self.sampling_color,"sampleOriginal":self.sample_original,"sampleCurrent":self.sample_current,"showsSampleRing":self.shows_sample_ring,"palette":self.open_palette,"textPalette":self.text_palette_open,"path":self.path,"controls":*self.probes.lock().unwrap(),
-                "cursorHint":self.cursor_hint,"metrics":self.frame_metrics,"queue_to_paint_ms":self.frame_metrics["queue_to_paint_ms"]});
+                "modal":self.modal.as_ref().map(Modal::name),"colorPickerPosition":self.color_position,"colorWorking":self.modal.as_ref().and_then(|m| if let Modal::Color(d)=m {Some(format!("#{}",d.hsb.hex()))}else{None}),"renameLayer":self.rename_layer,"listScroll":f32::from(self.list_scroll.0.borrow().base_handle.offset().y),"blendIndex":self.blend_index,"samplingColor":self.sampling_color,"sampleOriginal":self.sample_original,"sampleCurrent":self.sample_current,"showsSampleRing":self.shows_sample_ring,"palette":self.open_palette,"textPalette":self.text_palette_open,"path":self.path,"controls":*self.probes.lock().unwrap(),
+                "selectionPhase":self.selection_phase,"effectiveSelectionMode":self.state.as_ref().and_then(|s| s.selection_feedback.as_ref()).map(|f| f.effective_mode(self.cursor_modifiers)),"cursorHint":self.cursor_hint,"metrics":self.frame_metrics,"queue_to_paint_ms":self.frame_metrics["queue_to_paint_ms"]});
             let temporary = path.with_extension("tmp");
             if std::fs::write(&temporary, record.to_string()).is_ok() {
                 let _ = std::fs::rename(temporary, path);

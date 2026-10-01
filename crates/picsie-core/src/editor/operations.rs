@@ -11,14 +11,14 @@ pub struct PixelClipboard {
 pub(super) struct Floating {
     source: Layer,
     original: Layer,
-    selection: PixelSelection,
+    pub(super) selection: PixelSelection,
     before: Document,
     active: Selection,
     pixels: PixelClipboard,
     cleared: Layer,
     pub(super) persistent: bool,
 }
-fn layer_matrix(layer: &Layer) -> Matrix {
+pub(super) fn layer_matrix(layer: &Layer) -> Matrix {
     let p = geometry::to_world(layer, Point::default());
     let x = geometry::to_world(layer, Point::new(1., 0.));
     let y = geometry::to_world(layer, Point::new(0., 1.));
@@ -50,6 +50,9 @@ impl Editor {
                 self.history.pixel_selection.as_ref(),
                 &draft,
             )?;
+            let selection = selection
+                .map(|s| s.with_antialiasing(self.selection_antialiased))
+                .transpose()?;
             self.set_pixel_selection(
                 selection,
                 if draft.bounds().is_some() {
@@ -95,7 +98,10 @@ impl Editor {
             }
             PixelSelection::from_path(doc.width, doc.height, outline, 0.)?
         };
-        self.set_pixel_selection(Some(selected), "Magic Wand")
+        self.set_pixel_selection(
+            Some(selected.with_antialiasing(self.selection_antialiased)?),
+            "Magic Wand",
+        )
     }
     pub fn can_copy_pixels(&self) -> bool {
         self.can_edit_pixels()
@@ -262,9 +268,9 @@ impl Editor {
         let source = self.selected().unwrap().clone();
         let mut cleared = source.clone();
         if !duplicate {
-            cleared.content = Arc::new(render::native_content(render::clear_selected_pixels(
-                &source, &selection,
-            )?));
+            cleared.content = Arc::new(Content::Image {
+                data: render::clear_selected_asset(&source, &selection, &self.history.document)?,
+            });
             cleared.strokes.clear();
         }
         let mut layer = Layer::new(
@@ -325,10 +331,12 @@ impl Editor {
         Ok(())
     }
     pub fn cancel_transform(&mut self) {
+        self.image_distortion = None;
         if self.layer_transform {
             self.mask_distortion = None;
             self.gesture = None;
             self.layer_transform = false;
+            self.transform_pixel_size = None;
             let selected = self.history.cancel();
             self.restore_selection(selected);
             return;
@@ -343,6 +351,12 @@ impl Editor {
         }
     }
     pub fn commit_transform(&mut self) -> Result<()> {
+        let distorted = self.image_distortion.is_some();
+        if let Some(corners) = self.image_distortion.as_ref().map(|d| d.corners) {
+            self.finish_gesture()?;
+            self.preview_image_distortion(corners, None)?;
+            self.image_distortion = None;
+        }
         if self.layer_transform {
             self.finish_gesture()?;
             if let Some(draft) = &self.mask_distortion {
@@ -350,6 +364,7 @@ impl Editor {
             }
             self.mask_distortion = None;
             self.layer_transform = false;
+            self.transform_pixel_size = None;
             self.end_edit();
             return Ok(());
         }
@@ -359,7 +374,7 @@ impl Editor {
         self.finish_gesture()?;
         let current = self.selected().unwrap().clone();
         let floating = self.floating.take().unwrap();
-        if MaskPlacement::of(&current) == MaskPlacement::of(&floating.original) {
+        if !distorted && MaskPlacement::of(&current) == MaskPlacement::of(&floating.original) {
             self.history.document = floating.before;
             self.history.pixel_selection = Some(floating.selection);
             self.selection = floating.active;
@@ -398,7 +413,14 @@ impl Editor {
                 .invert()
                 .ok_or_else(|| anyhow::anyhow!("Invalid transform"))?;
             output.canvas().concat(&inverse);
-            render::draw_pixels(output.canvas(), &current, &floating.pixels.image);
+            if distorted {
+                let mut bare = current.clone();
+                bare.mask = None;
+                let pixels = render::Renderer::default().layer_surface(&bare)?;
+                render::draw_pixels(output.canvas(), &current, &pixels);
+            } else {
+                render::draw_pixels(output.canvas(), &current, &floating.pixels.image);
+            }
             merged.content = Arc::new(render::native_content(output.image_snapshot()));
             merged.strokes.clear();
             // FloatingMerge grows an attached mask with white coverage in newly exposed source pixels.

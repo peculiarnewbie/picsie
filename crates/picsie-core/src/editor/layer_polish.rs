@@ -187,6 +187,9 @@ impl Editor {
                     .combined(&outline, pixel_selection::PixelSelectionMode::Replace)?,
             )
         };
+        let next = next
+            .map(|s| s.with_antialiasing(self.selection_antialiased))
+            .transpose()?;
         self.set_pixel_selection(
             next,
             if mask {
@@ -473,8 +476,8 @@ impl Editor {
     }
 }
 impl Editor {
-    pub fn draw_mask_distortion(&self, canvas: &skia_safe::Canvas) {
-        let Some(corners) = self.mask_distortion_corners() else {
+    pub fn draw_distortion(&self, canvas: &skia_safe::Canvas) {
+        let Some(corners) = self.distortion_corners() else {
             return;
         };
         let origin = geometry::canvas_origin(&self.history.document, &self.viewport);
@@ -486,7 +489,11 @@ impl Editor {
         };
         let mut paint = skia_safe::Paint::default();
         paint
-            .set_color(skia_safe::Color::from_rgb(98, 222, 202))
+            .set_color(if self.mask_distortion.is_some() {
+                skia_safe::Color::from_rgb(98, 222, 202)
+            } else {
+                skia_safe::Color::from_rgb(155, 171, 255)
+            })
             .set_style(skia_safe::paint::Style::Stroke)
             .set_stroke_width(1.);
         let mut path = skia_safe::PathBuilder::new();
@@ -499,17 +506,12 @@ impl Editor {
         let mut fill = skia_safe::Paint::default();
         fill.set_color(skia_safe::Color::WHITE);
         if let Some(handles) = self.cursor_map().handles {
-            for (i, point) in handles.points.iter().enumerate() {
+            // TransformOverlayGeometry(corners:) has eight handles and no rotation stalk.
+            for point in &handles.points {
                 let p = map(*point);
-                if i == 8 {
-                    canvas.draw_line(map(handles.points[1]), p, &paint);
-                    canvas.draw_circle(p, 5., &fill);
-                    canvas.draw_circle(p, 5., &paint);
-                } else {
-                    let rect = skia_safe::Rect::from_xywh(p.x - 3., p.y - 3., 6., 6.);
-                    canvas.draw_rect(rect, &fill);
-                    canvas.draw_rect(rect, &paint);
-                }
+                let rect = skia_safe::Rect::from_xywh(p.x - 3.5, p.y - 3.5, 7., 7.);
+                canvas.draw_rect(rect, &fill);
+                canvas.draw_rect(rect, &paint);
             }
         }
     }

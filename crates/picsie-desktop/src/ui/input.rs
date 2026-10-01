@@ -114,7 +114,12 @@ impl Desktop {
                     && this.state.as_ref().is_some_and(|s| {
                         !matches!(
                             s.tool,
-                            Tool::Move | Tool::Text | Tool::Marquee | Tool::Lasso | Tool::Wand
+                            Tool::Move
+                                | Tool::Text
+                                | Tool::Marquee
+                                | Tool::Lasso
+                                | Tool::Wand
+                                | Tool::Crop
                         )
                     })
                 {
@@ -224,7 +229,8 @@ impl Desktop {
                                         cx.notify();
                                     }
                                     this.cursor_position = position;
-                                    if this.cursor_modifiers.alt != event.modifiers.alt
+                                    if this.cursor_modifiers.shift != event.modifiers.shift
+                                        || this.cursor_modifiers.alt != event.modifiers.alt
                                         || this.cursor_modifiers.control != event.modifiers.control
                                         || (event.modifiers.alt
                                             && this.list_pointer != Some(event.position))
@@ -355,6 +361,8 @@ impl Desktop {
                             }
                         }
                         if let Some(this) = paint.upgrade() {
+                            this.read(cx).paint_selection_outline(bounds, window);
+                            this.read(cx).paint_selection_badge(bounds, window);
                             this.read(cx).paint_brush_outline(bounds, window);
                             this.read(cx).paint_sample_ring(window);
                         }

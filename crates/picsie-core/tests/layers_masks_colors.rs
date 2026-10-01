@@ -534,6 +534,7 @@ fn local_folder_mask_placement_is_used_for_child_compositing() {
     e.command(Command::ToggleMaskLink).unwrap();
     e.command(Command::SetMaskPlacement {
         placement: MaskPlacement {
+            sampling: Sampling::High,
             x: 10.,
             y: 0.,
             scale_x: 1.,

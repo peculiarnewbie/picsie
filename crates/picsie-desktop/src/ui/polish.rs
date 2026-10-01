@@ -52,7 +52,12 @@ impl Desktop {
             .as_ref()
             .map(|s| {
                 self.cursor_position
-                    .map(|p| s.cursor_map.at_view(p, self.cursor_modifiers))
+                    .map(|p| {
+                        s.selection_feedback
+                            .as_ref()
+                            .map(|f| f.at_view(p, self.cursor_modifiers))
+                            .unwrap_or_else(|| s.cursor_map.at_view(p, self.cursor_modifiers))
+                    })
                     .unwrap_or(s.cursor_map.default)
             })
             .unwrap_or(CursorHint::Arrow);
@@ -168,6 +173,18 @@ impl Desktop {
         window: &mut Window,
         cx: &mut Context<Self>,
     ) {
+        if event.keystroke.key == "escape"
+            && matches!(
+                key,
+                "x" | "y" | "width" | "height" | "rotation" | "transform-scale"
+            )
+        {
+            self.edited_fields.remove(key);
+            self.send(Command::CancelTransform);
+            window.focus(&self.focus, cx);
+            cx.stop_propagation();
+            return;
+        }
         if self.busy
             || event.keystroke.modifiers.control
             || event.keystroke.modifiers.platform
@@ -227,7 +244,8 @@ fn numeric_limits(key: &str) -> Option<(f64, f64)> {
         "brightness" | "saturation" => (0., 300.),
         "blur" => (0., 100.),
         "brush-size" => (1., 2000.),
-        "selection-amount" => (1., 500.),
+        "selection-amount" | "selection-contract" | "selection-dialog" => (1., 500.),
+        "transform-scale" => (1., 10000.),
         "feather" => (1., 250.),
         "wand-tolerance" | "color-r" | "color-g" | "color-b" => (0., 255.),
         _ => return None,
@@ -277,5 +295,134 @@ impl Desktop {
                 },
             );
         }
+    }
+}
+
+impl Desktop {
+    /// EditorCanvas.SelectionCursor's six-point modifier badge, adapted to a
+    /// GPUI overlay beside the platform crosshair (custom OS cursor unavailable).
+    pub(super) fn paint_selection_badge(&self, bounds: Bounds<Pixels>, window: &mut Window) {
+        if self.busy || self.modal.is_some() || self.cursor_hint != CursorHint::Crosshair {
+            return;
+        }
+        let Some(feedback) = self
+            .state
+            .as_ref()
+            .and_then(|s| s.selection_feedback.as_ref())
+        else {
+            return;
+        };
+        let Some(p) = self.cursor_position else {
+            return;
+        };
+        let mode = feedback.effective_mode(self.cursor_modifiers);
+        if mode == picsie_core::pixel_selection::PixelSelectionMode::Replace {
+            return;
+        }
+        let center = gpui_kit::point(
+            bounds.origin.x + px(p.x as f32 / self.display_scale + 15.),
+            bounds.origin.y + px(p.y as f32 / self.display_scale + 7.),
+        );
+        for (thickness, color) in [(3.2, 0xffffff), (1.2, 0x000000)] {
+            let draw = |vertical: bool, window: &mut Window| {
+                let (w, h) = if vertical {
+                    (thickness, 6.)
+                } else {
+                    (6., thickness)
+                };
+                let b = Bounds::new(
+                    gpui_kit::point(center.x - px(w / 2.), center.y - px(h / 2.)),
+                    size(px(w), px(h)),
+                );
+                window.paint_quad(quad(
+                    b,
+                    px(thickness / 2.),
+                    rgb(color),
+                    px(0.),
+                    rgba(0),
+                    BorderStyle::Solid,
+                ));
+            };
+            draw(false, window);
+            if mode == picsie_core::pixel_selection::PixelSelectionMode::Add {
+                draw(true, window);
+            }
+        }
+    }
+}
+
+impl Desktop {
+    pub(super) fn sync_selection_animation(&mut self, window: &mut Window, cx: &mut Context<Self>) {
+        if self
+            .state
+            .as_ref()
+            .is_none_or(|s| s.selection_outline.is_none())
+        {
+            self.selection_animation = None;
+            self.selection_phase = 0.;
+            return;
+        }
+        if self.selection_animation.is_some() {
+            return;
+        }
+        // EditorCanvas.updateAntsTimer: one phase step every 120 ms, period eight.
+        self.selection_animation = Some(cx.spawn_in(window, async move |this, cx| {
+            loop {
+                cx.background_executor()
+                    .timer(Duration::from_millis(120))
+                    .await;
+                if !matches!(
+                    this.update_in(cx, |this, _, cx| {
+                        if this
+                            .state
+                            .as_ref()
+                            .is_none_or(|s| s.selection_outline.is_none())
+                        {
+                            return false;
+                        }
+                        this.selection_phase = (this.selection_phase + 1.) % 8.;
+                        cx.notify();
+                        true
+                    }),
+                    Ok(true)
+                ) {
+                    break;
+                }
+            }
+        }));
+    }
+    pub(super) fn paint_selection_outline(&self, bounds: Bounds<Pixels>, window: &mut Window) {
+        let Some(outline) = self
+            .state
+            .as_ref()
+            .and_then(|s| s.selection_outline.as_ref())
+        else {
+            return;
+        };
+        let point = |p: picsie_core::model::Point| {
+            gpui_kit::point(
+                bounds.origin.x + px(p.x as f32 / self.display_scale),
+                bounds.origin.y + px(p.y as f32 / self.display_scale),
+            )
+        };
+        let draw =
+            |contours: &[Vec<picsie_core::model::Point>], color: u32, window: &mut Window| {
+                // Keep individual paths below the toolkit's 16-bit vertex limit.
+                for contour in contours {
+                    for start in (0..contour.len().saturating_sub(1)).step_by(999) {
+                        let end = (start + 1000).min(contour.len());
+                        let mut path = PathBuilder::stroke(px(1.));
+                        path.move_to(point(contour[start]));
+                        for p in &contour[start + 1..end] {
+                            path.line_to(point(*p));
+                        }
+                        if let Ok(path) = path.build() {
+                            window.paint_path(path, rgb(color));
+                        }
+                    }
+                }
+            };
+        draw(&outline.contours, 0xffffff, window);
+        draw(&outline.dashes(self.selection_phase), 0x000000, window);
     }
 }

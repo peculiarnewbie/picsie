@@ -20,12 +20,14 @@ pub(super) enum Modal {
     Canvas(CanvasDraft),
     Image(ImageDraft),
     Color(ColorDraft),
+    SelectionAmount(&'static str),
     Close,
 }
 impl Modal {
     pub(super) fn name(&self) -> &'static str {
         match self {
             Self::New => "new",
+            Self::SelectionAmount(_) => "selection-amount",
             Self::Canvas(_) => "canvas-size",
             Self::Image(_) => "image-size",
             Self::Color(_) => "color",
@@ -200,6 +202,29 @@ impl Desktop {
         };
         let result = (|| -> anyhow::Result<()> {
             match modal {
+                Modal::SelectionAmount(kind) => {
+                    let max = if kind == "Feather" { 250 } else { 500 };
+                    let amount = self
+                        .field_value("selection-dialog", cx)
+                        .trim()
+                        .parse::<u32>()?;
+                    anyhow::ensure!(
+                        (1..=max).contains(&amount),
+                        "Enter a whole number from 1 to {max} px"
+                    );
+                    let key = match kind {
+                        "Expand" => "selection-amount",
+                        "Contract" => "selection-contract",
+                        _ => "feather",
+                    };
+                    self.set_field(key, amount.to_string(), true, window, cx);
+                    self.send(match kind {
+                        "Expand" => Command::ExpandSelection { amount },
+                        "Contract" => Command::ContractSelection { amount },
+                        _ => Command::FeatherSelection { amount },
+                    });
+                    self.cancel_modal(window, cx);
+                }
                 Modal::New => {
                     let width = number(&self.field_value("new-width", cx))?;
                     let height = number(&self.field_value("new-height", cx))?;
@@ -411,6 +436,49 @@ impl Desktop {
     pub(super) fn modal_view(&self, cx: &mut Context<Self>) -> Option<AnyElement> {
         let modal = self.modal.as_ref()?;
         let (title, width, content) = match modal {
+            Modal::SelectionAmount(kind) => {
+                let key = if *kind == "Feather" {
+                    "feather"
+                } else {
+                    "selection-amount"
+                };
+                let max = if *kind == "Feather" { 250 } else { 500 };
+                (
+                    format!("{kind} Selection"),
+                    380.,
+                    column()
+                        .gap(px(16.))
+                        .child(
+                            row()
+                                .gap(px(10.))
+                                .child(label("Amount").w(px(60.)))
+                                .child(
+                                    self.probe(
+                                        "selection-dialog-slider",
+                                        Slider::new(&self.sliders[key]),
+                                    )
+                                    .flex_1(),
+                                )
+                                .child(self.inline_field("selection-dialog", "", 56., false))
+                                .child(label("px")),
+                        )
+                        .child(
+                            hint(format!("Enter a whole number from 1 to {max} px.")).opacity(
+                                if self
+                                    .field_value("selection-dialog", cx)
+                                    .trim()
+                                    .parse::<u32>()
+                                    .is_ok_and(|n| (1..=max).contains(&n))
+                                {
+                                    0.
+                                } else {
+                                    1.
+                                },
+                            ),
+                        )
+                        .child(div().w_full().h(px(1.)).bg(rgb(LINE))),
+                )
+            }
             Modal::New => (
                 "New canvas".to_owned(),
                 360.,
@@ -646,7 +714,8 @@ impl Desktop {
         };
         let can_apply = !self.busy
             && !matches!(modal,Modal::Canvas(d) if !d.valid())
-            && !matches!(modal,Modal::Image(d) if !d.valid());
+            && !matches!(modal,Modal::Image(d) if !d.valid())
+            && !matches!(modal,Modal::SelectionAmount(kind) if !self.field_value("selection-dialog", cx).trim().parse::<u32>().is_ok_and(|n| (1..=if *kind == "Feather" {250} else {500}).contains(&n)));
         let mut buttons = row().justify_end().child(
             self.probe(
                 "modal-cancel",
@@ -655,7 +724,7 @@ impl Desktop {
                     .on_click(cx.listener(|this, _, window, cx| this.cancel_modal(window, cx))),
             ),
         );
-        if matches!(modal, Modal::Image(_)) {
+        if matches!(modal, Modal::Image(_) | Modal::SelectionAmount(_)) {
             buttons = buttons.justify_start().child(div().flex_1());
         }
         if matches!(modal, Modal::Close) {
@@ -671,7 +740,7 @@ impl Desktop {
             Modal::New => "Create",
             Modal::Canvas(_) => "Resize canvas",
             Modal::Image(_) => "Resize image",
-            Modal::Color(_) => "OK",
+            Modal::Color(_) | Modal::SelectionAmount(_) => "OK",
             Modal::Close => "Save",
         };
         buttons = buttons.child(
@@ -776,4 +845,36 @@ fn gradient(angle: f32, from: impl Into<Hsla>, to: impl Into<Hsla>) -> Backgroun
 
 pub(super) fn color_rgb(text: &str) -> Option<[u8; 3]> {
     parse_hex(text)
+}
+
+impl Desktop {
+    pub(super) fn open_selection_amount(
+        &mut self,
+        kind: &'static str,
+        window: &mut Window,
+        cx: &mut Context<Self>,
+    ) {
+        if self.busy || self.state.as_ref().is_none_or(|s| !s.can_modify_selection) {
+            return;
+        }
+        let key = match kind {
+            "Expand" => "selection-amount",
+            "Contract" => "selection-contract",
+            _ => "feather",
+        };
+        let value = self.field_value(key, cx);
+        self.modal = Some(Modal::SelectionAmount(kind));
+        self.notice.clear();
+        self.set_field("selection-dialog", value.clone(), true, window, cx);
+        let slider = if kind == "Feather" {
+            "feather"
+        } else {
+            "selection-amount"
+        };
+        self.sliders[slider].update(cx, |slider, cx| {
+            slider.set_value(number(&value).unwrap_or(1.) as f32, window, cx)
+        });
+        self.fields["selection-dialog"].update(cx, |field, cx| field.focus(window, cx));
+        cx.notify();
+    }
 }

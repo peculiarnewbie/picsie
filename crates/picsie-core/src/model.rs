@@ -256,6 +256,8 @@ impl<'de> Deserialize<'de> for MaskRaster {
 #[derive(Clone, Copy, Debug, PartialEq, Serialize, Deserialize, TS)]
 #[serde(rename_all = "camelCase")]
 pub struct MaskPlacement {
+    #[serde(default)]
+    pub sampling: Sampling,
     pub x: f64,
     pub y: f64,
     pub scale_x: f64,
@@ -267,6 +269,7 @@ pub struct MaskPlacement {
 impl MaskPlacement {
     pub fn of(layer: &Layer) -> Self {
         Self {
+            sampling: layer.sampling,
             x: layer.x,
             y: layer.y,
             scale_x: layer.scale_x,
@@ -285,6 +288,7 @@ impl MaskPlacement {
         layer.rotation = self.rotation;
         layer.flip_x = self.flip_x;
         layer.flip_y = self.flip_y;
+        layer.sampling = self.sampling;
         layer
     }
     pub fn valid(self) -> bool {
@@ -664,19 +668,7 @@ impl Document {
     }
     /// Compositor LayerHierarchy.entries: depth-first sibling order, bottom to top.
     pub fn ordered_layers(&self) -> Vec<&Layer> {
-        fn visit<'a>(doc: &'a Document, parent: Option<&str>, result: &mut Vec<&'a Layer>) {
-            for layer in doc
-                .layers
-                .iter()
-                .filter(|l| l.parent_id.as_deref() == parent)
-            {
-                result.push(layer);
-                visit(doc, Some(&layer.id), result);
-            }
-        }
-        let mut result = Vec::with_capacity(self.layers.len());
-        visit(self, None, &mut result);
-        result
+        crate::layer_index::LayerIndex::new(self).ordered_layers()
     }
     pub fn effective(&self, layer: &Layer) -> (bool, f64) {
         let mut visible = layer.visible;

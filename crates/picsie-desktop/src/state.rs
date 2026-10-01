@@ -11,6 +11,8 @@ use serde_json::Value;
 #[serde(rename_all = "camelCase")]
 pub struct Snapshot {
     pub document: DocumentInfo,
+    #[serde(skip)]
+    layer_positions: std::collections::HashMap<String, usize>,
     pub view_options: picsie_core::placement::ViewOptions,
     pub displayed_guides: Vec<picsie_core::placement::CanvasGuide>,
     pub guide_drag_active: bool,
@@ -28,6 +30,7 @@ pub struct Snapshot {
     pub blend_preview: Option<(String, picsie_core::model::Blend)>,
     pub background_color: String,
     pub mask_distortion: Option<[picsie_core::model::Point; 4]>,
+    pub image_distortion: Option<[picsie_core::model::Point; 4]>,
     pub transform_target: Option<LayerInfo>,
     pub brush_size: f64,
     pub brush_opacity: f64,
@@ -36,8 +39,20 @@ pub struct Snapshot {
     pub paint_target: String,
     pub mask_mode: String,
     pub crop_ratio: String,
+    pub crop_rect: Option<picsie_core::crop::CropRect>,
+    pub pixel_selection_feather: Option<f64>,
     pub marquee_kind: String,
     pub selection_mode: String,
+    pub selection_antialiased: bool,
+    pub can_modify_selection: bool,
+    pub selection_empty: bool,
+    pub locks_transform_ratio: bool,
+    pub transform_scale_percent: f64,
+    pub selection_draft_mode: Option<String>,
+    #[serde(skip)]
+    pub selection_feedback: Option<picsie_core::feedback::SelectionFeedback>,
+    #[serde(skip)]
+    pub selection_outline: Option<picsie_core::feedback::SelectionOutline>,
     pub lasso_kind: String,
     pub wand: picsie_core::wand::WandSettings,
     pub transform_active: bool,
@@ -105,6 +120,7 @@ pub struct LayerInfo {
     pub saturation: f64,
     pub blur: f64,
     pub blend: String,
+    pub sampling: picsie_core::model::Sampling,
     pub parent_id: Option<String>,
     pub mask_source_id: Option<String>,
     pub content: Value,
@@ -113,13 +129,25 @@ pub struct LayerInfo {
 }
 impl Snapshot {
     pub fn capture(editor: &Editor) -> anyhow::Result<Self> {
-        Ok(serde_json::from_value(editor.snapshot())?)
+        let mut snapshot: Self = serde_json::from_value(editor.snapshot())?;
+        snapshot.layer_positions = snapshot
+            .document
+            .layers
+            .iter()
+            .enumerate()
+            .map(|(i, l)| (l.id.clone(), i))
+            .collect();
+        snapshot.selection_feedback = editor.selection_feedback();
+        snapshot.selection_outline = editor.selection_outline();
+        Ok(snapshot)
     }
     pub fn selected(&self) -> Option<&LayerInfo> {
         self.selection.ids.last().and_then(|id| self.layer(id))
     }
     pub fn layer(&self, id: &str) -> Option<&LayerInfo> {
-        self.document.layers.iter().find(|layer| layer.id == id)
+        self.layer_positions
+            .get(id)
+            .and_then(|&i| self.document.layers.get(i))
     }
     pub fn is_selected(&self, id: &str) -> bool {
         self.selection.ids.iter().any(|selected| selected == id)

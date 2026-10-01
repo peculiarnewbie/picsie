@@ -1,5 +1,5 @@
 //! Distort.swift::DistortWarp, Compositor 609dbeae, MIT © 2026 Wonder Assembly LLC.
-//! Skia replaces Core Image perspective and Core Graphics triangle drawing. Mask-only port.
+//! Skia replaces Core Image perspective and Core Graphics triangle drawing for image and mask distortion.
 use crate::{model::*, render};
 use anyhow::{Result, anyhow, ensure};
 use skia_safe::{self as sk, Matrix, Paint, PathBuilder, Rect};
@@ -90,6 +90,7 @@ pub fn mask(
         - miny;
     dimensions(width as u32, height as u32)?;
     let placed = MaskPlacement {
+        sampling: placement.sampling,
         x: minx,
         y: miny,
         scale_x: width / layer.width as f64,
@@ -193,4 +194,182 @@ pub fn mask(
         },
         placed,
     ))
+}
+
+/// DistortWarp.warp / warpFolded / warpTrimmed. Convex perspective; otherwise
+/// affine triangles on the 0–2 diagonal. Source alpha bounds trim only on Apply.
+pub fn image(layer: &Layer, corners: &[Point; 4], limit: Option<f64>) -> Result<Layer> {
+    ensure!(usable(corners), "Invalid layer distortion");
+    let mut bare = layer.clone();
+    bare.mask = None;
+    let source = render::Renderer::default().layer_surface(&bare)?;
+    let minx = corners
+        .iter()
+        .map(|p| p.x)
+        .fold(f64::INFINITY, f64::min)
+        .floor();
+    let miny = corners
+        .iter()
+        .map(|p| p.y)
+        .fold(f64::INFINITY, f64::min)
+        .floor();
+    let width = corners
+        .iter()
+        .map(|p| p.x)
+        .fold(f64::NEG_INFINITY, f64::max)
+        .ceil()
+        - minx;
+    let height = corners
+        .iter()
+        .map(|p| p.y)
+        .fold(f64::NEG_INFINITY, f64::max)
+        .ceil()
+        - miny;
+    dimensions(width as u32, height as u32)?;
+    let factor = limit.map(|l| (l / width.max(height)).min(1.)).unwrap_or(1.);
+    let w = (width * factor).ceil().max(1.) as u32;
+    let h = (height * factor).ceil().max(1.) as u32;
+    let mut output = render::surface(w, h)?;
+    output.canvas().clear(sk::Color::TRANSPARENT);
+    let local = corners.map(|p| {
+        sk::Point::new(
+            ((p.x - minx) * w as f64 / width) as f32,
+            ((p.y - miny) * h as f64 / height) as f32,
+        )
+    });
+    let index = |i: usize| match (layer.flip_x, layer.flip_y) {
+        (false, false) => i,
+        (true, false) => [1, 0, 3, 2][i],
+        (false, true) => [3, 2, 1, 0][i],
+        (true, true) => [2, 3, 0, 1][i],
+    };
+    let target = [
+        local[index(0)],
+        local[index(1)],
+        local[index(2)],
+        local[index(3)],
+    ];
+    let from = [
+        sk::Point::new(0., 0.),
+        sk::Point::new(source.width() as f32, 0.),
+        sk::Point::new(source.width() as f32, source.height() as f32),
+        sk::Point::new(0., source.height() as f32),
+    ];
+    let halves: &[&[usize]] = if convex(corners) {
+        &[&[0, 1, 2, 3]]
+    } else {
+        &[&[0, 1, 2], &[0, 2, 3]]
+    };
+    for indices in halves {
+        let a = indices.iter().map(|i| from[*i]).collect::<Vec<_>>();
+        let b = indices.iter().map(|i| target[*i]).collect::<Vec<_>>();
+        let Some(map) = Matrix::poly_to_poly(&a, &b) else {
+            continue;
+        };
+        let mut shape = PathBuilder::new();
+        shape.move_to(b[0]);
+        for p in &b[1..] {
+            shape.line_to(*p);
+        }
+        shape.close();
+        let c = output.canvas();
+        c.save();
+        c.clip_path(&shape.detach(), None, true);
+        c.concat(&map);
+        let mut paint = Paint::default();
+        paint.set_anti_alias(true);
+        c.draw_image_with_sampling_options(
+            &source,
+            (0., 0.),
+            render::sampling_options(layer.sampling),
+            Some(&paint),
+        );
+        c.restore();
+    }
+    let mut result = layer.clone();
+    result.x = minx;
+    result.y = miny;
+    result.width = w;
+    result.height = h;
+    result.scale_x = width / w as f64;
+    result.scale_y = height / h as f64;
+    result.rotation = 0.;
+    result.flip_x = false;
+    result.flip_y = false;
+    result.strokes.clear();
+    let mut warped = output.image_snapshot();
+    if limit.is_none() {
+        let rgba = render::rgba_pixels(&warped)?;
+        let (mut left, mut top, mut right, mut bottom) = (w, h, 0, 0);
+        for y in 0..h {
+            for x in 0..w {
+                if rgba[((y * w + x) * 4 + 3) as usize] > 0 {
+                    left = left.min(x);
+                    top = top.min(y);
+                    right = right.max(x + 1);
+                    bottom = bottom.max(y + 1);
+                }
+            }
+        }
+        if right > left && bottom > top && (left > 0 || top > 0 || right < w || bottom < h) {
+            let mut trimmed = render::surface(right - left, bottom - top)?;
+            trimmed
+                .canvas()
+                .draw_image(&warped, (-(left as f32), -(top as f32)), None);
+            warped = trimmed.image_snapshot();
+            result.x += left as f64;
+            result.y += top as f64;
+            result.width = right - left;
+            result.height = bottom - top;
+        }
+    }
+    result.content = Arc::new(render::native_content(warped));
+    if let Some(owned) = &layer.mask {
+        let mut owned = owned.as_ref().clone();
+        let original = owned.placement.unwrap_or_else(|| MaskPlacement::of(layer));
+        let placed = original.as_layer(layer);
+        if owned.linked {
+            let mut unflipped = layer.clone();
+            unflipped.flip_x = false;
+            unflipped.flip_y = false;
+            let map = homography(corners);
+            let carried = crate::geometry::corners(&placed)
+                .into_iter()
+                .map(|p| {
+                    let local = crate::geometry::to_local(&unflipped, p);
+                    let world = map.map_point(sk::Point::new(
+                        (local.x / layer.width as f64) as f32,
+                        (local.y / layer.height as f64) as f32,
+                    ));
+                    Point::new(world.x as f64, world.y as f64)
+                })
+                .collect::<Vec<_>>();
+            let carried: [Point; 4] = if owned.placement.is_none() {
+                *corners
+            } else {
+                carried.try_into().unwrap()
+            };
+            if usable(&carried) {
+                let (raster, placement) = mask(layer, original, &carried, limit)?;
+                owned.raster = Some(Arc::new(raster));
+                owned.strokes.clear();
+                let mask_world = placement.as_layer(layer);
+                owned.placement = Some(MaskPlacement {
+                    scale_x: mask_world.width as f64 * mask_world.scale_x / result.width as f64,
+                    scale_y: mask_world.height as f64 * mask_world.scale_y / result.height as f64,
+                    ..placement
+                });
+            }
+        } else {
+            // An unlinked mask remains in document space, even after alpha trimming.
+            owned.placement = Some(MaskPlacement {
+                scale_x: layer.width as f64 * original.scale_x / result.width as f64,
+                scale_y: layer.height as f64 * original.scale_y / result.height as f64,
+                ..original
+            });
+        }
+        result.mask = Some(Arc::new(owned));
+    }
+    result.validate()?;
+    Ok(result)
 }

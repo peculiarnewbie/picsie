@@ -218,6 +218,7 @@ pub fn snap(
     drag: CropDrag,
     point: Point,
     ratio: Option<f64>,
+    symmetric: bool,
     targets: (&[f64], &[f64]),
     tolerance: f64,
 ) -> CropRect {
@@ -280,6 +281,38 @@ pub fn snap(
         } else if let Some(y) = nearest(rect.y + rect.height, targets.1) {
             if y > rect.y {
                 rect.height = y - rect.y;
+            }
+        }
+    }
+    if symmetric {
+        let center = if matches!(drag.mode, DragMode::Create) {
+            drag.start
+        } else {
+            Point::new(
+                drag.original.x + drag.original.width / 2.,
+                drag.original.y + drag.original.height / 2.,
+            )
+        };
+        if horizontal {
+            let half = if point.x >= center.x {
+                rect.x + rect.width - center.x
+            } else {
+                center.x - rect.x
+            };
+            if half >= 0.5 {
+                rect.x = center.x - half;
+                rect.width = half * 2.;
+            }
+        }
+        if vertical {
+            let half = if point.y >= center.y {
+                rect.y + rect.height - center.y
+            } else {
+                center.y - rect.y
+            };
+            if half >= 0.5 {
+                rect.y = center.y - half;
+                rect.height = half * 2.;
             }
         }
     }

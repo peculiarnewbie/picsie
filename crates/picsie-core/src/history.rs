@@ -179,7 +179,7 @@ impl History {
                 .flat_map(|l| {
                     let mut a = vec![];
                     if let Content::Image { data } = l.content.as_ref() {
-                        a.push(data.storage());
+                        a.extend(data.storage_parts());
                     }
                     for s in &l.strokes {
                         a.push((Arc::as_ptr(s) as usize, 64 + s.points.len() * 16));

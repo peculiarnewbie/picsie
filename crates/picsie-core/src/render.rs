@@ -8,8 +8,9 @@ use crate::{
 use anyhow::{Result, anyhow, ensure};
 use base64::{Engine as _, engine::general_purpose::STANDARD};
 use skia_safe::{self as sk, BlendMode, Canvas, Color, Image, Paint, Rect, Surface};
-use std::{collections::VecDeque, sync::Arc};
+use std::{collections::HashMap, sync::Arc};
 mod composite;
+mod projection;
 pub fn surface(w: u32, h: u32) -> Result<Surface> {
     dimensions(w, h)?;
     sk::surfaces::raster_n32_premul((w as i32, h as i32))
@@ -165,6 +166,11 @@ fn mask_image(mask: &LayerMask, layer: &Layer) -> Result<Image> {
             let (fx, fy) = (local.x - 0.5, local.y - 0.5);
             let (sx, sy) = (fx.floor() as isize, fy.floor() as isize);
             if local.x >= 0. && local.y >= 0. && local.x < width as f64 && local.y < height as f64 {
+                if placement.sampling == Sampling::Nearest {
+                    pixels[y * width + x] =
+                        rgba[(local.y.floor() as usize * width + local.x.floor() as usize) * 4 + 3];
+                    continue;
+                }
                 let sample = |x: isize, y: isize| {
                     rgba[(y.clamp(0, height as isize - 1) as usize * width
                         + x.clamp(0, width as isize - 1) as usize)
@@ -233,6 +239,15 @@ pub(crate) fn transform(c: &Canvas, l: &Layer) {
     ));
     c.translate((-(l.width as f32) / 2., -(l.height as f32) / 2.));
 }
+pub(crate) fn sampling_options(sampling: Sampling) -> sk::SamplingOptions {
+    match sampling {
+        Sampling::Nearest => {
+            sk::SamplingOptions::new(sk::FilterMode::Nearest, sk::MipmapMode::None)
+        }
+        Sampling::Smooth => sk::SamplingOptions::new(sk::FilterMode::Linear, sk::MipmapMode::None),
+        Sampling::High => sk::SamplingOptions::from(sk::CubicResampler::catmull_rom()),
+    }
+}
 /// Draw source pixels in document space, without appearance, masks, or clipping links.
 pub fn draw_pixels(canvas: &Canvas, layer: &Layer, image: &Image) {
     canvas.save();
@@ -240,14 +255,7 @@ pub fn draw_pixels(canvas: &Canvas, layer: &Layer, image: &Image) {
     canvas.draw_image_with_sampling_options(
         image,
         (0., 0.),
-        sk::SamplingOptions::new(
-            if layer.sampling == Sampling::Nearest {
-                sk::FilterMode::Nearest
-            } else {
-                sk::FilterMode::Linear
-            },
-            sk::MipmapMode::None,
-        ),
+        sampling_options(layer.sampling),
         None,
     );
     canvas.restore();
@@ -280,26 +288,40 @@ fn blend(b: Blend) -> BlendMode {
         | Blend::Divide => BlendMode::SrcOver,
     }
 }
+struct SourceCache {
+    layer: Layer,
+    image: Image,
+    used: u64,
+}
 #[derive(Default)]
 pub struct Renderer {
-    cache: VecDeque<(Layer, Image)>,
+    cache: HashMap<String, SourceCache>,
+    cache_pixels: u64,
+    clock: u64,
+    stacks: HashMap<String, projection::Stack>,
+    stack_pixels: u64,
     composite: Option<composite::Composite>,
     background: Option<composite::Background>,
+    preview_tiles: Option<composite::PreviewTiles>,
+    thumbnail_tiles: std::collections::HashMap<String, composite::PreviewTiles>,
 }
 impl Renderer {
     #[allow(deprecated)]
     pub fn layer_surface(&mut self, l: &Layer) -> Result<Image> {
-        if let Some((_, image)) = self.cache.iter().find(|(old, _)| {
-            old.id == l.id
-                && old.width == l.width
+        self.clock += 1;
+        if let Some(entry) = self.cache.get_mut(&l.id) {
+            let old = &entry.layer;
+            if old.width == l.width
                 && old.height == l.height
                 && Arc::ptr_eq(&old.content, &l.content)
                 && old.strokes == l.strokes
                 && old.mask == l.mask
                 && (l.mask.as_ref().is_none_or(|m| m.placement.is_none())
                     || MaskPlacement::of(old) == MaskPlacement::of(l))
-        }) {
-            return Ok(image.clone());
+            {
+                entry.used = self.clock;
+                return Ok(entry.image.clone());
+            }
         }
         let mut s = surface(l.width, l.height)?;
         let c = s.canvas();
@@ -358,8 +380,7 @@ impl Renderer {
                 c.restore();
             }
             Content::Image { data } => {
-                let image = data.image()?;
-                c.draw_image_rect(image, None, rect(l.width, l.height), &Paint::default());
+                data.draw(c, rect(l.width, l.height))?;
             }
         }
         for v in &l.strokes {
@@ -381,25 +402,42 @@ impl Renderer {
             c.draw_image(&image, (0., 0.), Some(&p));
         }
         let image = s.image_snapshot();
-        self.cache.retain(|(v, _)| v.id != l.id);
-        self.cache.push_back((l.clone(), image.clone()));
-        let mut used: u64 = self
-            .cache
-            .iter()
-            .map(|(v, _)| v.width as u64 * v.height as u64)
-            .sum();
-        while used > MAX_PIXELS {
-            if let Some((v, _)) = self.cache.pop_front() {
-                used -= v.width as u64 * v.height as u64;
-            } else {
+        if let Some(old) = self.cache.remove(&l.id) {
+            self.cache_pixels -= old.image.width() as u64 * old.image.height() as u64;
+        }
+        self.cache_pixels += image.width() as u64 * image.height() as u64;
+        self.cache.insert(
+            l.id.clone(),
+            SourceCache {
+                layer: l.clone(),
+                image: image.clone(),
+                used: self.clock,
+            },
+        );
+        while self.cache_pixels > MAX_PIXELS {
+            let Some(id) = self
+                .cache
+                .iter()
+                .min_by_key(|(_, entry)| entry.used)
+                .map(|(id, _)| id.clone())
+            else {
                 break;
-            }
+            };
+            let old = self.cache.remove(&id).unwrap();
+            self.cache_pixels -= old.image.width() as u64 * old.image.height() as u64;
         }
         Ok(image)
     }
     fn draw_own(&mut self, doc: &Document, l: &Layer, c: &Canvas, mode: Blend) -> Result<()> {
-        let opacity = doc.effective(l).1;
-        let image = self.layer_surface(l)?;
+        self.draw_own_with_opacity(l, c, mode, doc.effective(l).1)
+    }
+    fn draw_own_with_opacity(
+        &mut self,
+        l: &Layer,
+        c: &Canvas,
+        mode: Blend,
+        opacity: f64,
+    ) -> Result<()> {
         let mut p = Paint::default();
         p.set_anti_alias(true)
             .set_alpha((opacity * 255.).round() as u8)
@@ -474,19 +512,33 @@ impl Renderer {
         }
         c.save();
         transform(c, l);
-        c.draw_image_with_sampling_options(
-            &image,
-            (0., 0.),
-            sk::SamplingOptions::new(
-                if l.sampling == Sampling::Nearest {
-                    sk::FilterMode::Nearest
-                } else {
-                    sk::FilterMode::Linear
-                },
-                sk::MipmapMode::None,
-            ),
-            Some(&p),
-        );
+        let matrix = c.local_to_device_as_3x3();
+        if l.mask.is_none()
+            && l.strokes.is_empty()
+            && l.blur == 0.
+            && opacity == 1.
+            && l.saturation == 1.
+            && l.brightness == 1.
+            && matrix.is_translate()
+            && matrix.translate_x().fract() == 0.
+            && matrix.translate_y().fract() == 0.
+            && c.device_clip_bounds()
+                .is_some_and(|r| r.width() as i64 * r.height() as i64 <= 260 * 260)
+            && let Content::Image {
+                data: crate::asset::ImageAsset::Tiled(raster),
+            } = l.content.as_ref()
+            && (raster.width, raster.height) == (l.width, l.height)
+        {
+            raster.draw(c, sampling_options(l.sampling), &p);
+        } else {
+            let image = self.layer_surface(l)?;
+            c.draw_image_with_sampling_options(
+                &image,
+                (0., 0.),
+                sampling_options(l.sampling),
+                Some(&p),
+            );
+        }
         c.restore();
         Ok(())
     }
@@ -546,14 +598,15 @@ impl Renderer {
         }
         Ok(coverage)
     }
-    fn clip_folders(&mut self, doc: &Document, layer: &Layer, c: &Canvas) -> Result<()> {
+    fn clip_folders(
+        &mut self,
+        index: &crate::layer_index::LayerIndex<'_>,
+        layer: &Layer,
+        c: &Canvas,
+    ) -> Result<()> {
         let mut parent = layer.parent_id.as_deref();
         while let Some(id) = parent {
-            let folder = doc
-                .layers
-                .iter()
-                .find(|l| l.id == id)
-                .ok_or_else(|| anyhow!("Missing folder"))?;
+            let folder = index.layer(id).ok_or_else(|| anyhow!("Missing folder"))?;
             if let Some(mask) = &folder.mask
                 && mask.enabled
             {
@@ -580,81 +633,7 @@ impl Renderer {
         Ok(s)
     }
     fn draw_document(&mut self, doc: &Document, c: &Canvas) -> Result<()> {
-        self.cache
-            .retain(|(l, _)| doc.layers.iter().any(|v| v.id == l.id));
-        let layers: Vec<_> = doc
-            .ordered_layers()
-            .into_iter()
-            .filter(|l| doc.effective(l).0 && !matches!(l.content.as_ref(), Content::Group))
-            .collect();
-        let mut index = 0;
-        while index < layers.len() {
-            let layer = layers[index];
-            c.save();
-            self.clip_folders(doc, layer, c)?;
-            let mut end = index + 1;
-            if layer.mask_source_id.is_none() {
-                while end < layers.len()
-                    && layers[end].mask_source_id.as_deref() == Some(&layer.id)
-                    && layers[end].parent_id == layer.parent_id
-                {
-                    end += 1;
-                }
-            }
-            if end > index + 1 {
-                // LiveMaskRenderer.drawComposite: blend colors on an opaque base, then
-                // restore its original alpha once. Repeated source-over thickens soft edges.
-                let mut base = surface(doc.width, doc.height)?;
-                self.draw_own(doc, layer, base.canvas(), Blend::SourceOver)?;
-                let mut pixels = rgba_pixels(&base.image_snapshot())?;
-                let coverage: Vec<_> = pixels
-                    .chunks_exact_mut(4)
-                    .map(|p| {
-                        let a = p[3];
-                        p[3] = 255;
-                        a
-                    })
-                    .collect();
-                base.canvas().clear(Color::TRANSPARENT);
-                base.canvas().draw_image(
-                    rgba_image(doc.width, doc.height, &pixels)?,
-                    (0., 0.),
-                    None,
-                );
-                for child in &layers[index + 1..end] {
-                    self.draw_own(doc, child, base.canvas(), child.blend)?;
-                }
-                pixels = rgba_pixels(&base.image_snapshot())?;
-                for (pixel, alpha) in pixels.chunks_exact_mut(4).zip(coverage) {
-                    pixel[3] = alpha;
-                }
-                let mut p = Paint::default();
-                p.set_blend_mode(blend(layer.blend));
-                blends::apply(&mut p, layer.blend)?;
-                c.draw_image(
-                    rgba_image(doc.width, doc.height, &pixels)?,
-                    (0., 0.),
-                    Some(&p),
-                );
-            } else {
-                if let Some(source) = &layer.mask_source_id {
-                    let coverage = self.live_coverage(doc, source)?;
-                    let image = alpha_image(doc.width, doc.height, &coverage)?;
-                    let shader = image
-                        .to_shader(
-                            (sk::TileMode::Decal, sk::TileMode::Decal),
-                            sk::SamplingOptions::default(),
-                            None,
-                        )
-                        .ok_or_else(|| anyhow!("Cannot clip live mask"))?;
-                    c.clip_shader(shader, None);
-                }
-                self.draw_own(doc, layer, c, layer.blend)?;
-            }
-            c.restore();
-            index = end;
-        }
-        Ok(())
+        self.draw_projection(doc, c)
     }
     /// Bake only the dependency into target pixels; preserve its raster mask and appearance.
     pub fn bake_live_mask(&mut self, doc: &Document, layer: &Layer) -> Result<Layer> {
@@ -745,51 +724,59 @@ impl Renderer {
         )?;
         let c = s.canvas();
         // The checkerboard depends on viewport geometry, not the edited pixels.
-        let background = self.preview_background(doc, v)?;
+        // EditorCanvas.renderBounds: the original canvas union the crop draft.
+        let bounds = crop
+            .map(|r| {
+                Rect::new(
+                    r.x.min(0.) as f32,
+                    r.y.min(0.) as f32,
+                    (r.x + r.width).max(doc.width as f64) as f32,
+                    (r.y + r.height).max(doc.height as f64) as f32,
+                )
+            })
+            .unwrap_or_else(|| rect(doc.width, doc.height));
+        let background = self.preview_background(doc, v, bounds)?;
         c.draw_image(&background, (0., 0.), None);
         let o = geometry::canvas_origin(doc, v);
         c.save();
         c.translate(point(o));
         c.scale((v.zoom as f32, v.zoom as f32));
-        c.clip_rect(rect(doc.width, doc.height), None, false);
-        let image = self.preview_composite(doc)?;
-        c.draw_image_with_sampling_options(
-            &image,
-            (0., 0.),
-            sk::SamplingOptions::new(sk::FilterMode::Linear, sk::MipmapMode::None),
-            None,
-        );
-        if let Some(selection) = pixel_selection
-            && let Some(bounds) = selection.coverage_bounds()
-        {
-            // Feathered edges fade past the stored bounds, as upstream's clip region does.
-            let coverage = selection_coverage(selection)?;
-            let width = bounds.width as usize;
-            let height = bounds.height as usize;
-            let mut rgba = vec![0u8; width * height * 4];
-            for y in 0..height {
-                for x in 0..width {
-                    let value = coverage[(bounds.y as usize + y) * selection.width as usize
-                        + bounds.x as usize
-                        + x];
-                    let at = (y * width + x) * 4;
-                    rgba[at..at + 3].copy_from_slice(&[75, 179, 221]);
-                    rgba[at + 3] = (value as u16 * 48 / 255) as u8;
-                }
-            }
-            let info = sk::ImageInfo::new(
-                (bounds.width as i32, bounds.height as i32),
-                sk::ColorType::RGBA8888,
-                sk::AlphaType::Unpremul,
-                None,
-            );
-            if let Some(overlay) =
-                sk::images::raster_from_data(&info, sk::Data::new_copy(&rgba), width * 4)
-            {
-                c.draw_image(&overlay, (bounds.x as f32, bounds.y as f32), None);
+        c.clip_rect(bounds, None, false);
+        if bounds != rect(doc.width, doc.height) {
+            // Viewport-sized composition exposes off-canvas pixels without allocating
+            // a potentially enormous union raster. Ordinary previews keep their cache.
+            self.draw_document(doc, c)?;
+        } else {
+            if composite::tiled_preview_eligible(doc) && composite::has_tiled_rasters(doc) {
+                self.draw_preview_tiles(doc, c, v)?;
+            } else {
+                self.retain_preview_tiles_when_unpatched(doc);
+                let image = self.preview_composite(doc)?;
+                c.draw_image_with_sampling_options(
+                    &image,
+                    (0., 0.),
+                    sk::SamplingOptions::new(sk::FilterMode::Linear, sk::MipmapMode::None),
+                    None,
+                );
             }
         }
         c.restore();
+        if let Some(selection) = pixel_selection {
+            c.save();
+            c.translate(point(o));
+            c.scale((v.zoom as f32, v.zoom as f32));
+            let mut line = paint("#ffffff");
+            line.set_style(sk::paint::Style::Stroke)
+                .set_stroke_width(1. / v.zoom as f32);
+            c.draw_path(&selection.outline, &line);
+            line.set_color(sk::Color::BLACK)
+                .set_path_effect(sk::PathEffect::dash(
+                    &[4. / v.zoom as f32, 4. / v.zoom as f32],
+                    0.,
+                ));
+            c.draw_path(&selection.outline, &line);
+            c.restore();
+        }
         let layers: Vec<_> = doc
             .layers
             .iter()
@@ -914,10 +901,10 @@ impl Renderer {
             }
         }
         if let Some(draft) = selection_draft {
-            let mut line = paint("#72cceb");
+            let mut line = paint("#ffffff");
             line.set_style(sk::paint::Style::Stroke)
-                .set_stroke_width(1.5)
-                .set_path_effect(sk::PathEffect::dash(&[5., 4.], 0.));
+                .set_stroke_width(1.)
+                .set_path_effect(sk::PathEffect::dash(&[4., 4.], 0.));
             if let Some((x0, y0, x1, y1)) = draft.bounds() {
                 let a = map(Point::new(x0, y0));
                 let b = map(Point::new(x1, y1));
@@ -1016,43 +1003,190 @@ pub fn selection_coverage(selection: &PixelSelection) -> Result<Arc<Vec<u8>>> {
     if selection.feather <= 0. {
         return Ok(selection.pixels.clone());
     }
-    let (width, height) = (selection.width as usize, selection.height as usize);
+    // DocumentSelection.clip: four Gaussian sigmas plus one antialias pixel.
+    // Crop the existing immutable coverage, preserving combined/raster selections.
+    let Some(bounds) = selection.coverage_bounds() else {
+        return Ok(Arc::new(vec![
+            0;
+            selection.width as usize
+                * selection.height as usize
+        ]));
+    };
+    let (width, height) = (bounds.width as usize, bounds.height as usize);
+    let mut cropped = Vec::with_capacity(width * height);
+    for y in 0..height {
+        let at = (bounds.y as usize + y) * selection.width as usize + bounds.x as usize;
+        cropped.extend_from_slice(&selection.pixels[at..at + width]);
+    }
     let alpha = sk::ImageInfo::new(
-        (selection.width as i32, selection.height as i32),
+        (bounds.width as i32, bounds.height as i32),
         sk::ColorType::Alpha8,
         sk::AlphaType::Premul,
         None,
     );
-    let image = sk::images::raster_from_data(
-        &alpha,
-        sk::Data::new_copy(selection.pixels.as_slice()),
-        width,
-    )
-    .ok_or_else(|| anyhow!("Cannot create selection coverage"))?;
+    let image = sk::images::raster_from_data(&alpha, sk::Data::new_copy(&cropped), width)
+        .ok_or_else(|| anyhow!("Cannot create selection coverage"))?;
     let sigma = (selection.feather / 2.) as f32;
     let filter = sk::image_filters::blur((sigma, sigma), sk::TileMode::Clamp, None, None)
         .ok_or_else(|| anyhow!("Cannot soften selection coverage"))?;
     let mut soft = Paint::default();
     soft.set_image_filter(filter);
-    let mut surface = surface(selection.width, selection.height)?;
-    surface.canvas().draw_image(&image, (0., 0.), Some(&soft));
-    let mut rgba = vec![0u8; width * height * 4];
-    let info = sk::ImageInfo::new(
-        (selection.width as i32, selection.height as i32),
-        sk::ColorType::RGBA8888,
-        sk::AlphaType::Unpremul,
-        None,
-    );
+    let mut surface = surface(bounds.width, bounds.height)?;
+    surface.canvas().draw_image(image, (0., 0.), Some(&soft));
+    let mut pixels = vec![0; width * height];
     ensure!(
-        surface.read_pixels(&info, &mut rgba, width * 4, (0, 0)),
+        surface.read_pixels(&alpha, &mut pixels, width, (0, 0)),
         "Cannot read selection coverage"
     );
-    Ok(Arc::new(
-        rgba.chunks_exact(4).map(|pixel| pixel[3]).collect(),
-    ))
+    let mut output = vec![0; selection.width as usize * selection.height as usize];
+    for y in 0..height {
+        let at = (bounds.y as usize + y) * selection.width as usize + bounds.x as usize;
+        output[at..at + width].copy_from_slice(&pixels[y * width..(y + 1) * width]);
+    }
+    Ok(Arc::new(output))
 }
+
 pub fn clear_selected_pixels(layer: &Layer, selection: &PixelSelection) -> Result<Image> {
     Renderer::default().clear_layer_selection(layer, selection)
+}
+pub(crate) fn clear_selected_asset(
+    layer: &Layer,
+    selection: &PixelSelection,
+    doc: &Document,
+) -> Result<crate::asset::ImageAsset> {
+    let coverage = selection_coverage(selection)?;
+    let area = selection
+        .coverage_bounds()
+        .map(|b| Rect::from_xywh(b.x as f32, b.y as f32, b.width as f32, b.height as f32))
+        .unwrap_or(Rect::default());
+    edit_replacement_tiles(
+        layer,
+        layer,
+        0,
+        0,
+        doc,
+        Some(&coverage),
+        area,
+        |pixel, amount| {
+            pixel[3] = (pixel[3] as u16 * (255 - amount as u16) / 255) as u8;
+        },
+    )
+}
+
+/// BrushStroke.paintCanvas: visit only source tiles intersecting the selection,
+/// retain the immutable base and publish replacement pixels without flattening.
+fn edit_replacement_tiles(
+    original: &Layer,
+    next: &Layer,
+    dx: i32,
+    dy: i32,
+    doc: &Document,
+    coverage: Option<&[u8]>,
+    area: Rect,
+    edit: impl Fn(&mut [u8], u8),
+) -> Result<crate::asset::ImageAsset> {
+    use crate::{
+        asset::ImageAsset,
+        raster_snapshot::{RasterPatch, RasterSnapshot},
+    };
+    let source = if let Content::Image { data } = original.content.as_ref()
+        && original.strokes.is_empty()
+    {
+        Some(data.clone())
+    } else if matches!(original.content.as_ref(), Content::Paint) && original.strokes.is_empty() {
+        None
+    } else {
+        let mut bare = original.clone();
+        bare.mask = None;
+        Some(ImageAsset::Raster(Arc::new(
+            Renderer::default().layer_surface(&bare)?,
+        )))
+    };
+    let points = [
+        (area.left, area.top),
+        (area.right, area.top),
+        (area.right, area.bottom),
+        (area.left, area.bottom),
+    ]
+    .map(|(x, y)| geometry::to_local(next, Point::new(x as f64, y as f64)));
+    let affected = sk::IRect::new(
+        (points
+            .iter()
+            .map(|p| p.x)
+            .fold(f64::INFINITY, f64::min)
+            .floor() as i32
+            - 1)
+        .max(0),
+        (points
+            .iter()
+            .map(|p| p.y)
+            .fold(f64::INFINITY, f64::min)
+            .floor() as i32
+            - 1)
+        .max(0),
+        (points
+            .iter()
+            .map(|p| p.x)
+            .fold(f64::NEG_INFINITY, f64::max)
+            .ceil() as i32
+            + 1)
+        .min(next.width as i32),
+        (points
+            .iter()
+            .map(|p| p.y)
+            .fold(f64::NEG_INFINITY, f64::max)
+            .ceil() as i32
+            + 1)
+        .min(next.height as i32),
+    );
+    let mut patches = vec![];
+    let mapping = geometry::PixelMapping::new(next);
+    if !area.is_empty() && !affected.is_empty() {
+        for ty in affected.top / 256..=(affected.bottom - 1) / 256 {
+            for tx in affected.left / 256..=(affected.right - 1) / 256 {
+                let tile = sk::IRect::new(
+                    tx * 256,
+                    ty * 256,
+                    ((tx + 1) * 256).min(next.width as i32),
+                    ((ty + 1) * 256).min(next.height as i32),
+                );
+                let mut surface = surface(tile.width() as u32, tile.height() as u32)?;
+                if let Some(source) = &source {
+                    let c = surface.canvas();
+                    c.translate(((dx - tile.left) as f32, (dy - tile.top) as f32));
+                    source.draw(c, rect(original.width, original.height))?;
+                }
+                let mut pixels = rgba_pixels(&surface.image_snapshot())?;
+                for y in tile.top..tile.bottom {
+                    for x in tile.left..tile.right {
+                        let world = mapping.world(Point::new(x as f64 + 0.5, y as f64 + 0.5));
+                        let amount = edit_coverage(doc, coverage, world);
+                        if amount != 0 {
+                            edit(
+                                &mut pixels[(((y - tile.top) * tile.width() + x - tile.left) * 4)
+                                    as usize..][..4],
+                                amount,
+                            );
+                        }
+                    }
+                }
+                patches.push(RasterPatch::new(
+                    tile.with_offset((-dx, -dy)),
+                    Arc::new(rgba_image(
+                        tile.width() as u32,
+                        tile.height() as u32,
+                        &pixels,
+                    )?),
+                ));
+            }
+        }
+    }
+    Ok(ImageAsset::Tiled(Arc::new(RasterSnapshot::replacing(
+        source.as_ref(),
+        (original.width, original.height),
+        patches,
+        sk::IRect::from_xywh(-dx, -dy, next.width as i32, next.height as i32),
+    )?)))
 }
 pub fn native_content(image: Image) -> Content {
     Content::Image {
@@ -1172,9 +1306,10 @@ pub fn fill_selected_pixels(
             .map(|p| p.as_layer(layer))
             .unwrap_or_else(|| layer.clone());
         let pixels = Arc::make_mut(&mut raster.pixels);
+        let mapping = geometry::PixelMapping::new(&placed);
         for y in 0..layer.height {
             for x in 0..layer.width {
-                let world = geometry::to_world(&placed, Point::new(x as f64 + 0.5, y as f64 + 0.5));
+                let world = mapping.world(Point::new(x as f64 + 0.5, y as f64 + 0.5));
                 let amount = edit_coverage(doc, coverage.as_deref().map(Vec::as_slice), world);
                 let index = (y * layer.width + x) as usize;
                 let target = if mode == MaskMode::Reveal { 255 } else { 0 };
@@ -1195,29 +1330,25 @@ pub fn fill_selected_pixels(
         .map(|b| Rect::from_xywh(b.x as f32, b.y as f32, b.width as f32, b.height as f32))
         .unwrap_or(rect(doc.width, doc.height));
     let (mut next, dx, dy) = expanded_layer(layer, area)?;
-    let mut unmasked = layer.clone();
-    unmasked.mask = None;
-    let source = Renderer::default().layer_surface(&unmasked)?;
-    let mut output = surface(next.width, next.height)?;
-    output
-        .canvas()
-        .draw_image(&source, (dx as f32, dy as f32), None);
-    let mut pixels = rgba_pixels(&output.image_snapshot())?;
     let fill = color(value);
-    for y in 0..next.height {
-        for x in 0..next.width {
-            let world = geometry::to_world(&next, Point::new(x as f64 + 0.5, y as f64 + 0.5));
-            let amount =
-                edit_coverage(doc, coverage.as_deref().map(Vec::as_slice), world) as f64 / 255.;
-            let pixel = &mut pixels[((y * next.width + x) * 4) as usize..][..4];
-            composite_pixel(pixel, [fill.r(), fill.g(), fill.b()], amount, false);
-        }
-    }
-    next.content = Arc::new(native_content(rgba_image(
-        next.width,
-        next.height,
-        &pixels,
-    )?));
+    let data = edit_replacement_tiles(
+        layer,
+        &next,
+        dx,
+        dy,
+        doc,
+        coverage.as_deref().map(Vec::as_slice),
+        area,
+        |pixel, amount| {
+            composite_pixel(
+                pixel,
+                [fill.r(), fill.g(), fill.b()],
+                amount as f64 / 255.,
+                false,
+            )
+        },
+    )?;
+    next.content = Arc::new(Content::Image { data });
     next.strokes.clear();
     Ok(next)
 }
@@ -1230,6 +1361,14 @@ pub fn edit_coverage(doc: &Document, coverage: Option<&[u8]>, point: Point) -> u
     })
 }
 pub fn composite_pixel(pixel: &mut [u8], color: [u8; 3], amount: f64, erase: bool) {
+    if amount == 0. {
+        return;
+    }
+    if amount == 1. && !erase {
+        pixel[..3].copy_from_slice(&color);
+        pixel[3] = 255;
+        return;
+    }
     let alpha = pixel[3] as f64 / 255.;
     if erase {
         pixel[3] = (alpha * (1. - amount) * 255.).round() as u8;

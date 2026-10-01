@@ -363,7 +363,7 @@ impl Desktop {
                 ("auto-select", "Auto Select"),
                 ("show-controls", "Show Controls"),
             ] {
-                controls = controls.child(
+                bar = bar.child(
                     self.probe(
                         key,
                         Checkbox::new(key)
@@ -376,21 +376,49 @@ impl Desktop {
                 );
             }
             let layer = state.selected();
-            let locked = layer.is_none_or(|l| {
-                l.locked
-                    || (l.kind() == "group"
-                        && !(state.paint_target == "mask"
-                            && l.mask.as_ref().is_some_and(|m| m["linked"] == false)))
-            }) || state.selection.ids.len() != 1;
+            let locked = (state.mask_distortion.is_some() || state.image_distortion.is_some())
+                || layer.is_none_or(|l| {
+                    l.locked
+                        || (l.kind() == "group"
+                            && !(state.paint_target == "mask"
+                                && l.mask.as_ref().is_some_and(|m| m["linked"] == false)))
+                })
+                || state.selection.ids.len() != 1;
             for (key, title, width) in [
                 ("x", "X", 58.),
                 ("y", "Y", 58.),
                 ("width", "W", 62.),
                 ("height", "H", 62.),
-                ("rotation", "°", 56.),
             ] {
                 controls = controls.child(self.inline_field(key, title, width, locked));
             }
+            controls = controls
+                .child(
+                    self.probe(
+                        "transform-ratio",
+                        self.raw_button(
+                            "transform-ratio-button",
+                            "",
+                            state.locks_transform_ratio,
+                            cx,
+                        )
+                        .icon(icon("link", 15.))
+                        .disabled(locked || self.busy)
+                        .tooltip("Lock aspect ratio")
+                        .on_click(cx.listener(|this, _, _, cx| {
+                            if let Some(s) = &this.state {
+                                this.send(Command::SetTransformRatio {
+                                    locked: !s.locks_transform_ratio,
+                                });
+                            }
+                            cx.notify();
+                        })),
+                    ),
+                )
+                .child(self.inline_field("transform-scale", "Scale", 58., locked))
+                .child(div().flex_shrink_0().text_color(rgb(MUTED)).child("%"))
+                .child(self.inline_field("rotation", "°", 56., locked))
+                .child(self.inline_select("transform-sampling", 170., locked));
             if let Some(layer) = layer {
                 let target = state.transform_target.as_ref().unwrap_or(layer);
                 for (id, title, property, value) in [
@@ -413,7 +441,13 @@ impl Desktop {
                 }
             }
             bar = bar
-                .child(controls)
+                .child(
+                    self.probe("transform-fields", controls)
+                        .flex()
+                        .flex_1()
+                        .min_w_0()
+                        .h_full(),
+                )
                 .child(self.command_button(
                     "transform-cancel",
                     "Cancel",
@@ -548,14 +582,24 @@ impl Desktop {
                     ("add", "Add", PixelSelectionMode::Add),
                     ("subtract", "Subtract", PixelSelectionMode::Subtract),
                 ] {
-                    group = group.child(self.command_button(
-                        &format!("selection-{id}"),
-                        title,
-                        Command::SetSelectionMode { mode },
-                        false,
-                        state.selection_mode == id,
-                        cx,
-                    ));
+                    group = group.child(
+                        self.command_button(
+                            &format!("selection-{id}"),
+                            title,
+                            Command::SetSelectionMode { mode },
+                            false,
+                            state
+                                .selection_feedback
+                                .as_ref()
+                                .map(|f| {
+                                    format!("{:?}", f.effective_mode(self.cursor_modifiers))
+                                        .to_lowercase()
+                                })
+                                .unwrap_or_else(|| state.selection_mode.clone())
+                                == id,
+                            cx,
+                        ),
+                    );
                 }
                 controls = controls.child(group);
                 if state.tool == Tool::Wand {
@@ -595,7 +639,23 @@ impl Desktop {
                             ),
                         );
                 }
-                let no_bounds = state.pixel_selection_bounds.is_none();
+                if state.tool != Tool::Marquee || state.marquee_kind == "ellipse" {
+                    controls = controls.child(
+                        self.probe(
+                            "selection-antialiased",
+                            Checkbox::new("selection-antialiased-check")
+                                .label("Anti-alias")
+                                .checked(state.selection_antialiased)
+                                .on_click(cx.listener(|this, value, _, cx| {
+                                    this.send(Command::SetSelectionAntialiased {
+                                        antialiased: *value,
+                                    });
+                                    cx.notify();
+                                })),
+                        ),
+                    );
+                }
+                let no_bounds = !state.can_modify_selection;
                 controls = controls
                     .child(div().h(px(18.)).border_l_1().border_color(rgb(LINE)))
                     .child(self.command_button(
@@ -606,6 +666,8 @@ impl Desktop {
                         false,
                         cx,
                     ))
+                    .child(self.inline_field("selection-amount", "", 40., false))
+                    .child(div().flex_shrink_0().text_color(rgb(MUTED)).child("px"))
                     .child(self.command_button(
                         "pixels-contract",
                         "Contract",
@@ -614,7 +676,8 @@ impl Desktop {
                         false,
                         cx,
                     ))
-                    .child(self.inline_field("selection-amount", "px", 40., false))
+                    .child(self.inline_field("selection-contract", "", 40., false))
+                    .child(div().flex_shrink_0().text_color(rgb(MUTED)).child("px"))
                     .child(self.command_button(
                         "pixels-feather",
                         "Feather",
@@ -623,7 +686,8 @@ impl Desktop {
                         false,
                         cx,
                     ))
-                    .child(self.inline_field("feather", "px", 40., false));
+                    .child(self.inline_field("feather", "", 40., false))
+                    .child(div().flex_shrink_0().text_color(rgb(MUTED)).child("px"));
                 if state.selection_draft {
                     bar = bar.child(controls).child(self.command_button(
                         "selection-finish",
@@ -634,14 +698,19 @@ impl Desktop {
                         cx,
                     ));
                 } else {
-                    bar = bar.child(controls).child(self.command_button(
-                        "pixels-deselect",
-                        "Deselect",
-                        Command::DeselectPixels,
-                        !state.has_pixel_selection,
-                        false,
-                        cx,
-                    ));
+                    bar = bar
+                        .child(controls)
+                        .when(state.selection_empty, |bar| {
+                            bar.child(div().text_color(rgb(MUTED)).child("Empty selection"))
+                        })
+                        .child(self.command_button(
+                            "pixels-deselect",
+                            "Deselect",
+                            Command::DeselectPixels,
+                            !state.has_pixel_selection,
+                            false,
+                            cx,
+                        ));
                 }
                 return bar;
             }

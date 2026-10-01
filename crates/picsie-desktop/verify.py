@@ -21,6 +21,7 @@ parser.add_argument('--tools', type=Path)
 parser.add_argument('--software', action='store_true')
 parser.add_argument('--display', default=':95')
 parser.add_argument('--polish-only', action='store_true')
+parser.add_argument('--interaction-only', action='store_true')
 args = parser.parse_args()
 out = Path(args.output).resolve()
 out.mkdir(parents=True, exist_ok=True)
@@ -105,7 +106,7 @@ def prepare_control(control):
     menus = {'new':'File','open':'File','open-comp':'File','import':'File','save':'File','save-as':'File','save-comp':'File','export-png':'File','export-jpeg':'File',
              'duplicate':'Layer','group':'Layer','out-of-folder':'Layer','add-gradient':'Layer','raise':'Layer','lower':'Layer','layers-merge':'Layer','pixels-via-copy':'Layer',
              'pixels-copy':'Edit','pixels-cut':'Edit','pixels-paste':'Edit','pixels-copy-merged':'Edit','pixels-transform':'Edit','pixels-fill-foreground':'Edit','pixels-fill-background':'Edit','undo':'Edit','redo':'Edit',
-             'rulers':'View','guides':'View','grid':'View','snap':'View','lock-guides':'View','snap-guides':'View','snap-grid':'View','snap-layers':'View','snap-bounds':'View','clear-guides':'View','pixels-all':'Select','pixels-invert':'Select','pixels-fill':'Select','pixels-clear':'Select','image-size':'Image'}
+             'rulers':'View','guides':'View','grid':'View','snap':'View','lock-guides':'View','snap-guides':'View','snap-grid':'View','snap-layers':'View','snap-bounds':'View','clear-guides':'View','pixels-all':'Select','pixels-invert':'Select','pixels-fill':'Select','pixels-clear':'Select','image-size':'Image','pixels-layer':'Select','pixels-expand-menu':'Select','pixels-contract-menu':'Select','pixels-feather-menu':'Select','pixels-distort':'Edit'}
     mask_controls={'mask-add','mask-link','mask-enabled','mask-remove','mask-reset-reveal','mask-reset-hide','paint-content','paint-mask','clipping','select-mask-source'}
     adjustment_controls={'field-brightness','field-saturation','field-blur','slider-brightness','slider-saturation','slider-blur'}
     properties_controls={'field-name','lock','use-foreground','gradient-end'}
@@ -120,7 +121,7 @@ def prepare_control(control):
     if palette and state().get('palette')!=palette:
         click(palette,scroll=False)
     if control=='text-editor' and not state()['state'].get('textEditing'):
-        click('edit-text',scroll=False)
+        click('edit-text')
     if control in {'field-x','field-y','field-width','field-height','field-rotation','flip-x','flip-y'} and control not in state()['controls']:
         click('tool-move')
     if control in {'field-font-size','select-font'} and control not in state()['controls']:
@@ -139,6 +140,13 @@ def bounds(control, scroll=True):
         if rect:
             left,top,width,height=rect
             canvas=current['controls']['canvas']; bottom=canvas[1]+canvas[3]
+            header_control = control in {'field-x','field-y','field-width','field-height','field-rotation','field-transform-scale','transform-ratio','select-transform-sampling','flip-x','flip-y','edit-text'}
+            if scroll and not current['modal'] and header_control and current['state']['tool']=='move':
+                clip=current['controls'].get('transform-fields',[112,top,1048,height]);start=clip[0];edge=start+clip[2]
+                if left < start or left+width > edge:
+                    x('mousemove',round((start+edge)/2),round(top+height/2),'click',7 if left+width>edge else 6)
+                    time.sleep(.08)
+                    continue
             if not scroll or current['modal'] or (not control.startswith('tool-') and not control.endswith('picker-rail')) or (84<=top and top+height<=bottom):
                 return rect
             x('mousemove',28,round(canvas[1]+canvas[3]/2),'click',5 if top+height>bottom else 4)
@@ -163,7 +171,7 @@ def key(keys):
 def field(name, value, enter=True):
     click('field-' + name)
     key('ctrl+a')
-    if str(value): x('type', '--clearmodifiers', str(value))
+    if str(value): x('type', '--clearmodifiers', '--', str(value))
     else: x('key', '--clearmodifiers', 'BackSpace')
     if enter:
         key('Return')
@@ -176,6 +184,8 @@ def choose(control, index):
     if control in values:
         value = selected()['content']['fontFamily'] if control=='font' else selected()['blend']
         current = values[control].index(value)
+    elif control == 'transform-sampling':
+        current = ['Nearest','Smooth','High'].index(selected()['sampling'])
     elif control == 'mask-source':
         value = selected()['maskSourceId']
         current = state()['state']['maskSourceIds'].index(value) if value else -1
@@ -187,6 +197,10 @@ def choose(control, index):
     click('select-'+control)
     for _ in range(abs(index-current)):key('Down' if index>current else 'Up')
     key('Return')
+    if control == 'crop-ratio':
+        wait(lambda s:s['state']['cropRatio']==['free','original','square','fourThree','sixteenNine'][index], 'crop ratio selection')
+    elif control == 'transform-sampling':
+        wait(lambda s:selected()['sampling']==['Nearest','Smooth','High'][index], 'transform sampling selection')
     if position is not None: assert (selected()['x'], selected()['y']) == position, 'Selector navigation must not nudge the layer'
 
 def drag(x0, y0, x1, y1, modifier=None):
@@ -314,7 +328,7 @@ def layers_masks_colors(number):
     check('Alt mask drag copies coverage and document placement in one undo',lambda: (selected()['id']==blue and selected()['mask'] is not None and selected()['mask'].get('placement') is not None and state()['state']['history']['undoCount']==count+1));key('ctrl+z');click('mask-row-'+red)
     click('mask-link');key('Escape');click('tool-move');base=selected().copy();count=state()['state']['history']['undoCount'];field('x',30);field('rotation',12);click('transform-cancel')
     check('independent mask numeric transform cancels without moving layer',lambda: (selected()==base))
-    field('x',30);field('rotation',12);click('transform-apply');check('independent mask numeric transform commits one undo',lambda: (selected()['x']==base['x'] and selected()['mask']['placement']['x']==30 and selected()['mask']['placement']['rotation']==12 and state()['state']['history']['undoCount']==count+1));key('ctrl+z')
+    field('x',30);field('rotation',12);click('transform-apply');check('independent mask numeric transform commits one undo',lambda: (selected()['x']==base['x'] and selected()['mask'].get('placement',{}).get('x')==30 and selected()['mask'].get('placement',{}).get('rotation')==12 and state()['state']['history']['undoCount']==count+1));key('ctrl+z')
     # A source Cmd/Control corner drag is a non-destructive distortion draft.
     drag(*pt(20,20),*pt(30,35),modifier='Control_L');check('mask corner drag creates perspective draft',lambda: (state()['state']['maskDistortion'] is not None and state()['state']['transformActive']));shot('26-mask-distortion.png');click('transform-cancel')
     check('mask distortion Cancel restores raster and placement',lambda: (selected()==base));drag(*pt(20,20),*pt(30,35),modifier='Control_L');click('transform-apply');check('mask distortion Apply leaves layer geometry intact',lambda: (selected()['x']==base['x'] and selected()['scaleX']==base['scaleX'] and state()['state']['maskDistortion'] is None));key('ctrl+z')
@@ -452,6 +466,55 @@ def placement_text_workflows():
     key('ctrl+w');wait(lambda s:not window_exists(window_id),'close layout window')
     window_number=previous_window;focus(re.escape(previous_name)+'.*Picsie')
 
+def interaction_polish(number):
+    global window_number
+    previous_window=window_number;previous_name=state()['state']['document']['name']
+    new_placement_window('Selections crop transforms',400,300,number)
+    click('foreground-picker-rail');field('color-hex','C77955',False);click('modal-apply')
+    click('tool-rectangle');drag(*pt(20,40),*pt(240,220));red=selected()['id']
+    click('tool-lasso');click('lasso-polygonal')
+    for p in [(40,60),(220,60),(40,200)]:x('mousemove',*map(round,pt(*p)),'click',1);time.sleep(.12)
+    key('Return');wait(lambda s:s['state']['hasPixelSelection'])
+    x('mousemove',*map(round,pt(75,85)));check('irregular selection interior offers outline move',lambda:state()['cursorHint']=='move')
+    x('mousemove',*map(round,pt(180,175)));check('outside triangular outline remains a selection cursor',lambda:state()['cursorHint']=='crosshair')
+    x('keydown','Shift_L');check('stationary Shift shows Add without changing default',lambda:state()['effectiveSelectionMode']=='add' and state()['state']['selectionMode']=='replace');shot('29-selection-modifiers.png')
+    x('keydown','Alt_L');check('Alt wins when Shift and Alt are held',lambda:state()['effectiveSelectionMode']=='subtract');x('keyup','Alt_L','Shift_L')
+    sequence=state()['sequence'];phase=state()['selectionPhase'];time.sleep(.3)
+    check('marching ants animate without engine commands',lambda:state()['sequence']==sequence and state()['selectionPhase']!=phase)
+    click('selection-antialiased');check('Anti-alias is a persistent selection tool setting',lambda:not state()['state']['selectionAntialiased']);click('selection-antialiased')
+    key('ctrl+d');click('lasso-freehand');x('keydown','Shift_L');x('mousemove',*map(round,pt(40,60)),'mousedown',1);x('mousemove',*map(round,pt(140,60)));time.sleep(.1);x('keyup','Shift_L');x('keydown','Alt_L')
+    check('outline retains its starting mode after modifiers change',lambda:state()['effectiveSelectionMode']=='add' and state()['state']['selectionDraftMode']=='add')
+    x('mousemove',*map(round,pt(90,140)),'mouseup',1);x('keyup','Alt_L');settle();key('ctrl+d')
+    click('tool-marquee');click('marquee-ellipse');check('ellipse marquee exposes Anti-alias',lambda:'selection-antialiased' in state()['controls']);drag(*pt(45,65),*pt(200,190));shot('30-ellipse-selection.png')
+    click('pixels-layer');check('Select Layer Pixels loads source alpha silhouette',lambda:state()['state']['pixelSelectionBounds']=={'x':20.,'y':40.,'width':220.,'height':180.})
+    before=state()['state']['pixelSelectionBounds'].copy();count=state()['state']['history']['undoCount']
+    click('pixels-expand-menu');check('Expand menu opens amount panel',lambda:state()['modal']=='selection-amount');field('selection-dialog',0,False);click('modal-apply')
+    check('selection amount rejects zero without editing',lambda:state()['modal']=='selection-amount' and state()['state']['history']['undoCount']==count)
+    field('selection-dialog',4,False);shot('31-selection-amount.png');click('modal-cancel');check('selection amount Cancel keeps outline',lambda:state()['state']['pixelSelectionBounds']==before)
+    click('pixels-expand-menu');field('selection-dialog',4,False);key('Return');check('Expand Return applies one undo',lambda:state()['modal'] is None and state()['state']['pixelSelectionBounds']['width']==228 and state()['state']['history']['undoCount']==count+1);key('ctrl+z')
+    click('pixels-contract-menu');field('selection-dialog',2,False);click('modal-apply');check('Contract has independent amount',lambda:state()['state']['pixelSelectionBounds']['width']==216);key('ctrl+z')
+    click('pixels-feather-menu');field('selection-dialog',2,False);click('modal-apply');check('Feather panel applies soft coverage',lambda:state()['state']['pixelSelectionFeather']==2);key('ctrl+z');key('ctrl+d')
+    click('tool-move');before=selected().copy();count=state()['state']['history']['undoCount'];field('width',330)
+    check('default resize leaves other dimension free',lambda:close(selected()['scaleX'],1.5) and close(selected()['scaleY'],1.));click('transform-cancel')
+    click('transform-ratio');field('width',330);check('ratio lock changes both dimensions in a draft',lambda:close(selected()['scaleX'],1.5) and close(selected()['scaleY'],1.5) and state()['state']['transformActive']);click('transform-cancel')
+    click('transform-ratio');field('transform-scale',150);check('Scale percent grows about the center',lambda:close(selected()['x']+selected()['width']*selected()['scaleX']/2,130) and close(selected()['y']+selected()['height']*selected()['scaleY']/2,130));field('transform-scale',125)
+    check('percentage edits use a frozen blank baseline',lambda:close(selected()['scaleX'],1.25) and close(selected()['scaleY'],1.25));choose('transform-sampling',0)
+    check('sampling is previewed in transform transaction',lambda:selected()['sampling']=='Nearest');shot('32-transform-controls.png');click('transform-cancel');check('Cancel restores geometry and sampling',lambda:selected()==before and state()['state']['history']['undoCount']==count)
+    field('x',35);field('rotation',12);click('transform-apply');check('numeric transforms Apply as one undo',lambda:state()['state']['history']['undoCount']==count+1 and selected()['x']==35 and selected()['rotation']==12);key('ctrl+z')
+    field('x',50,False);key('Escape');check('Escape in numeric transform cancels the draft',lambda:selected()==before and not state()['state']['transformActive'])
+    click('pixels-distort');check('Distort starts a persistent corner draft',lambda:state()['state']['imageDistortion'] is not None and state()['state']['transformActive']);check('image distortion hides the rotation handle',lambda:len(state()['state']['cursorMap']['handles']['centers'])==8 and not state()['state']['cursorMap']['handles']['rotation']);drag(*pt(20,40),*pt(5,30),modifier='Control_L Shift_L')
+    check('Ctrl drag changes individual image distortion corner',lambda:state()['state']['imageDistortion'][0]['x']<10);check('Shift confines distortion corner to one axis',lambda:state()['state']['imageDistortion'][0]['y']==40);shot('33-image-distortion.png');click('transform-cancel');check('distortion Cancel restores original pixels',lambda:selected()==before)
+    drag(*pt(20,40),*pt(5,20),modifier='Control_L');check('Ctrl handle drag starts persistent image distortion',lambda:state()['state']['imageDistortion'] is not None);click('transform-apply');check('distortion Apply commits resampled pixels as one undo',lambda:state()['state']['imageDistortion'] is None and selected()['content']['kind']=='image' and state()['state']['history']['undoCount']==count+1);key('ctrl+z')
+    # Move some retained pixels off canvas, then expand the crop to see them.
+    field('x',-30);click('transform-apply');click('tool-crop');drag(*pt(100,100),*pt(-40,-20),modifier='Control_L')
+    check('crop creation allows expansion beyond current canvas',lambda:state()['state']['cropRect']['x']==-40 and state()['state']['cropRect']['y']==-20);shot('34-expanded-crop.png');click('crop-cancel');check('crop Cancel keeps document bounds',lambda:state()['state']['document']['width']==400 and selected()['x']==-30)
+    drag(*pt(100,100),*pt(-40,-20),modifier='Control_L');click('crop-apply');check('expanded crop Apply retains original source dimensions',lambda:state()['state']['document']['width']==140 and state()['state']['document']['height']==120 and selected()['width']==220 and selected()['x']==10);key('ctrl+z')
+    # Every edge offers resize feedback; the initial full frame starts a fresh crop.
+    click('crop-cancel');x('mousemove',*map(round,pt(100,0)));check('crop edge offers directional resize cursor',lambda:state()['cursorHint']=='resizeVertical')
+    x('windowsize',window_id,800,520);time.sleep(.3);click('tool-move');field('transform-scale',110);check('Apply and Cancel stay visible at minimum window',lambda:all(0<=state()['controls'][key][0] and state()['controls'][key][0]+state()['controls'][key][2]<=800 for key in ['transform-apply','transform-cancel']));click('transform-cancel');check('transform fields remain reachable at minimum window',lambda:not state()['state']['transformActive']);shot('35-transform-minimum.png')
+    key('ctrl+w');wait(lambda s:s['modal']=='close');click('modal-discard');time.sleep(.3)
+    window_number=previous_window;focus(re.escape(previous_name)+'.*Picsie')
+
 try:
     server = subprocess.Popen(['Xvfb', args.display, '-screen', '0', '1280x900x24', '-nolisten', 'tcp'], env=env,
                               stdout=open(out/'xvfb.log', 'w'), stderr=subprocess.STDOUT, start_new_session=True)
@@ -462,6 +525,11 @@ try:
     processes.append(app)
     wait(lambda s: s.get('state') is not None, 'startup')
     focus('Color studies.*Picsie')
+    if args.interaction_only:
+        interaction_polish(2)
+        (out/'report.json').write_text(json.dumps({'checks':checks,'count':len(checks),'backend':'Linux X11 software Vulkan'},indent=2)+'\n')
+        print(f'All {len(checks)} interaction checks passed. Screenshots: {out}',flush=True)
+        raise SystemExit(0)
     if args.polish_only:
         layers_masks_colors(2)
         key('ctrl+q');time.sleep(.3)
@@ -616,6 +684,7 @@ try:
     check('saved project reopens with text and layer structure',lambda: (len(layers())==5 and any(l['content'].get('text')=='Native text parity' for l in layers())))
     shot('09-reopened.png')
     layers_masks_colors(6)
+    interaction_polish(7)
     # The .comp directory picker is verified separately with mouse navigation;
     # GTK's location-entry keyboard behavior is unreliable without a window manager.
     click('add-paint');key('ctrl+q');wait(lambda s:s['modal']=='close');click('modal-cancel')

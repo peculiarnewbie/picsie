@@ -90,6 +90,10 @@ impl NativeEditor {
                 | Command::BeginTransform
                 | Command::CommitTransform
                 | Command::MovePixels { .. }
+                | Command::BeginDistort
+                | Command::DistortLayer { .. }
+                | Command::SetTransformField { .. }
+                | Command::SelectLayerPixels
                 | Command::LoadThumbnailSelection { .. }
                 | Command::DistortMask { .. }
                 | Command::SetMaskPlacement { .. }

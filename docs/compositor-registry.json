@@ -3,10 +3,10 @@
   "reference": {
     "repository": "https://github.com/robbietilton/Compositor",
     "revision": "609dbeae2ef68ef4fc82d67e4981a49852eb6e13",
-    "license": "MIT © 2026 Wonder Assembly LLC"
+    "license": "MIT \u00a9 2026 Wonder Assembly LLC"
   },
-  "reviewedOn": "2026-09-30",
-  "scope": "Default Rust / GPUI Kit app. GIMP is functionality-only. Source coverage is not proof of complete behavior parity. Runtime evidence is Linux X11 at 1×; macOS/Windows/Wayland/HiDPI and platform text behavior remain unverified.",
+  "reviewedOn": "2026-10-01",
+  "scope": "Default Rust / GPUI Kit app. GIMP is functionality-only. Source coverage is not proof of complete behavior parity. Runtime evidence is Linux X11 at 1\u00d7; macOS/Windows/Wayland/HiDPI and platform text behavior remain unverified.",
   "areas": [
     {
       "id": "shell",
@@ -29,15 +29,15 @@
           "implementation": "implemented",
           "polish": "verified",
           "verification": "native",
-          "behavior": "56-point rail, 42-point header, 30-point fixed footer, 800×520 minimum",
-          "gap": "Metrics verified in native Linux X11 at 1×. Toolkit font/platform integration differences are tracked separately.",
+          "behavior": "56-point rail, 42-point header, 30-point fixed footer, 800\u00d7520 minimum",
+          "gap": "Metrics verified in native Linux X11 at 1\u00d7. Toolkit font/platform integration differences are tracked separately.",
           "evidence": [
             "crates/picsie-desktop/verify.py",
             "docs/gpui-ui-parity.md"
           ],
           "nativeChecks": [
-            "Compositor chrome, 971×746 canvas and ten grouped tool buttons",
-            "800×520 minimum keeps layer footer visible"
+            "Compositor chrome, 971\u00d7746 canvas and ten grouped tool buttons",
+            "800\u00d7520 minimum keeps layer footer visible"
           ]
         },
         {
@@ -55,7 +55,7 @@
           "polish": "verified",
           "verification": "native",
           "behavior": "Rail scrolls only when supported tools do not fit",
-          "gap": "Supported rail verified at 800×520; omitted source tools remain individually missing.",
+          "gap": "Supported rail verified at 800\u00d7520; omitted source tools remain individually missing.",
           "evidence": [
             "crates/picsie-desktop/verify.py",
             "docs/gpui-ui-parity.md"
@@ -237,7 +237,7 @@
           "polish": "partial",
           "verification": "native",
           "behavior": "Create a transparent sRGB canvas with validated width/height and focused dimension input",
-          "gap": "Local dialog also asks for a name; defaults 1200×800 rather than source 1920×1080, and has no clipboard-size suggestion. Lower allocation limits.",
+          "gap": "Local dialog also asks for a name; defaults 1200\u00d7800 rather than source 1920\u00d71080, and has no clipboard-size suggestion. Lower allocation limits.",
           "evidence": [
             "crates/picsie-desktop/verify.py",
             "docs/gpui-ui-parity.md"
@@ -255,10 +255,11 @@
           "polish": "partial",
           "verification": "native",
           "behavior": "Open saved projects; report errors without replacing the current document",
-          "gap": "Separate native windows.",
+          "gap": "Separate native windows. Stress-file pilots observed shortcuts ignored before the first engine frame. Loading/readiness feedback and input handling during that interval remain polish/performance gaps; native timing begins only after readiness.",
           "evidence": [
             "crates/picsie-desktop/verify.py",
-            "docs/gpui-ui-parity.md"
+            "docs/gpui-ui-parity.md",
+            "docs/desktop-gimp-experiments.md"
           ],
           "nativeChecks": [
             "saved project reopens with text and layer structure"
@@ -437,7 +438,7 @@
             "docs/gpui-ui-parity.md"
           ],
           "nativeChecks": [
-            "Compositor chrome, 971×746 canvas and ten grouped tool buttons"
+            "Compositor chrome, 971\u00d7746 canvas and ten grouped tool buttons"
           ]
         },
         {
@@ -452,7 +453,7 @@
             "docs/gpui-ui-parity.md"
           ],
           "nativeChecks": [
-            "Compositor chrome, 971×746 canvas and ten grouped tool buttons"
+            "Compositor chrome, 971\u00d7746 canvas and ten grouped tool buttons"
           ]
         },
         {
@@ -460,9 +461,22 @@
           "implementation": "implemented",
           "polish": "partial",
           "verification": "unverified",
-          "behavior": "Fit, Actual Pixels and ×1.25 zoom controls",
-          "gap": "Controls work through the Rust viewport; dedicated Zoom tool and its editable percent field are tracked separately.",
-          "evidence": []
+          "behavior": "Fit, Actual Pixels and \u00d71.25 zoom controls",
+          "gap": "Controls work through the Rust viewport; dedicated Zoom tool and editable percent field remain separate gaps. The eighth performance pass rewrites layer queries and retained projection. The previous 1,000-complex-layer metadata bottleneck is reduced from 675.7 ms to 12.6 ms desktop capture in the focused acceptance check. Full stress-matrix repetition, physical display timing and cross-platform cadence remain unverified.",
+          "evidence": [
+            "crates/picsie-core/examples/performance_stress.rs",
+            "docs/desktop-gimp-experiments.md",
+            "crates/picsie-desktop/examples/performance_snapshot.rs",
+            "crates/picsie-core/examples/performance_snapshot_parts.rs",
+            "scripts/compare-stress-navigation.py",
+            "crates/picsie-core/src/layer_index.rs",
+            "crates/picsie-core/src/render/projection.rs"
+          ],
+          "upstream": [
+            "Compositor/Document/LayerGroups.swift",
+            "Compositor/Document/LiveLayerMask.swift",
+            "Compositor/Rendering/LiveMaskRenderer.swift"
+          ]
         },
         {
           "id": "navigation.zoom-anchor",
@@ -470,9 +484,11 @@
           "polish": "partial",
           "verification": "tests",
           "behavior": "Scroll zoom keeps the point under the pointer fixed",
-          "gap": "Pinch/device-specific behavior unverified.",
+          "gap": "Pinch/device-specific behavior unverified. The stress example checks anchored fractional CPU zoom on complex large files. Repeated native pointer-wheel zoom and cache invalidation after paint/Undo remain performance gaps; see the seventh performance pass.",
           "evidence": [
-            "crates/picsie-core/tests/behavior.rs"
+            "crates/picsie-core/tests/behavior.rs",
+            "crates/picsie-core/examples/performance_stress.rs",
+            "docs/desktop-gimp-experiments.md"
           ]
         },
         {
@@ -481,8 +497,21 @@
           "polish": "partial",
           "verification": "unverified",
           "behavior": "Hand drag pans; Space temporarily pans and restores prior tool",
-          "gap": "Closed-hand feedback needs native verification.",
-          "evidence": []
+          "gap": "Closed-hand feedback needs dedicated native verification. The eighth pass removes per-row/per-option document cloning and virtualizes the layer list; focused 1,000-layer pan observations are recorded in the performance report. Fit/400% trajectories, off-canvas content, physical display cadence and post-paint/Undo workflows still require broader performance testing.",
+          "evidence": [
+            "crates/picsie-core/examples/performance_stress.rs",
+            "docs/desktop-gimp-experiments.md",
+            "crates/picsie-desktop/examples/performance_snapshot.rs",
+            "crates/picsie-core/examples/performance_snapshot_parts.rs",
+            "scripts/compare-stress-navigation.py",
+            "crates/picsie-core/src/layer_index.rs",
+            "crates/picsie-core/src/render/projection.rs"
+          ],
+          "upstream": [
+            "Compositor/Document/LayerGroups.swift",
+            "Compositor/Document/LiveLayerMask.swift",
+            "Compositor/Rendering/LiveMaskRenderer.swift"
+          ]
         },
         {
           "id": "navigation.zoom-tool",
@@ -528,12 +557,19 @@
         },
         {
           "id": "navigation.selection-animation",
-          "implementation": "partial",
-          "polish": "partial",
-          "verification": "unverified",
+          "implementation": "adapted",
+          "polish": "adapted",
+          "verification": "native",
           "behavior": "Selection outline stays legible with moving marching ants",
-          "gap": "Static outline.",
-          "evidence": []
+          "gap": "Linux X11 at 1\u00d7 verified; Windows/macOS GUI, Wayland and physical HiDPI remain unverified. Source 120 ms phase step, period 8 and four-point black/white dashes. GPUI paints cached vectors; curves are flattened in Rust at 0.75 screen-point intervals. QuickGUI retains a static outline.",
+          "evidence": [
+            "crates/picsie-desktop/verify.py",
+            "crates/picsie-core/tests/interaction_polish.rs",
+            "docs/gpui-ui-parity.md"
+          ],
+          "nativeChecks": [
+            "marching ants animate without engine commands"
+          ]
         },
         {
           "id": "navigation.retained-render",
@@ -711,7 +747,8 @@
         "crates/picsie-core/src/geometry.rs",
         "crates/picsie-core/src/editor/operations.rs",
         "crates/picsie-core/src/feedback.rs",
-        "crates/picsie-desktop/src/ui/toolbars.rs"
+        "crates/picsie-desktop/src/ui/toolbars.rs",
+        "crates/picsie-core/src/editor/interaction_polish.rs"
       ],
       "items": [
         {
@@ -769,10 +806,12 @@
           "polish": "partial",
           "verification": "native",
           "behavior": "Eight handles and full edge reach; crossed handles flip; opposite anchor fixed",
-          "gap": "Translated edge hit introduced in polish pass.",
+          "gap": "Translated edge hit introduced in polish pass. Three-launch stress controls cover large-layer uniform/nonuniform scale, Apply, Cancel, linked/independent masks and Undo/Redo. Continuous native handle drafts, Shift/Alt, rotated/flipped sources and large complex-stack scaling remain performance gaps; see the seventh performance pass.",
           "evidence": [
             "crates/picsie-desktop/verify.py",
-            "docs/gpui-ui-parity.md"
+            "docs/gpui-ui-parity.md",
+            "crates/picsie-core/examples/performance_stress.rs",
+            "docs/desktop-gimp-experiments.md"
           ],
           "nativeChecks": [
             "Shift resize preserves proportions",
@@ -784,7 +823,7 @@
           "implementation": "implemented",
           "polish": "partial",
           "verification": "tests",
-          "behavior": "Rotation circle; Shift snaps 15°; rotated resize cursor directions",
+          "behavior": "Rotation circle; Shift snaps 15\u00b0; rotated resize cursor directions",
           "gap": "Rotation uses toolkit crosshair instead of custom upstream cursor.",
           "evidence": [
             "crates/picsie-core/tests/polish.rs"
@@ -819,70 +858,114 @@
         {
           "id": "transform.persistent",
           "implementation": "implemented",
-          "polish": "partial",
+          "polish": "verified",
           "verification": "native",
           "behavior": "Numeric/flips begin Apply/Cancel draft; Escape restores geometry",
-          "gap": "Existing local transform representation differs.",
+          "gap": "Linux X11 at 1\u00d7 verified; Windows/macOS GUI, Wayland and physical HiDPI remain unverified. Geometry, pixels and sampling restore together; local model and project subset remain adaptations.",
           "evidence": [
             "crates/picsie-desktop/verify.py",
+            "crates/picsie-core/tests/interaction_polish.rs",
             "docs/gpui-ui-parity.md"
           ],
           "nativeChecks": [
-            "transform fields and flip",
-            "transform Cancel restores document and selection",
-            "transform Apply merges into source as one undo"
+            "Cancel restores geometry and sampling",
+            "numeric transforms Apply as one undo",
+            "Escape in numeric transform cancels the draft",
+            "distortion Cancel restores original pixels"
           ]
         },
         {
           "id": "transform.fields",
           "implementation": "implemented",
-          "polish": "partial",
+          "polish": "verified",
           "verification": "native",
-          "behavior": "X/Y/W/H/rotation numeric fields with keyboard stepping",
-          "gap": "Scale percentage, ratio lock and per-layer sampling absent.",
+          "behavior": "Live X/Y/W/H/rotation fields, keyboard stepping and one Apply/Cancel transaction",
+          "gap": "Linux X11 at 1\u00d7 verified; Windows/macOS GUI, Wayland and physical HiDPI remain unverified. Numeric math is Rust-owned. Live edits stay in Apply/Cancel; Enter releases field focus and Escape cancels the draft. Group/multi-layer boxes are tracked separately.",
           "evidence": [
             "crates/picsie-desktop/verify.py",
+            "crates/picsie-core/tests/interaction_polish.rs",
             "docs/gpui-ui-parity.md"
           ],
           "nativeChecks": [
-            "transform fields and flip"
+            "default resize leaves other dimension free",
+            "ratio lock changes both dimensions in a draft",
+            "numeric transforms Apply as one undo",
+            "Escape in numeric transform cancels the draft",
+            "Apply and Cancel stay visible at minimum window"
           ]
         },
         {
           "id": "transform.ratio-lock",
-          "implementation": "missing",
-          "polish": "missing",
-          "verification": "unverified",
+          "implementation": "adapted",
+          "polish": "adapted",
+          "verification": "native",
           "behavior": "Persistent aspect lock in transform header",
-          "gap": "Only explicit Shift is implemented.",
-          "evidence": []
+          "gap": "Linux X11 at 1\u00d7 verified; Windows/macOS GUI, Wayland and physical HiDPI remain unverified. Explicit user choice: default free resizing; lock or Shift preserves proportions. Upstream defaults locked and Shift temporarily reverses the lock.",
+          "evidence": [
+            "crates/picsie-desktop/verify.py",
+            "crates/picsie-core/tests/interaction_polish.rs",
+            "docs/gpui-ui-parity.md"
+          ],
+          "nativeChecks": [
+            "ratio lock changes both dimensions in a draft",
+            "default resize leaves other dimension free"
+          ]
         },
         {
           "id": "transform.scale-percent",
-          "implementation": "missing",
-          "polish": "missing",
-          "verification": "unverified",
+          "implementation": "implemented",
+          "polish": "verified",
+          "verification": "native",
           "behavior": "Scale width/height together about center by percentage",
-          "gap": "No transform percentage field.",
-          "evidence": []
+          "gap": "Linux X11 at 1\u00d7 verified; Windows/macOS GUI, Wayland and physical HiDPI remain unverified. Asset pixel size or the pre-edit displayed blank/mask size is frozen for repeated percentage typing.",
+          "evidence": [
+            "crates/picsie-desktop/verify.py",
+            "crates/picsie-core/tests/interaction_polish.rs",
+            "docs/gpui-ui-parity.md"
+          ],
+          "nativeChecks": [
+            "Scale percent grows about the center",
+            "percentage edits use a frozen blank baseline"
+          ]
         },
         {
           "id": "transform.sampling",
-          "implementation": "missing",
-          "polish": "missing",
-          "verification": "unverified",
+          "implementation": "adapted",
+          "polish": "partial",
+          "verification": "native",
           "behavior": "Nearest/Smooth/High Quality per-layer transform sampling",
-          "gap": "Image Size sampling exists; layer sampling metadata absent.",
-          "evidence": []
+          "gap": "Linux X11 at 1\u00d7 verified; Windows/macOS GUI, Wayland and physical HiDPI remain unverified. Nearest/linear/Skia Catmull-Rom cubic replace Core Graphics quality hints for images. Independent mask placement supports nearest; Smooth and High still share the existing bilinear adapter.",
+          "evidence": [
+            "crates/picsie-desktop/verify.py",
+            "crates/picsie-core/tests/interaction_polish.rs",
+            "docs/gpui-ui-parity.md"
+          ],
+          "nativeChecks": [
+            "sampling is previewed in transform transaction",
+            "Cancel restores geometry and sampling"
+          ]
         },
         {
           "id": "transform.distort",
-          "implementation": "missing",
-          "polish": "missing",
-          "verification": "unverified",
+          "implementation": "partial",
+          "polish": "partial",
+          "verification": "native",
           "behavior": "Command-drag corners/edges, convex limits, mask/effect warping",
-          "gap": "No perspective distortion.",
-          "evidence": []
+          "gap": "Linux X11 at 1\u00d7 verified; Windows/macOS GUI, Wayland and physical HiDPI remain unverified. Eight corner/edge handles with no rotation stalk, convex perspective, folded two-triangle rasterization, linked/unlinked masks, alpha trimming and full-resolution Apply are supported for images/blank shapes and floating pixels. Text/group distortion and source effect-stack warping remain absent. Skia replaces Core Image; previews cap at 2048.",
+          "evidence": [
+            "crates/picsie-desktop/verify.py",
+            "crates/picsie-core/tests/interaction_polish.rs",
+            "docs/gpui-ui-parity.md"
+          ],
+          "nativeChecks": [
+            "Distort starts a persistent corner draft",
+            "Ctrl drag changes individual image distortion corner",
+            "Shift confines distortion corner to one axis",
+            "distortion Cancel restores original pixels",
+            "Ctrl handle drag starts persistent image distortion",
+            "distortion Apply commits resampled pixels as one undo",
+            "image distortion hides the rotation handle"
+          ]
         },
         {
           "id": "transform.mask-transform",
@@ -904,6 +987,22 @@
             "mask distortion Apply leaves layer geometry intact",
             "folder mask can transform independently in one undo"
           ]
+        },
+        {
+          "id": "transform.group-box",
+          "implementation": "missing",
+          "polish": "missing",
+          "verification": "source",
+          "behavior": "Combined transform box for a folder or multiple layers; resize/rotate/numeric edits carry every child from its original placement",
+          "gap": "Multi-layer/group translation exists, but numeric fields and resize/rotation box transforms are unavailable. This needs the source TransformGroup model rather than treating a folder as one raster layer.",
+          "evidence": [
+            "Compositor/Document/LayerTransform.swift",
+            "Compositor/UI/TransformInspector.swift"
+          ],
+          "upstream": [
+            "Compositor/Document/LayerTransform.swift",
+            "Compositor/UI/TransformInspector.swift"
+          ]
         }
       ]
     },
@@ -915,12 +1014,18 @@
         "Compositor/Document/EditorSession+Brush.swift",
         "Compositor/Rendering/BrushCursorOverlay.swift",
         "Compositor/Rendering/BrushPixels.c",
-        "Compositor/Rendering/MetalBrushCoverage.swift"
+        "Compositor/Rendering/MetalBrushCoverage.swift",
+        "Compositor/Rendering/RasterSnapshot.swift",
+        "Compositor/Rendering/TiledLayerRenderer.swift",
+        "CompositorTests/RasterSnapshotTests.swift"
       ],
       "local": [
         "crates/picsie-core/src/brush.rs",
         "crates/picsie-core/src/editor.rs",
-        "crates/picsie-desktop/src/ui/toolbars.rs"
+        "crates/picsie-desktop/src/ui/toolbars.rs",
+        "crates/picsie-core/src/raster_snapshot.rs",
+        "crates/picsie-core/src/render/composite.rs",
+        "crates/picsie-core/tests/raster_snapshot.rs"
       ],
       "items": [
         {
@@ -932,7 +1037,9 @@
           "gap": "Separate legacy Eraser command retained.",
           "evidence": [
             "crates/picsie-desktop/verify.py",
-            "docs/gpui-ui-parity.md"
+            "docs/gpui-ui-parity.md",
+            "crates/picsie-core/tests/raster_snapshot.rs",
+            "docs/desktop-gimp-experiments.md"
           ],
           "nativeChecks": [
             "brush controls",
@@ -954,9 +1061,11 @@
           "polish": "partial",
           "verification": "tests",
           "behavior": "Opacity-capped coverage, soft buildup, connected tips and trimmed bounds",
-          "gap": "Skia tip rasterization differs from upstream C/Metal backend.",
+          "gap": "Skia four-sample hard-tip/falloff rasterization differs from upstream C/Metal; cropped immutable image patches ported. Conservative viewport tiles cover simple stacks; transformed/masked performance remains follow-up.",
           "evidence": [
-            "crates/picsie-core/tests/reference_features.rs"
+            "crates/picsie-core/tests/reference_features.rs",
+            "crates/picsie-core/tests/raster_snapshot.rs",
+            "docs/desktop-gimp-experiments.md"
           ]
         },
         {
@@ -976,9 +1085,11 @@
           "polish": "partial",
           "verification": "tests",
           "behavior": "String smoothing with provisional tail replacement",
-          "gap": "Local incremental brush publishing adaptation.",
+          "gap": "Flat immutable image-tile publication and provisional-tail restoration ported; mask publication remains contiguous and Metal coverage remains absent.",
           "evidence": [
-            "crates/picsie-core/tests/reference_features.rs"
+            "crates/picsie-core/tests/reference_features.rs",
+            "crates/picsie-core/tests/raster_snapshot.rs",
+            "docs/desktop-gimp-experiments.md"
           ]
         },
         {
@@ -1034,10 +1145,13 @@
           "polish": "partial",
           "verification": "native",
           "behavior": "One complete stroke per undo; pointer-up outside canvas commits",
-          "gap": "Draft architecture differs.",
+          "gap": "Image pointer-up/next-stroke commits avoid flattening; local worker transaction/scheduling architecture and contiguous mask publication remain adaptations.",
           "evidence": [
             "crates/picsie-desktop/verify.py",
-            "docs/gpui-ui-parity.md"
+            "docs/gpui-ui-parity.md",
+            "crates/picsie-core/tests/raster_snapshot.rs",
+            "docs/desktop-gimp-experiments.md",
+            "crates/picsie-desktop/src/engine.rs"
           ],
           "nativeChecks": [
             "brush stroke is one undo",
@@ -1123,38 +1237,44 @@
       "local": [
         "crates/picsie-core/src/pixel_selection.rs",
         "crates/picsie-core/src/wand.rs",
-        "crates/picsie-desktop/src/ui/toolbars.rs"
+        "crates/picsie-desktop/src/ui/toolbars.rs",
+        "crates/picsie-core/src/editor/interaction_polish.rs",
+        "crates/picsie-core/src/feedback.rs"
       ],
       "items": [
         {
           "id": "selection.marquee",
           "implementation": "implemented",
-          "polish": "partial",
+          "polish": "verified",
           "verification": "native",
           "behavior": "Rectangle/ellipse, replace/add/subtract, constrained and centered drag",
-          "gap": "Mode-specific rail icons still need matching.",
+          "gap": "Linux X11 at 1\u00d7 verified; Windows/macOS GUI, Wayland and physical HiDPI remain unverified. Rectangle/ellipse rail icons now follow the source.",
           "evidence": [
             "crates/picsie-desktop/verify.py",
+            "crates/picsie-core/tests/interaction_polish.rs",
             "docs/gpui-ui-parity.md"
           ],
           "nativeChecks": [
-            "marquee creates selection"
+            "marquee creates selection",
+            "ellipse marquee exposes Anti-alias"
           ]
         },
         {
           "id": "selection.lasso",
           "implementation": "implemented",
-          "polish": "partial",
+          "polish": "verified",
           "verification": "native",
           "behavior": "Freehand lasso and polygonal corners",
-          "gap": "Polygonal rail icon absent.",
+          "gap": "Linux X11 at 1\u00d7 verified; Windows/macOS GUI, Wayland and physical HiDPI remain unverified. Freehand and polygonal rail icons now follow the source.",
           "evidence": [
             "crates/picsie-desktop/verify.py",
+            "crates/picsie-core/tests/interaction_polish.rs",
             "docs/gpui-ui-parity.md"
           ],
           "nativeChecks": [
             "lasso polygon selection",
-            "polygonal lasso supports corners, Backspace and Enter"
+            "polygonal lasso supports corners, Backspace and Enter",
+            "outside triangular outline remains a selection cursor"
           ]
         },
         {
@@ -1178,7 +1298,7 @@
           "implementation": "implemented",
           "polish": "partial",
           "verification": "native",
-          "behavior": "Tolerance, point/3×3/5×5 sample, current/merged, contiguous toggle",
+          "behavior": "Tolerance, point/3\u00d73/5\u00d75 sample, current/merged, contiguous toggle",
           "gap": "Source-selected fixtures translated.",
           "evidence": [
             "crates/picsie-desktop/verify.py",
@@ -1225,12 +1345,19 @@
         },
         {
           "id": "selection.layer-pixels",
-          "implementation": "missing",
-          "polish": "missing",
-          "verification": "unverified",
+          "implementation": "implemented",
+          "polish": "verified",
+          "verification": "native",
           "behavior": "Select active layer's visible pixels",
-          "gap": "Not exposed/ported.",
-          "evidence": []
+          "gap": "Linux X11 at 1\u00d7 verified; Windows/macOS GUI, Wayland and physical HiDPI remain unverified. Rust traces unmasked source alpha; no raster bytes cross the bridge.",
+          "evidence": [
+            "crates/picsie-desktop/verify.py",
+            "crates/picsie-core/tests/interaction_polish.rs",
+            "docs/gpui-ui-parity.md"
+          ],
+          "nativeChecks": [
+            "Select Layer Pixels loads source alpha silhouette"
+          ]
         },
         {
           "id": "selection.mask-black",
@@ -1238,7 +1365,7 @@
           "polish": "verified",
           "verification": "native",
           "behavior": "Select mask black areas",
-          "gap": "Verified on Linux X11 at 1×; other platforms and physical HiDPI remain unverified.",
+          "gap": "Verified on Linux X11 at 1\u00d7; other platforms and physical HiDPI remain unverified.",
           "evidence": [
             "crates/picsie-desktop/verify.py",
             "crates/picsie-core/tests/layers_masks_colors.rs",
@@ -1253,62 +1380,93 @@
         {
           "id": "selection.outline-move",
           "implementation": "implemented",
-          "polish": "partial",
+          "polish": "verified",
           "verification": "native",
           "behavior": "Drag inside selection to move outline without moving pixels",
-          "gap": "Feedback inside irregular selections needs exact coverage metadata.",
+          "gap": "Linux X11 at 1\u00d7 verified; Windows/macOS GUI, Wayland and physical HiDPI remain unverified. Native hit testing uses the exact winding path, including off-canvas outlines; canvas-sized raster coverage remains a separate derived cache.",
           "evidence": [
             "crates/picsie-desktop/verify.py",
+            "crates/picsie-core/tests/interaction_polish.rs",
             "docs/gpui-ui-parity.md"
           ],
           "nativeChecks": [
-            "drag inside selection moves outline by whole pixels",
-            "selection arrow nudge"
+            "irregular selection interior offers outline move",
+            "outside triangular outline remains a selection cursor",
+            "drag inside selection moves outline by whole pixels"
           ]
         },
         {
           "id": "selection.expand-contract",
           "implementation": "implemented",
-          "polish": "partial",
+          "polish": "verified",
           "verification": "native",
           "behavior": "Expand/contract selection with radius amount and one undo",
-          "gap": "Floating selection amount panel replaced by header.",
+          "gap": "Linux X11 at 1\u00d7 verified; Windows/macOS GUI, Wayland and physical HiDPI remain unverified. Source 1\u2026500 integer amounts and separate default 1 values; Kit replaces SwiftUI panels.",
           "evidence": [
             "crates/picsie-desktop/verify.py",
+            "crates/picsie-core/tests/interaction_polish.rs",
             "docs/gpui-ui-parity.md"
           ],
           "nativeChecks": [
-            "selection expansion uses current form value"
+            "Expand menu opens amount panel",
+            "selection amount rejects zero without editing",
+            "selection amount Cancel keeps outline",
+            "Expand Return applies one undo",
+            "Contract has independent amount"
           ]
         },
         {
           "id": "selection.feather",
           "implementation": "implemented",
-          "polish": "partial",
-          "verification": "tests",
+          "polish": "verified",
+          "verification": "native",
           "behavior": "Feather soft coverage; fill/clear/clip uses same coverage",
-          "gap": "No upstream Anti-alias toggle.",
+          "gap": "Linux X11 at 1\u00d7 verified; Windows/macOS GUI, Wayland and physical HiDPI remain unverified. Source 1\u2026250 range/default 2, quadratic repeated-feather accumulation and smoothing when feather > 0; Skia replaces Core Image blur. Four-sigma bounded blur and Alpha8 readback preserve the complete native mask contract; 70 full-canvas byte comparisons cover edges, holes, inversion, empty/full masks and feather ranges.",
           "evidence": [
-            "crates/picsie-core/tests/reference_features.rs"
+            "crates/picsie-desktop/verify.py",
+            "crates/picsie-core/tests/interaction_polish.rs",
+            "docs/gpui-ui-parity.md",
+            "crates/picsie-core/tests/raster_snapshot.rs",
+            "docs/desktop-gimp-experiments.md"
+          ],
+          "nativeChecks": [
+            "Feather panel applies soft coverage"
           ]
         },
         {
           "id": "selection.anti-alias",
-          "implementation": "missing",
-          "polish": "missing",
-          "verification": "unverified",
-          "behavior": "User toggles smoothed/hard selection outlines",
-          "gap": "Not implemented.",
-          "evidence": []
+          "implementation": "implemented",
+          "polish": "verified",
+          "verification": "native",
+          "behavior": "Anti-alias toggle for ellipse marquee, lasso and wand; feather enables smoothed coverage",
+          "gap": "Linux X11 at 1\u00d7 verified; Windows/macOS GUI, Wayland and physical HiDPI remain unverified. Each created selection captures the setting; tool toggles do not rewrite existing coverage.",
+          "evidence": [
+            "crates/picsie-desktop/verify.py",
+            "crates/picsie-core/tests/interaction_polish.rs",
+            "docs/gpui-ui-parity.md"
+          ],
+          "nativeChecks": [
+            "Anti-alias is a persistent selection tool setting",
+            "ellipse marquee exposes Anti-alias"
+          ]
         },
         {
           "id": "selection.modifier-state",
-          "implementation": "partial",
-          "polish": "partial",
-          "verification": "unverified",
+          "implementation": "adapted",
+          "polish": "adapted",
+          "verification": "native",
           "behavior": "Held Shift/Alt changes selection mode without changing defaults",
-          "gap": "Stationary pointer modifier feedback remains incomplete.",
-          "evidence": []
+          "gap": "Linux X11 at 1\u00d7 verified; Windows/macOS GUI, Wayland and physical HiDPI remain unverified. Platform cursor plus a small +/\u2212 overlay replaces source bitmap cursors.",
+          "evidence": [
+            "crates/picsie-desktop/verify.py",
+            "crates/picsie-core/tests/interaction_polish.rs",
+            "docs/gpui-ui-parity.md"
+          ],
+          "nativeChecks": [
+            "stationary Shift shows Add without changing default",
+            "Alt wins when Shift and Alt are held",
+            "outline retains its starting mode after modifiers change"
+          ]
         }
       ]
     },
@@ -1414,10 +1572,12 @@
           "polish": "verified",
           "verification": "native",
           "behavior": "Foreground fill and clear selection; use feathered coverage",
-          "gap": "Foreground/background palette fills preserve coverage and undo; whole-text fills retain editable text. Source clear on a mask uses the opposite background palette.",
+          "gap": "Foreground/background palette fills preserve coverage and undo; whole-text fills retain editable text. Source clear on a mask uses the opposite background palette. Image fill/clear now retain selection-bounded replacement tiles; masks retain their contiguous path. Transformed/translucent byte comparisons are local regression evidence.",
           "evidence": [
             "crates/picsie-desktop/verify.py",
-            "crates/picsie-core/tests/layers_masks_colors.rs"
+            "crates/picsie-core/tests/layers_masks_colors.rs",
+            "crates/picsie-core/tests/raster_snapshot.rs",
+            "docs/desktop-gimp-experiments.md"
           ],
           "nativeChecks": [
             "background fill is one undo and retains pixel selection",
@@ -1444,23 +1604,27 @@
       ],
       "local": [
         "crates/picsie-core/src/crop.rs",
-        "crates/picsie-desktop/src/ui/toolbars.rs"
+        "crates/picsie-desktop/src/ui/toolbars.rs",
+        "crates/picsie-core/src/render/composite.rs",
+        "crates/picsie-core/src/render.rs"
       ],
       "items": [
         {
           "id": "crop.create",
           "implementation": "implemented",
-          "polish": "partial",
+          "polish": "verified",
           "verification": "native",
           "behavior": "Create/move/resize crop with eight handles and symmetric/constrained drag",
-          "gap": "Source ten-point corner squares and full-edge strips now share cursor/gesture geometry; default visible frame starts a new crop inside it. Physical HiDPI remains unverified.",
+          "gap": "Linux X11 at 1\u00d7 verified; Windows/macOS GUI, Wayland and physical HiDPI remain unverified. A full-canvas frame starts a new crop inside its body even after ratio selection. Handle/edge geometry is shared with cursor feedback.",
           "evidence": [
             "crates/picsie-desktop/verify.py",
+            "crates/picsie-core/tests/interaction_polish.rs",
             "docs/gpui-ui-parity.md"
           ],
           "nativeChecks": [
             "Crop default frame is visible without a pending edit",
-            "Crop Cancel restores the default nonediting frame"
+            "crop creation allows expansion beyond current canvas",
+            "crop edge offers directional resize cursor"
           ]
         },
         {
@@ -1488,25 +1652,29 @@
           "polish": "partial",
           "verification": "tests",
           "behavior": "Snap crop to document/layer/guide targets; Control bypass",
-          "gap": "Local display scale limits.",
+          "gap": "Linux X11 at 1\u00d7 verified; Windows/macOS GUI, Wayland and physical HiDPI remain unverified. Control bypasses crop snapping in native input; symmetric snapping preserves the original center. Guide/grid runtime combinations retain their existing test coverage.",
           "evidence": [
-            "crates/picsie-core/tests/placement_text.rs"
+            "crates/picsie-core/tests/placement_text.rs",
+            "crates/picsie-core/tests/interaction_polish.rs",
+            "crates/picsie-desktop/verify.py"
           ]
         },
         {
           "id": "crop.commit",
           "implementation": "implemented",
-          "polish": "partial",
+          "polish": "verified",
           "verification": "native",
           "behavior": "Enter/Apply, Escape/Cancel, translate layers/guides without destroying source pixels",
-          "gap": "Selection resets as documented local adaptation.",
+          "gap": "Linux X11 at 1\u00d7 verified; Windows/macOS GUI, Wayland and physical HiDPI remain unverified. Crop translates retained layers/guides without resampling. Clearing the selection on canvas replacement remains the documented local adaptation.",
           "evidence": [
             "crates/picsie-desktop/verify.py",
+            "crates/picsie-core/tests/interaction_polish.rs",
             "docs/gpui-ui-parity.md"
           ],
           "nativeChecks": [
             "crop ratio and apply",
-            "Crop Cancel restores the default nonediting frame"
+            "crop Cancel keeps document bounds",
+            "expanded crop Apply retains original source dimensions"
           ]
         },
         {
@@ -1530,7 +1698,7 @@
         },
         {
           "id": "crop.header-state",
-          "behavior": "Show live width × height in pixels; disable Cancel/Apply Crop when no crop frame exists",
+          "behavior": "Show live width \u00d7 height in pixels; disable Cancel/Apply Crop when no crop frame exists",
           "implementation": "implemented",
           "polish": "verified",
           "verification": "native",
@@ -1551,15 +1719,21 @@
         {
           "id": "crop.expand-preview",
           "behavior": "Expanded crop previews show checkerboard and retained source pixels across the union of original and crop bounds",
-          "implementation": "missing",
-          "polish": "missing",
-          "verification": "source",
-          "gap": "The crop frame may extend outside the canvas, but the cached preview still clips checkerboard and composite to current document bounds; retained pixels appear after applying the crop.",
+          "implementation": "implemented",
+          "polish": "verified",
+          "verification": "native",
+          "gap": "Linux X11 at 1\u00d7 verified; Windows/macOS GUI, Wayland and physical HiDPI remain unverified. Checkerboard/shadow and retained artwork draw across original \u222a crop bounds. Expanded previews render into a viewport-sized clipped surface, avoiding a union-sized pixel allocation.",
           "evidence": [
-            "Compositor/Rendering/EditorCanvas.swift"
+            "crates/picsie-desktop/verify.py",
+            "crates/picsie-core/tests/interaction_polish.rs",
+            "docs/gpui-ui-parity.md"
           ],
           "upstream": [
             "Compositor/Rendering/EditorCanvas.swift"
+          ],
+          "nativeChecks": [
+            "crop creation allows expansion beyond current canvas",
+            "expanded crop Apply retains original source dimensions"
           ]
         }
       ]
@@ -1605,7 +1779,7 @@
           "implementation": "missing",
           "polish": "missing",
           "verification": "source",
-          "behavior": "Draw line with editable width and Shift 45° angle snapping",
+          "behavior": "Draw line with editable width and Shift 45\u00b0 angle snapping",
           "gap": "Line shape and width controls are absent.",
           "evidence": [
             "Compositor/Document/ShapeTool.swift"
@@ -1666,7 +1840,7 @@
         },
         {
           "id": "shapes.corner-radius",
-          "behavior": "Rectangle radius slider 0–200; numeric pixels 0–5000 with arrow stepping",
+          "behavior": "Rectangle radius slider 0\u2013200; numeric pixels 0\u20135000 with arrow stepping",
           "implementation": "missing",
           "polish": "missing",
           "verification": "source",
@@ -1952,7 +2126,7 @@
           "implementation": "implemented",
           "polish": "verified",
           "verification": "native",
-          "behavior": "252-point width; drag within 202–352; fixed footer/full-height list",
+          "behavior": "252-point width; drag within 202\u2013352; fixed footer/full-height list",
           "gap": "Panel width persists across launches; Linux verification only.",
           "evidence": [
             "crates/picsie-desktop/verify.py",
@@ -1962,7 +2136,7 @@
             "Layers panel clamps at 352 pixels",
             "Layers panel clamps at 202 pixels",
             "Layers panel returns to 252 pixels",
-            "800×520 minimum keeps layer footer visible",
+            "800\u00d7520 minimum keeps layer footer visible",
             "new windows load saved view and panel preferences"
           ]
         },
@@ -1972,15 +2146,31 @@
           "polish": "adapted",
           "verification": "native",
           "behavior": "52-point rows, canvas-shaped cached thumbnails, title/dimensions",
-          "gap": "52-point rows, adjacent 36-point image/30-point mask slots, chain control, disabled-mask mark and accessible list/option labels. Kit accessibility semantics are present; platform screen-reader interaction remains unverified.",
+          "gap": "52-point rows, adjacent 36-point image/30-point mask slots, chain control, disabled-mask mark and accessible list/option labels are implemented. GPUI uniform_list now builds visible rows, following NativeLayerList cell reuse; metadata IDs and hierarchy/clipping queries are indexed. The eighth pass verifies expanded 1,000-layer scrolling, traversal and drag autoscroll, with exact canvas restoration. Platform screen-reader/HiDPI behavior, additional row workflows and broader stress coverage remain unverified. The old every-row construction and repeated graph-query costs are retained as historical baseline evidence, not current implementation.",
           "evidence": [
             "crates/picsie-desktop/verify.py",
             "crates/picsie-core/tests/layers_masks_colors.rs",
-            "docs/gpui-ui-parity.md"
+            "docs/gpui-ui-parity.md",
+            "crates/picsie-core/src/render/composite.rs",
+            "docs/desktop-gimp-experiments.md",
+            "crates/picsie-desktop/src/ui/layers.rs",
+            "scripts/perf/picsie-list-diagnostic.py",
+            "crates/picsie-desktop/examples/performance_snapshot.rs",
+            "crates/picsie-core/examples/performance_snapshot_parts.rs",
+            "scripts/compare-stress-navigation.py",
+            "crates/picsie-desktop/src/state.rs",
+            "crates/picsie-core/src/layer_index.rs"
           ],
           "nativeChecks": [
             "inline layer rename commits with Return",
             "mask row contains grayscale thumbnail resource"
+          ],
+          "upstream": [
+            "Compositor/UI/CanvasThumbnail.swift",
+            "Compositor/UI/NativeLayerList.swift",
+            "Compositor/Document/LayerGroups.swift",
+            "Compositor/Document/LiveLayerMask.swift",
+            "Compositor/Rendering/LiveMaskRenderer.swift"
           ]
         },
         {
@@ -2007,17 +2197,26 @@
           "polish": "verified",
           "verification": "native",
           "behavior": "Row drag reorder, into/out of folders, collapse and selection restoration",
-          "gap": "Verified on Linux X11 at 1×; other platforms and physical HiDPI remain unverified.",
+          "gap": "Verified on Linux X11 at 1\u00d7; other platforms, physical HiDPI and collapsed/post-paint workflows remain gaps. The eighth pass rewrites dependency damage and bounded retained projection with sparse checkpoints. The focused 1,000-complex-layer acceptance check observes 158.3 ms adjacent reorder and 901.6 ms row-autoscroll drop with exact Undo. Earlier-stack, scattered-layer, 24 MP and repeated-launch performance still require broader testing.",
           "evidence": [
             "crates/picsie-desktop/verify.py",
             "crates/picsie-core/tests/layers_masks_colors.rs",
-            "docs/gpui-ui-parity.md"
+            "docs/gpui-ui-parity.md",
+            "crates/picsie-core/examples/performance_stress.rs",
+            "docs/desktop-gimp-experiments.md",
+            "crates/picsie-core/src/render/projection.rs",
+            "crates/picsie-core/src/render/composite.rs"
           ],
           "nativeChecks": [
             "drag layer into folder",
             "move layer out of folder",
             "Alt drag duplicates and reorders in one undo",
             "layer drag autoscrolls the list and keeps footer visible"
+          ],
+          "upstream": [
+            "Compositor/Document/LayerGroups.swift",
+            "Compositor/Document/LiveLayerMask.swift",
+            "Compositor/Rendering/LiveMaskRenderer.swift"
           ]
         },
         {
@@ -2026,7 +2225,7 @@
           "polish": "verified",
           "verification": "native",
           "behavior": "Rename, visibility and lock; disabled operations respect locks",
-          "gap": "Verified on Linux X11 at 1×; other platforms and physical HiDPI remain unverified.",
+          "gap": "Verified on Linux X11 at 1\u00d7; other platforms and physical HiDPI remain unverified.",
           "evidence": [
             "crates/picsie-desktop/verify.py",
             "crates/picsie-core/tests/layers_masks_colors.rs",
@@ -2099,7 +2298,7 @@
           "polish": "verified",
           "verification": "native",
           "behavior": "Slider/typed percent, arrow step, one session undo",
-          "gap": "Verified on Linux X11 at 1×; other platforms and physical HiDPI remain unverified.",
+          "gap": "Verified on Linux X11 at 1\u00d7; other platforms and physical HiDPI remain unverified.",
           "evidence": [
             "crates/picsie-desktop/verify.py",
             "crates/picsie-core/tests/layers_masks_colors.rs",
@@ -2133,7 +2332,7 @@
           "implementation": "implemented",
           "polish": "verified",
           "verification": "native",
-          "gap": "Verified on Linux X11 at 1×; other platforms and physical HiDPI remain unverified.",
+          "gap": "Verified on Linux X11 at 1\u00d7; other platforms and physical HiDPI remain unverified.",
           "evidence": [
             "crates/picsie-desktop/verify.py",
             "crates/picsie-core/tests/layers_masks_colors.rs",
@@ -2149,11 +2348,11 @@
         },
         {
           "id": "layers.blend-shortcut",
-          "behavior": "Shift +/− cycles blend modes in source order, wraps, and creates undo; focused text inputs retain their keys",
+          "behavior": "Shift +/\u2212 cycles blend modes in source order, wraps, and creates undo; focused text inputs retain their keys",
           "implementation": "implemented",
           "polish": "verified",
           "verification": "native",
-          "gap": "Verified on Linux X11 at 1×; other platforms and physical HiDPI remain unverified.",
+          "gap": "Verified on Linux X11 at 1\u00d7; other platforms and physical HiDPI remain unverified.",
           "evidence": [
             "crates/picsie-desktop/verify.py",
             "crates/picsie-core/tests/layers_masks_colors.rs",
@@ -2173,7 +2372,7 @@
           "implementation": "implemented",
           "polish": "verified",
           "verification": "native",
-          "gap": "Verified on Linux X11 at 1×; other platforms and physical HiDPI remain unverified.",
+          "gap": "Verified on Linux X11 at 1\u00d7; other platforms and physical HiDPI remain unverified.",
           "evidence": [
             "crates/picsie-desktop/verify.py",
             "crates/picsie-core/tests/layers_masks_colors.rs",
@@ -2194,7 +2393,7 @@
           "implementation": "implemented",
           "polish": "verified",
           "verification": "native",
-          "gap": "Verified on Linux X11 at 1×; other platforms and physical HiDPI remain unverified.",
+          "gap": "Verified on Linux X11 at 1\u00d7; other platforms and physical HiDPI remain unverified.",
           "evidence": [
             "crates/picsie-desktop/verify.py",
             "crates/picsie-core/tests/layers_masks_colors.rs",
@@ -2233,7 +2432,7 @@
           "polish": "verified",
           "verification": "native",
           "behavior": "Add/delete/reset, enable/disable, link/unlink, content/mask target",
-          "gap": "Verified on Linux X11 at 1×; other platforms and physical HiDPI remain unverified.",
+          "gap": "Verified on Linux X11 at 1\u00d7; other platforms and physical HiDPI remain unverified.",
           "evidence": [
             "crates/picsie-desktop/verify.py",
             "crates/picsie-core/tests/layers_masks_colors.rs",
@@ -2271,7 +2470,7 @@
           "polish": "verified",
           "verification": "native",
           "behavior": "Black/white hide/reveal brushes with undo and clipping",
-          "gap": "Verified on Linux X11 at 1×; other platforms and physical HiDPI remain unverified.",
+          "gap": "Verified on Linux X11 at 1\u00d7; other platforms and physical HiDPI remain unverified.",
           "evidence": [
             "crates/picsie-desktop/verify.py",
             "crates/picsie-core/tests/layers_masks_colors.rs",
@@ -2307,14 +2506,23 @@
           "polish": "adapted",
           "verification": "native",
           "behavior": "Create/release immediate clipping source; stable reorder/removal",
-          "gap": "The source 10-point Alt boundary preserves selection. GPUI portable DragLink/DragCopy cursors and insertion feedback replace AppKit bitmap cursors.",
+          "gap": "The source 10-point Alt boundary preserves selection. GPUI portable DragLink/DragCopy cursors and insertion feedback replace AppKit bitmap cursors. The eighth pass retains bounded clipping nodes and dependency-validated projection checkpoints; transformed/blurred comparisons allow one premultiplied channel step of backend rounding. Fresh/retained pixels, graph depth/repair and external-source invalidation are tested. Earlier-stack, large masked-folder and wider clipping workflow performance still need coverage.",
           "evidence": [
             "crates/picsie-desktop/verify.py",
             "crates/picsie-core/tests/layers_masks_colors.rs",
-            "docs/gpui-ui-parity.md"
+            "docs/gpui-ui-parity.md",
+            "crates/picsie-core/src/render/projection.rs",
+            "crates/picsie-core/src/render/composite.rs",
+            "crates/picsie-core/src/layer_index.rs",
+            "docs/desktop-gimp-experiments.md"
           ],
           "nativeChecks": [
             "Alt clipping boundary creates a link without changing selection"
+          ],
+          "upstream": [
+            "Compositor/Document/LayerGroups.swift",
+            "Compositor/Document/LiveLayerMask.swift",
+            "Compositor/Rendering/LiveMaskRenderer.swift"
           ]
         },
         {
@@ -2323,7 +2531,7 @@
           "polish": "verified",
           "verification": "native",
           "behavior": "Mask grayscale thumbnail; distinct selected image/mask border",
-          "gap": "Verified on Linux X11 at 1×; other platforms and physical HiDPI remain unverified.",
+          "gap": "Verified on Linux X11 at 1\u00d7; other platforms and physical HiDPI remain unverified.",
           "evidence": [
             "crates/picsie-desktop/verify.py",
             "crates/picsie-core/tests/layers_masks_colors.rs",
@@ -2343,7 +2551,7 @@
           "implementation": "implemented",
           "polish": "verified",
           "verification": "native",
-          "gap": "Verified on Linux X11 at 1×; other platforms and physical HiDPI remain unverified.",
+          "gap": "Verified on Linux X11 at 1\u00d7; other platforms and physical HiDPI remain unverified.",
           "evidence": [
             "crates/picsie-desktop/verify.py",
             "crates/picsie-core/tests/layers_masks_colors.rs",
@@ -2457,8 +2665,8 @@
           "implementation": "implemented",
           "polish": "verified",
           "verification": "native",
-          "behavior": "RGB fields step 1 or Shift 10 with 0–255 bounds",
-          "gap": "Verified on Linux X11 at 1×; other platforms and physical HiDPI remain unverified.",
+          "behavior": "RGB fields step 1 or Shift 10 with 0\u2013255 bounds",
+          "gap": "Verified on Linux X11 at 1\u00d7; other platforms and physical HiDPI remain unverified.",
           "evidence": [
             "crates/picsie-desktop/verify.py",
             "crates/picsie-core/tests/layers_masks_colors.rs",
@@ -2475,7 +2683,7 @@
           "polish": "verified",
           "verification": "native",
           "behavior": "Overlapping foreground/background swatches",
-          "gap": "Verified on Linux X11 at 1×; other platforms and physical HiDPI remain unverified.",
+          "gap": "Verified on Linux X11 at 1\u00d7; other platforms and physical HiDPI remain unverified.",
           "evidence": [
             "crates/picsie-desktop/verify.py",
             "crates/picsie-core/tests/layers_masks_colors.rs",
@@ -2495,7 +2703,7 @@
           "polish": "verified",
           "verification": "native",
           "behavior": "X swaps colors; D restores black/white",
-          "gap": "Verified on Linux X11 at 1×; other platforms and physical HiDPI remain unverified.",
+          "gap": "Verified on Linux X11 at 1\u00d7; other platforms and physical HiDPI remain unverified.",
           "evidence": [
             "crates/picsie-desktop/verify.py",
             "crates/picsie-core/tests/layers_masks_colors.rs",
@@ -2568,10 +2776,12 @@
           "polish": "partial",
           "verification": "native",
           "behavior": "Relative/absolute dimensions, aspect lock, nine anchors, extension fill",
-          "gap": "Foreground/background palette extension choices are implemented. Canvas physical-unit controls remain tracked separately.",
+          "gap": "Foreground/background palette extension choices are implemented. Canvas physical-unit controls remain tracked separately. Three-launch CPU stress controls cover centered shrink, transparent/colored expansion and Undo/Redo, including 100 complex layers; redraw remains slow on that stack. Mixed axes, anchor combinations, guides and retained-crop workflow performance remain gaps; see the seventh performance pass.",
           "evidence": [
             "crates/picsie-desktop/verify.py",
-            "docs/gpui-ui-parity.md"
+            "docs/gpui-ui-parity.md",
+            "crates/picsie-core/examples/performance_stress.rs",
+            "docs/desktop-gimp-experiments.md"
           ],
           "nativeChecks": [
             "canvas resize keeps original aspect ratio",
@@ -2596,10 +2806,12 @@
           "polish": "partial",
           "verification": "native",
           "behavior": "Pixel/percent/inch/cm dimensions, resolution, lock, resample and sampling",
-          "gap": "Local side/pixel limits.",
+          "gap": "Local side/pixel limits. Three-launch stress controls cover Nearest/Smooth/High downsampling, upscaling, odd and width-only dimensions, dense masks, complex many-layer resizing and atomic source/mask budget rejection. Height-only, heterogeneous live-content combinations and quality-equivalent output comparisons with GIMP remain gaps; see the seventh performance pass.",
           "evidence": [
             "crates/picsie-desktop/verify.py",
-            "docs/gpui-ui-parity.md"
+            "docs/gpui-ui-parity.md",
+            "crates/picsie-core/examples/performance_stress.rs",
+            "docs/desktop-gimp-experiments.md"
           ],
           "nativeChecks": [
             "Image Size scales pixels and resolution",

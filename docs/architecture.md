@@ -114,7 +114,7 @@ crates/picsie-core/tests/  Rust behavior and pinned Compositor fixtures
 tests/                        Actual-addon integration and old project fixtures
 ```
 
-`src/core/` has been removed. There are **zero legacy TypeScript engine exemptions**. New projects use `.picsie` files and the `picsie` format marker. Existing `.electropic` v1 projects remain readable and writable, retaining their original marker when saved. Their vector stroke masks and embedded PNG assets are preserved internally in Rust for compatibility. New masks use Rust-owned grayscale assets, and the Rust package adapter reads/writes the supported `.comp` raster/folder/mask/text/guide subset. New brush strokes follow the upstream software coverage path and retain immutable native images; they do not encode PNGs during painting or preview. Folder raster masks and live mask links round-trip through both formats. Tip rasterization, incremental source tile publishing, GPU brush coverage, and richer `.comp` features remain fidelity work; see [the source map](compositor-port.md).
+`src/core/` has been removed. There are **zero legacy TypeScript engine exemptions**. New projects use `.picsie` files and the `picsie` format marker. Existing `.electropic` v1 projects remain readable and writable, retaining their original marker when saved. Their vector stroke masks and embedded PNG assets are preserved internally in Rust for compatibility. New masks use Rust-owned grayscale assets, and the Rust package adapter reads/writes the supported `.comp` raster/folder/mask/text/guide subset. New brush strokes follow the upstream software coverage path and retain immutable native images; they do not encode PNGs during painting or preview. Folder raster masks and live mask links round-trip through both formats. Tip rasterization, contiguous mask publication, GPU brush coverage, and richer `.comp` features remain fidelity work; see [the source map](compositor-port.md).
 
 ## Enforcement
 
@@ -160,3 +160,97 @@ and small metadata return to the UI. The floating picker owns its working HSB
 form, target identity and position, while OK applies a typed engine command.
 No image pixels or mask grids cross into JavaScript. New addon raster selection,
 distortion, placement and background-fill commands execute asynchronously.
+
+Selection feedback now travels to the native UI as immutable Rust path and
+flattened-contour resources, separate from serialized metadata and canvas-sized
+coverage. GPUI paints cached vector marching ants on source 120 ms timer ticks;
+those ticks submit no edit command and request no engine raster preview. Exact
+winding-path hit testing and dash geometry stay in Rust. QuickGUI keeps a static
+outline through the existing preview path. Typed transform fields, ratio/AA
+settings, image distortion and layer-pixel selection commands use the same
+Rust-owned model/history; addon raster commands execute asynchronously. Expanded
+crop previews composite retained artwork into a viewport-sized native surface.
+No pixel arrays or new encoded preview transport cross the TypeScript boundary.
+
+Checks and Linux release builds use GitHub-hosted `ubuntu-latest`; Windows uses
+`windows-latest`. Existing-tag release retries use `workflow_dispatch` on main
+with an explicit version tag, package that tag's contents, and keep the tag fixed.
+
+
+The 2026-10-01 performance pass ports Compositor's flat immutable raster
+snapshots for image painting and selection fill/clear. Original source pixels
+and unchanged replacement patches are shared; pointer-up commits those resources
+without flattening the image. PNG assets memoize an owned decoded raster instead
+of depending on Skia's global decoder cache to retain the source between draws.
+History accounts for the retained native resources once across shared snapshots.
+
+Simple integer-position stacks with raster patches use retained padded
+document-space pieces for previews; source thumbnails have an independent cache
+of layer-local pieces, placed on the canvas after sampling. Moving a layer
+retains these source pixels and source-edge antialiasing. Ordinary images retain
+the existing compositor, which seeds unchanged preview pieces on the first patch
+edit. Undo to the ordinary source retains eligible preview pieces for the next
+edit; damage is compared with their recorded document before reuse.
+Replaced/deleted layer sets and unsupported scenes release them. Patched-image
+moves invalidate their old/new bounds rather than the entire piece cache. The
+pieces preserve neighboring samples at seams; each cache is bounded to the
+existing 24 MP pixel budget. Filters, transforms, masks and clipping
+relationships keep their established rendering path. Native mask-stroke
+publication still uses contiguous grayscale pixels. Full output and persistence
+remain explicit consumers of complete images.
+
+The desktop worker yields to presentation after 8 ms **between requests** (or
+4,096 requests), preserving every ordered pointer sample and file completion.
+A single expensive command is not preempted. The latest-frame mailbox still
+prevents rendering repeatedly for a consumer that has not taken its frame.
+CPU Skia processing and GPUI GPU upload/presentation retain their existing roles.
+See the sixth performance pass for repeated measurements and limits; these
+changes do not establish complete GIMP or Compositor performance parity.
+
+Feathered selection coverage now blurs only the four-sigma padded selection
+region and reads Alpha8 directly, retaining the same complete Rust-owned mask
+contract for brush, fill/clear and history consumers. Explicit empty selections,
+canvas-edge clamping and combined selections keep their established semantics.
+
+### Indexed layer queries and retained clipping projection
+
+The 2026-10-01 stress investigation identified per-option document cloning,
+whole-graph validation repeated for every row, and full-document clipping scratch
+images as structural costs. `LayerIndex` now borrows one authoritative document,
+indexes IDs and sibling order, and computes the live-mask forest and incoming
+chain depths once per snapshot/render. Candidate checks follow only a bounded
+source chain and retain Compositor's 256-node limit, including target dependents.
+Invalid graph replacement queries use the compact records without copying pixels.
+
+The renderer addresses source caches by ID and retains shared-alpha clipping
+nodes by immutable source identity, appearance and effective folder opacity.
+Scratch images cover the base footprint intersected with the document, preserving
+existing document-edge blur semantics. Independent mask coverage covers only the
+current drawing region. Source and clipping caches each have a 24-million-pixel
+LRU budget; the existing retained document composite remains separate. This is
+not a multiresolution projection pyramid. Reorder damage follows changed relative
+order and both old/new folder and mask dependencies, then redraws the overlapping
+stack inside fixed 256-pixel document-grid chunks intersecting conservative damage.
+Fixed chunk clips preserve Skia sampling phase on both initial and partial redraws. Sampling defaults remain High.
+The GPUI layer list lazily builds visible 52-point rows through `uniform_list`;
+selection, menus, rename, clipping, visibility swipes and drag autoscroll retain
+the existing commands and scroll handle. Read-only desktop metadata indexes IDs.
+
+Tests compare the new bounded renderer with a frozen pre-rewrite pixel oracle:
+transformed/blurred scratch origins allow at most one premultiplied channel step
+of Skia rounding. Straight-alpha RGB differences at low alpha can be larger.
+Retained damage is checked byte-for-byte against a fresh new render. Existing
+translated Compositor soft-alpha, hidden-source, chain and clipping-edit fixtures
+remain authoritative. Measurements and native evidence live in
+[the performance record](desktop-gimp-experiments.md).
+
+Projection chunks retain sparse premultiplied backdrop checkpoints every 64
+atomic compositing nodes plus a checkpoint before their final eight nodes. Old/new dependency closure and ordered
+node comparison establish the reusable prefix; only the changed suffix is replayed.
+Clipping stacks remain atomic, and hidden/live sources above a prefix invalidate
+lower consumers. Empty spans share immutable checkpoint images; unique checkpoint storage is
+bounded by 24 million pixels, with older images evicted before a chunk's newest. Checkpoint publication/copying
+stays in Rust; no new transport format, blend math or source sampling is introduced.
+Local cross-chunk/prefix tests compare every byte with fresh rendering and check
+cache reuse and external-source invalidation. Earlier-prefix edits still require
+replaying the lower stack; visible-priority scheduling and a pyramid remain gaps.

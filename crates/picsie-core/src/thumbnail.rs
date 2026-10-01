@@ -82,6 +82,7 @@ impl Thumbnails {
         doc: &Document,
         renderer: &mut Renderer,
     ) -> Result<Vec<(String, Arc<Thumbnail>)>> {
+        renderer.retain_thumbnail_sources(doc);
         self.entries
             .retain(|id, _| doc.layers.iter().any(|l| &l.id == id));
         self.masks
@@ -171,10 +172,9 @@ impl Thumbnails {
                 // Thumbnails show the source, before opacity, filters, masks and live clipping.
                 let mut source = layer.clone();
                 source.mask = None;
-                let image = renderer.layer_surface(&source)?;
                 let scale = width as f32 / doc.width as f32;
                 c.scale((scale, scale));
-                render::draw_pixels(c, layer, &image);
+                renderer.draw_thumbnail_source(doc, layer, c)?;
                 let pixels = render::bgra_pixels(&mut surface)?;
                 self.entries.insert(
                     layer.id.clone(),

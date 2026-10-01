@@ -245,11 +245,21 @@ impl Transform {
             rotation: placement.rotation,
             flip_x: placement.flip_x,
             flip_y: placement.flip_y,
-            sampling: "High quality".into(),
+            sampling: match placement.sampling {
+                Sampling::Nearest => "Nearest",
+                Sampling::Smooth => "Smooth",
+                Sampling::High => "High quality",
+            }
+            .into(),
         }
     }
     fn placement(&self, layer: &Layer) -> MaskPlacement {
         MaskPlacement {
+            sampling: match self.sampling.as_str() {
+                "Nearest" => Sampling::Nearest,
+                "Smooth" => Sampling::Smooth,
+                _ => Sampling::High,
+            },
             x: self.origin.x,
             y: self.origin.y,
             scale_x: self.size.width / layer.width as f64,

@@ -79,6 +79,7 @@ pub struct Frame {
     pub command_ms: f64,
     pub render_ms: f64,
     pub pixels_ms: f64,
+    pub thumbnails_ms: f64,
     pub thumbnails: Vec<(String, Arc<picsie_core::thumbnail::Thumbnail>)>,
 }
 struct Request {
@@ -104,7 +105,7 @@ pub fn preview(editor: &Editor, renderer: &mut Renderer) -> Result<skia_safe::Su
     let mut surface = renderer.preview(
         &displayed,
         &editor.viewport,
-        if editor.mask_distortion_corners().is_none()
+        if editor.distortion_corners().is_none()
             && editor.tool == Tool::Move
             && (editor.view_options.show_controls || editor.transform_active())
         {
@@ -126,10 +127,10 @@ pub fn preview(editor: &Editor, renderer: &mut Renderer) -> Result<skia_safe::Su
         } else {
             None
         },
-        editor.history.pixel_selection.as_ref(),
+        None, // SelectionOutline is a native vector overlay; timer ticks don't rasterize the canvas.
         editor.selection_draft().as_ref(),
     )?;
-    editor.draw_mask_distortion(surface.canvas());
+    editor.draw_distortion(surface.canvas());
     editor.draw_placement(surface.canvas());
     editor.draw_text_editor(surface.canvas());
     Ok(surface)
@@ -352,9 +353,13 @@ impl Engine {
                 while let Ok(first) = receiver.recv() {
                     let started = Instant::now();
                     // Retain every pointer sample and terminal event. Only presentation is coalesced.
-                    let requests = std::iter::once(first).chain(receiver.try_iter().take(4095));
-                    for message in requests {
+                    // Frame work gets a turn even while input keeps arriving.
+                    // Requests stay in the reliable queue; no samples are dropped.
+                    let mut next = Some(first);
+                    let mut count = 0;
+                    while let Some(message) = next.take() {
                         let Message::Request(request) = message else {
+                            next = receiver.try_recv().ok();
                             continue;
                         };
                         pending_since.get_or_insert(request.queued_at);
@@ -379,6 +384,12 @@ impl Engine {
                             // Completion is observable without waiting for the next preview.
                             let _ = wake.try_send(());
                         }
+                        count += 1;
+                        if count >= 4096 || started.elapsed() >= std::time::Duration::from_millis(8)
+                        {
+                            break;
+                        }
+                        next = receiver.try_recv().ok();
                     }
                     command_ms += started.elapsed().as_secs_f64() * 1000.;
                     let Some(queued_at) = pending_since else {
@@ -398,6 +409,7 @@ impl Engine {
                         let started = Instant::now();
                         let pixels = bgra(&mut surface)?;
                         let pixels_ms = started.elapsed().as_secs_f64() * 1000.;
+                        let started = Instant::now();
                         let mut thumbnails =
                             thumbnails.update(&editor.history.document, &mut renderer)?;
                         thumbnails.extend(rulers.update(
@@ -411,6 +423,7 @@ impl Engine {
                             width: surface.width() as u32,
                             height: surface.height() as u32,
                             pixels_ms,
+                            thumbnails_ms: started.elapsed().as_secs_f64() * 1000.,
                             thumbnails,
                             render_ms,
                             command_ms,
@@ -509,6 +522,81 @@ mod tests {
             }
         });
         receiver
+    }
+    #[test]
+    fn sustained_brush_input_publishes_before_terminal_event_and_preserves_pixels() {
+        let mut document = Document::new("Busy brush queue", 1024, 768).unwrap();
+        document.layers.push(picsie_core::model::Layer::new(
+            "Paint",
+            1024,
+            768,
+            Content::Paint,
+        ));
+        let mut worker = Engine::start(document.clone());
+        let wakeups = notifications(&worker);
+        let setup = vec![Command::SetTool { tool: Tool::Brush }];
+        worker.send(setup.clone());
+        let commands: Vec<_> = (0..220)
+            .map(|i| Command::Pointer {
+                samples: vec![PointerSample {
+                    phase: if i == 0 {
+                        Phase::Down
+                    } else if i == 219 {
+                        Phase::Up
+                    } else {
+                        Phase::Move
+                    },
+                    point: Point::new(200. + i as f64 * 2., 350. + (i % 30) as f64),
+                    modifiers: Modifiers::default(),
+                }],
+            })
+            .collect();
+        for command in &commands {
+            worker.send(vec![command.clone()]);
+        }
+        let terminal = worker.submitted_sequence();
+        let mut intermediate = false;
+        loop {
+            wakeups.recv_timeout(Duration::from_secs(30)).unwrap();
+            if let Some(frame) = worker.take_frame() {
+                let frame = frame.unwrap();
+                if frame.sequence > 1 && frame.sequence < terminal {
+                    intermediate = true;
+                }
+                if frame.sequence == terminal {
+                    break;
+                }
+            }
+        }
+        assert!(
+            intermediate,
+            "a full input queue must not starve stroke presentation"
+        );
+        let directory = tempfile::tempdir().unwrap();
+        let path = directory.path().join("queued.picsie");
+        let sequence = worker.request(Operation::Save(path.clone()));
+        let completion = complete(&worker, sequence);
+        assert!(completion.result.is_ok());
+        assert_eq!(
+            completion.state.history.undo_count, 1,
+            "one complete brush gesture"
+        );
+        let mut expected = Editor::new(document).unwrap();
+        for command in setup.into_iter().chain(commands) {
+            expected.command(command).unwrap();
+        }
+        let actual = files::open_project(&path).unwrap();
+        let pixels = |doc: &Document| {
+            picsie_core::render::rgba_pixels(
+                &Renderer::default().render(doc).unwrap().image_snapshot(),
+            )
+            .unwrap()
+        };
+        assert_eq!(
+            pixels(&actual),
+            pixels(&expected.history.document),
+            "all queued pointer samples reach the engine"
+        );
     }
     #[test]
     fn notifications_deliver_frames_and_failures_then_sleep_and_disconnect() {

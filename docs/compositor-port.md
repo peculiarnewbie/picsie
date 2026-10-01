@@ -55,7 +55,7 @@ The Swift/AppKit suite has not been executed in this Linux workspace. These are 
 | Layer workflow     | `LayerGroups.swift`, `NativeLayerList.swift`  | Folder hierarchy and pass-through appearance are present. The QuickGUI panel offers folder drag targets, Into/Out actions, clipping controls, and folder masks. Option-drag copying, automatic scroll while dragging, and upstream thumbnail drag interactions remain.                                                                 |
 | Transform session  | `LayerTransform.swift`, `EditorSession.swift` | Persistent Apply/Cancel layer and selected-pixel transforms are present in the native UI. Guides and distortion remain. Drag commits retain fractions. Canvas Shift-click toggles membership rather than upstream Cmd+Shift.                                                                                                                                                                |
 | Ratio modifier     | `TransformDrag.updated`, `lockRatio != shift` | User-requested Shift-to-preserve maps to upstream with `lockRatio = false`; a persistent ratio-lock toggle is absent.                                                                                                                                                                                                                  |
-| Masks and painting | `LayerMask.swift`, upstream brush engine      | Software brush spacing, curves, coverage union/accumulation, and opacity follow BrushStroke.swift. Native tip rasterization and placed-mask sampling differ from CoreGraphics. GPU coverage, optimized source tile publishing, healing, and cloning remain. Legacy vector strokes stay readable.                                       |
+| Masks and painting | `LayerMask.swift`, upstream brush engine      | Software brush spacing, curves, coverage union/accumulation, and opacity follow BrushStroke.swift. Native tip rasterization and placed-mask sampling differ from CoreGraphics. GPU coverage, tiled mask publication, healing, and cloning remain. Legacy vector strokes stay readable.                                       |
 | Selection          | `Selection.swift`                             | Coverage remains session-only but is restored by undo/redo, including feather metadata and explicit empty selections. Polygonal lasso, color wand, outline movement, selected-pixel movement/duplication and transforms, and the pixel clipboard are present in the native UI. Object selection, the antialiasing toggle, and pixel-color inversion remain. Selection inversion and foreground Fill are implemented. |
 | Project files      | `ProjectStore.swift`                          | The `.comp` adapter supports the raster/folder/raster-mask/live-mask subset within Picsie's lower limits. `.picsie` remains a single JSON file; `.comp` retains guides and live RGB text; Picsie shapes/gradients and legacy translucent text rasterize. Rich upstream records are rejected explicitly.                                                                |
 | UI and limits      | Upstream `UI/`, model validation              | GPUI Kit controls, the retained QuickGUI reference, and 8192 side/24MP/100-layer bounds are adaptations.                                                                                                                                                                                                                                                                 |
@@ -71,7 +71,7 @@ The Swift/AppKit suite has not been executed in this Linux workspace. These are 
 
 - `crates/picsie-core/src/pixel_selection.rs` translates `DocumentSelection.feather` and `coverageBounds` from [Selection.swift](https://github.com/robbietilton/Compositor/blob/609dbeae2ef68ef4fc82d67e4981a49852eb6e13/Compositor/Document/Selection.swift), and `crates/picsie-core/src/editor.rs` translates `featherSelection(by:)` plus `confirmSelectionAmount`'s 1…250 Feather range. A Skia path and its cached coverage stand in for upstream's `CGPath`: coverage stays crisp as `applySelection` keeps only `antialiased`, the feather is metadata, and repeated applications combine like the blurs they represent (`min(250, √(f² + a²))`), matching upstream's rule exactly. The bridge rejects amounts outside 1…250 instead of the sheet's silent no-op.
 - `render.rs`: `selection_coverage` translates `DocumentSelection.coverage()` — `clampedToExtent().applyingGaussianBlur(sigma: feather / 2)` is replaced by Skia's blur with `TileMode::Clamp`, which smears edge pixels the same way before the crop. Coverage-clipped clearing and the overlay read this softened buffer; `clip`'s region growth (`ceil(feather * 2)` plus the one-pixel allowance) is `PixelSelection::coverage_bounds`. `clampedToExtent` also means a feathered Select All still covers the canvas edges, which a local regression guards.
-- `src/ui/selection.tsx` exposes Feather (default 2, range 1…250), Expand/Contract (default 5, range 1…500), Invert, Fill, and Clear through typed Rust commands. The QuickGUI inspector replaces upstream's header/menu prompts to fit compact windows. Feather uses upstream's `setSelection` transaction pattern. Coverage always antialiases, so the `antialiased || feather > 0` switch has no local equivalent yet.
+- `src/ui/selection.tsx` exposes Feather (default 2, range 1…250), Expand/Contract (default 5, range 1…500), Invert, Fill, and Clear through typed Rust commands. The QuickGUI inspector replaces upstream's header/menu prompts to fit compact windows. Feather uses upstream's `setSelection` transaction pattern. The 2026-10-01 pass below adds captured Anti-alias settings and the source `antialiased || feather > 0` rule.
 - [crates/picsie-core/tests/behavior.rs](../crates/picsie-core/tests/behavior.rs) translates `featherSoftensTheSelectionAndWhatItClips` and adds labeled local regressions for stacking, the 250 clamp, hard-edged resets on a fresh outline, `canModifySelection` refusals, amount validation, and clamped coverage edges. `tests/native.test.ts` drives the command through the actual addon and checks the softened alpha falloff in an exported PNG.
 
 ## Pixel selection history port
@@ -95,11 +95,11 @@ The four-item functionality pass implements selection history, basic selection o
 
 Necessary adaptations and remaining limits:
 
-- Native hard-tip edges use four coverage samples; soft tips evaluate the falloff directly instead of CoreGraphics's sampled gradient/tip cache. Preview assembly copies the affected bounding image from sparse coverage; it does not yet publish only changed source tiles or implement the Metal continuous-coverage path. No performance parity is claimed. Images use native identity for history comparisons; no PNG encoding runs during stroke comparison/preview.
+- Native hard-tip edges use four coverage samples; soft tips evaluate the falloff directly instead of CoreGraphics's sampled gradient/tip cache. The image path now publishes flat immutable source/replacement patches as described in the performance pass below; mask snapshots still assemble contiguous grayscale pixels. Metal continuous coverage remains unported. No performance parity is claimed. Images use native identity for history comparisons; no PNG encoding runs during stroke comparison/preview.
 - Diameter defaults to upstream's 40px, hardness 100%, opacity 100%, smoothing 0. The existing foreground swatch, standalone Eraser tool, zero-opacity setting, and automatic blank layer creation remain local UI/workflow adaptations. Bracket size shortcuts retain the existing 5px step. There is one foreground palette, so separate background-color Fill is unavailable. Healing, cloning, and other brush tools remain outside this pass.
 - Ordinary layer masks retain the existing nearest placed-mask sampling. Folder mask rendering follows upstream's folder transform and pass-through clipping. Live coverage is resolved iteratively within the canvas to bound temporary memory; deletion renders source coverage through the inverse target transform, including source pixels outside the canvas. Skia sampling can differ at transformed/subpixel edges from CoreGraphics.
 - Deleting a live source automatically takes upstream's **Bake and Delete** path as one undoable operation. The existing immediate Delete workflow is retained; the upstream choice dialog for unlinking instead is not ported. Source links can be released explicitly before deletion. QuickGUI exposes **Clip to layer below** and a source picker in place of upstream thumbnail gestures. GIMP UX is not used.
-- Existing limits remain 8192px per side, 24MP per surface, and 10,000 layers; source growth beyond those limits fails atomically. Selections remain session-only. Object selection, the antialias toggle, pixel-color inversion and richer `.comp` live records remain unported.
+- Existing limits remain 8192px per side, 24MP per surface, and 10,000 layers; source growth beyond those limits fails atomically. Selections remain session-only. Object selection, pixel-color inversion and richer `.comp` live records remain unported; the 2026-10-01 pass below adds the antialias toggle.
 
 `reference_features.rs` adapts the upstream `SelectionTests` expansion/contraction fixtures; feathered fill from `SelectionFeatherTests`; seven pixel scenarios from `BrushTests` (opacity cap, soft accumulation, spacing ripple, sparse curves, provisional tail replacement, trimmed bounds, and document-space diameter on a rotated/nonuniform/flipped layer); folder coverage/painting from `LayerMaskTests`; and soft-alpha, hidden-source, graph edit, persistence, and deletion scenarios from `LiveMaskTests`. Test comments identify the source scenarios. Local regressions separately cover transformed fill/mask placement, empty selections, live-text recoloring, interrupted smoothed strokes, native image persistence, folder/multi-layer copies, off-canvas dependency baking, and `.picsie` round-trips. The actual-addon suite exercises the commands under Node and Bun, including Shift-click and `.comp` reopen. These are selected translated/adapted fixtures, not execution of the Swift/AppKit suite or full upstream parity.
 
@@ -465,3 +465,135 @@ mask-grid/project compatibility is preserved. Effect and adjustment child rows
 require the separately unimplemented effect stack and adjustment-layer model;
 they remain recorded under `filters-effects.effect-rows` and
 `adjustments.layer-adjustments`. No GIMP UX is used in this pass.
+
+## Selections, crop and transform polish (2026-10-01)
+
+This pass uses the same pinned revision and MIT © 2026 Wonder Assembly LLC
+attribution. It changes the Rust engine and default GPUI Kit application;
+QuickGUI remains the historical UI reference. Apple Vision is an Apple-platform
+framework, so the source Object/Select Subject implementation cannot run on
+Linux. A replacement model/runtime remains a separately tracked feature.
+
+| Local implementation | Pinned source | Behavior and adaptation |
+| --- | --- | --- |
+| `pixel_selection.rs`, `editor.rs`, `feedback.rs`, desktop `ui/toolbars.rs`, `ui/layout.rs`, `ui/polish.rs` | `Document/Selection.swift`, `UI/LassoControls.swift`, `Rendering/EditorCanvas.swift`, `Rendering/TransformOverlay.swift` | Captured Anti-alias setting for ellipse/lasso/wand, smoothing when feather is positive, exact winding-path cursor feedback, stationary Shift/Add and Alt/Subtract without changing the default, and frozen mode during a draft. Off-canvas outline geometry remains intact while coverage is canvas-sized. Native marching ants use source 120 ms phase steps and four-point black/white dashes. Rust caches flattened vector contours; GPUI animates them without edit commands or raster previews. Curve flattening at 0.75 screen-point intervals, bounded toolkit paths and platform cursors with +/− overlays are presentation adaptations. QuickGUI keeps a static outline. |
+| `editor/layer_polish.rs`, desktop `ui/dialogs.rs`, `ui/toolbars.rs`, `assets.rs` | `Document/MaskTracing.swift`, `Document/Selection.swift`, `UI/LassoControls.swift` | Select Layer Pixels uses the existing Rust alpha-silhouette trace. Source ellipse/polygon icons, independent Expand/Contract defaults of 1, Feather default 2, and integer amount panels with slider/value, Cancel and OK. Expand/Contract accept 1…500; Feather accepts 1…250. Return applies once; invalid values and Cancel do not edit the document. Kit replaces source panels. |
+| `editor/interaction_polish.rs`, `editor/operations.rs`, desktop `ui/controls.rs`, `ui/toolbars.rs` | `UI/TransformInspector.swift`, `Document/LayerTransform.swift`, `Document/EditorSession.swift` | Typed live X/Y/W/H/rotation, ratio lock, percentage scale about center, sampling, persistent Apply/Cancel and Escape restoration. Asset pixels or pre-edit blank/mask dimensions form a frozen percentage baseline. Auto Select and Show Controls stay outside the horizontally scrolling numeric controls. Explicit user adaptation: free resize is the default, and lock or Shift preserves proportions; source defaults locked and Shift reverses the lock. Enter releases field focus, retaining the existing native Apply workflow. |
+| `distort.rs`, `editor/interaction_polish.rs`, `editor.rs`, `editor/operations.rs` | `Document/Distort.swift`, `Document/LayerTransform.swift`, `Rendering/TransformOverlay.swift` | Image/blank-shape and floating-pixel corner/edge distortion: eight handles without a rotation stalk; convex perspective or two triangles for folded shapes; Ctrl/Command begins a persistent draft; Shift confines free motion to one axis; Cancel restores original pixels/placement; Apply rerasterizes at full supported resolution, trims visible alpha bounds and commits one undo. Linked masks follow and unlinked masks preserve world placement. Skia replaces Core Image/Core Graphics; previews cap at 2048. Text/group distortion and the absent source effect stack remain gaps. |
+| `model.rs`, `render.rs`, `comp.rs`, desktop `state.rs`, `ui/controls.rs` | `Document/LayerTransform.swift::LayerSampling`, `UI/TransformInspector.swift`, `Document/ProjectWorkspace.swift` | Nearest, Smooth and High metadata/controls survive transform cancellation and both project formats, including mask placement. Image sampling maps to nearest, linear and Skia Catmull-Rom cubic rather than platform Core Graphics quality hints. Independent-mask nearest placement is distinct; Smooth/High still share the existing bilinear placement adapter. |
+| `crop.rs`, `editor.rs`, `render.rs`, `render/composite.rs`, desktop `ui/input.rs` | `Document/Crop.swift`, `Document/LayerTransform.swift::CropSnap`, `Rendering/EditorCanvas.swift` | A full-canvas crop frame starts a fresh body drag; symmetric snapping preserves the center; Control bypass reaches the crop tool rather than layer picking. Original ∪ crop bounds drive checkerboard/shadow and retained off-canvas artwork. Expanded previews draw into the viewport-sized surface clipped to that union, avoiding a huge temporary raster. Apply translates retained assets/guides without resampling; selection reset on canvas replacement remains an adaptation. |
+
+`tests/interaction_polish.rs` adapts selected `SelectionTests` scenarios
+(`antialiasingControlsEdgeCoverage`,
+`cursorBadgeFollowsModifiersButKeepsAnOutlinesStartingMode`,
+`movingOffCanvasAndBackKeepsTheWholeShape`),
+`TransformTests.scalePercentSetsBothSidesAboutTheCenter` and
+`moveRotateAndShiftConstraints`, and the two raster/trim scenarios in
+`DistortTests`. Additional source-implementation checks cover exact path hit
+feedback, positive-feather smoothing and `TransformDrag.corners`' Shift rule.
+Local regressions are separately labeled for frozen blank baselines, symmetric
+crop snapping, expanded preview pixels, linked/unlinked cross-grid masks,
+floating-pixel merging and cached outline animation. Existing translated crop
+fixtures continue in `behavior.rs` and `placement_text.rs`; the Swift suite did
+not run here. The real Node/Bun addon verifies typed metadata, worker-only raster
+commands, transaction cancellation/undo and exported distorted alpha pixels.
+
+The registry now explicitly tracks the missing `TransformGroup` box model for
+folder/multi-layer numeric, resize and rotation edits. Multi-layer translation
+already works; the source box behavior must be ported rather than treating a
+folder as one raster layer. Windows/macOS GUI, Wayland and physical HiDPI remain
+unverified. There is no claim of pixel-identical Core Graphics/Core Image output.
+
+
+## Immutable raster and bounded pixel-work performance pass
+
+Pinned sources remain `609dbeae2ef68ef4fc82d67e4981a49852eb6e13`, MIT
+© 2026 Wonder Assembly LLC:
+
+| Local implementation | Compositor source | Adaptation |
+| --- | --- | --- |
+| `raster_snapshot.rs`, `asset.rs`, `history.rs` | `Rendering/RasterSnapshot.swift`, `Rendering/LayerRenderer.swift` | Flat base plus disjoint replacement patches, spatially indexed replacement/splitting, crop offsets, immutable sharing and lazy complete-image materialization. Skia images replace CGImages; owned decoded PNG pixels are memoized. Existing project formats are unchanged. |
+| `brush.rs`, `geometry.rs` | `Document/BrushStroke.swift`, `Document/EditorSession+Brush.swift` | Source reads and publication are bounded to touched 256px tiles. Published images are cropped to coverage bounds and unchanged patches retain identity. Original per-stroke pixels and provisional tail backups preserve opacity/cancellation. Cached tips reuse exact quarter-pixel phases only; arbitrary phases retain procedural rasterization. A conservative hard-tip interior/edge test and saturated-coverage skip reduce work without phase rounding. Transform terms are cached without changing arithmetic order. |
+| `render.rs`, `render/composite.rs`, `thumbnail.rs` | `Rendering/TiledLayerRenderer.swift`, `UI/CanvasThumbnail.swift` | Padded pieces retain unchanged document/source pixels. The conservative Skia preview path accepts simple integer-position stacks with raster patches; ordinary source images keep the existing compositor and seed unchanged pieces from its retained image on the first patch edit; eligible pieces survive undo to an ordinary source and are validated against their recorded document on reuse; changed source patches invalidate affected pieces; ordinary moves reuse the existing bounds-based damage calculation. Source thumbnail pieces use layer-local coordinates and apply canvas placement afterward; moves retain their source pixels. Source-edge antialiasing is applied to the full textured layer rectangle, with only internal cache boundaries clipped. Two-pixel gutters support the existing linear/Catmull-Rom sampling. The upstream halving pyramid, transformed tiled rendering and GPU coverage are not ported. Complex scenes keep the existing compositor. |
+| `render.rs`, `editor.rs`, `editor/operations.rs` | `Document/BrushStroke.swift::paintCanvas`, `Document/SelectionEdits.swift` | Fill/clear touch only tiles intersecting selection coverage while retaining the same source-over/destination-out formulas, source growth, mask placement and document-space clipping. Mask fills retain their contiguous path. |
+
+`tests/raster_snapshot.rs` adapts upstream
+`RasterSnapshotTests.mouseUpAndNextStrokeNeverFlattenTheDocument` and the
+immutable snapshot/persistence portion of
+`snapshotsStayImmutableAndDisplayMatchesExportAcrossSuccessiveStrokes` to a
+768×512 CPU fixture and the `.picsie`/`.comp` adapters. It separately labels
+local transparent-patch/crop, arbitrary-phase hard-tip, transformed translucent
+fill/clear, and retained decoder identity regressions. Existing upstream brush
+coverage/tail/opacity fixtures remain unchanged. The Swift/AppKit test suite was
+not run and tiled mask parity is not claimed.
+
+The local preview comparison covers replacement/undo at five zoom factors and
+fractional pan. At unit zoom it is exact. At fractional zoom Skia's local tile
+origin can change interpolation rounding by one 8-bit channel step in a small
+number of pixels; this is recorded explicitly rather than called byte-identical.
+A further local regression verifies moved/restored translucent raster pixels and
+sharing of remote unchanged cache pieces. Thumbnail regressions additionally
+compare moved/off-canvas translucent source placement with the original contiguous
+renderer, preserving source-edge antialiasing and at most one channel-step sampling
+rounding. Final document output is compared separately. The desktop queue test
+verifies an intermediate frame during sustained painting, all final pointer pixels and
+one undo transaction. An 8 ms scheduling boundary is a native worker adaptation
+between requests, not a copied GIMP implementation or a guaranteed frame time.
+
+See [the sixth experiment pass](desktop-gimp-experiments.md#sixth-pass-immutable-raster-and-bounded-pixel-work) for the actual
+before/after evidence and remaining costs. GIMP contributes no code or UX.
+
+The same pass integrates the earlier bounded-feather experiment: following
+`DocumentSelection.coverageBounds/clip`, Skia blur runs inside four-sigma padded
+coverage bounds. Existing immutable coverage is cropped rather than rerasterizing
+the outline, preserving combined/raster selections. Alpha8 readback replaces the
+full RGBA temporary, then the result is restored to the existing complete mask
+contract. The local full-canvas reference compares every byte for rectangle,
+edge ellipse, full, inverted, off-canvas, combined-hole and empty selections at
+feather 1/2/20/80/250 on two canvas sizes. Existing brush, fill/clear and selection
+history consumers retain their fixtures. Source Gaussian/antialias behavior is
+unchanged; Skia remains the documented adaptation of Core Image.
+
+### 2026-10-01 layer graph and clipping projection rewrite
+
+`crates/picsie-core/src/layer_index.rs` adapts `LayerHierarchy.entries`,
+`LiveLayerMask.swift::LiveMaskGraph.validate/canLinkMask`, and their 256-node graph
+semantics to a borrowed Rust index. It avoids cloning raster-bearing documents
+and repeated validation for each menu option. The invalid-graph fallback preserves
+edge replacement/repair semantics. A local deterministic graph oracle and depth
+boundary tests supplement the translated live-mask fixtures; they are not new
+upstream fixtures. Duplicate live-mask IDs are rejected as in the pinned source.
+
+`render/projection.rs` adapts `Rendering/LiveMaskRenderer.swift::drawComposite`
+and `coverage`, called with `context.boundingBoxOfClipPath` by `drawLiveComposite`.
+The shared-alpha color math is retained. Rust caches clipping nodes across frames
+and sizes scratch images to the base support intersected with the document.
+The document-edge intersection preserves the pre-rewrite Skia blur boundary;
+this is a backend adaptation, not a literal Swift translation. Frozen-renderer
+comparisons permit at most one premultiplied channel step from bounded origins;
+retained redraws match fresh new rendering byte-for-byte. High interpolation,
+opacity/blend defaults, masks, history and source pixels are preserved.
+
+`render/composite.rs` now tracks damage by layer identity, changed relative order,
+and old/new hierarchy and live-mask dependencies rather than treating shifted
+vector positions as full damage. Source caches use indexed LRU records. GIMP's
+pinned `gimpprojection.c` and tile-validation architecture informed retention and
+damage concepts only; no GPL implementation was copied or translated. Visible-priority tiled
+projection scheduling and a downsample pyramid remain unimplemented adaptations.
+
+`picsie-desktop/src/ui/layers.rs` follows `UI/NativeLayerList.swift`'s visible-cell
+reuse with GPUI `uniform_list`, preserving 52-point rows and the command handlers.
+The toolkit list uses the same base scroll handle for visibility swipes and edge
+autoscroll. Platform accessibility/HiDPI and broader workflow stress verification
+remain registry gaps. MIT attribution: Compositor 609dbeae, © 2026 Wonder Assembly LLC.
+
+Projection chunks retain sparse premultiplied backdrop checkpoints every 64
+atomic compositing nodes plus a checkpoint before their final eight nodes. Old/new dependency closure and ordered
+node comparison establish the reusable prefix; only the changed suffix is replayed.
+Clipping stacks remain atomic, and hidden/live sources above a prefix invalidate
+lower consumers. Empty spans share immutable checkpoint images; unique checkpoint storage is
+bounded by 24 million pixels, with older images evicted before a chunk's newest. Checkpoint publication/copying
+stays in Rust; no new transport format, blend math or source sampling is introduced.
+Local cross-chunk/prefix tests compare every byte with fresh rendering and check
+cache reuse and external-source invalidation. Earlier-prefix edits still require
+replaying the lower stack; visible-priority scheduling and a pyramid remain gaps.

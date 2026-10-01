@@ -357,7 +357,7 @@ fn compositor_brush_bounds_and_native_project_roundtrip() {
         assert!(matches!(
             final_layer.content.as_ref(),
             Content::Image {
-                data: picsie_core::asset::ImageAsset::Raster(_)
+                data: picsie_core::asset::ImageAsset::Tiled(_)
             }
         ));
         let d = brush_doc(&b, 600, 200);

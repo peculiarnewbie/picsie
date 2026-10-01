@@ -40,15 +40,17 @@ pub struct PixelSelection {
     pub bounds: Option<SelectionBounds>,
     /// How far the edge fades, in document pixels. 0 is a hard edge.
     pub feather: f64,
+    pub antialiased: bool,
 }
 impl PixelSelection {
     /// Selection.swift::moveSelection: retain the full outline when it leaves the canvas.
     pub fn transformed(&self, matrix: &sk::Matrix) -> Result<Self> {
-        Self::from_path(
+        Self::from_path_with_smoothing(
             self.width,
             self.height,
             self.outline.with_transform(matrix),
             self.feather,
+            self.antialiased,
         )
     }
     pub fn translated(&self, delta: Point) -> Result<Self> {
@@ -74,11 +76,7 @@ impl PixelSelection {
         self.pixels[y as usize * self.width as usize + x as usize]
     }
     pub fn contains(&self, p: Point) -> bool {
-        p.x >= 0.
-            && p.y >= 0.
-            && (p.x as u32) < self.width
-            && (p.y as u32) < self.height
-            && self.at(p.x as u32, p.y as u32) > 0
+        p.x.is_finite() && p.y.is_finite() && self.outline.contains((p.x as f32, p.y as f32))
     }
     /// The region `SelectionClip` covers: upstream `coverageBounds` (four Gaussian standard
     /// deviations past the outline, so `ceil(feather * 2)`) plus `clip`'s one-pixel
@@ -222,7 +220,7 @@ impl PixelSelection {
         Self::from_path(width, height, canvas_path(width, height), 0.)
     }
     pub fn inverted(&self) -> Result<Self> {
-        Self::from_path(
+        Self::from_path_with_smoothing(
             self.width,
             self.height,
             operation(
@@ -231,6 +229,7 @@ impl PixelSelection {
                 PathOp::Difference,
             )?,
             self.feather,
+            self.antialiased,
         )
     }
     /// Selection.swift::resizeSelection: union/subtract a round stroked band, then clip.
@@ -264,9 +263,37 @@ impl PixelSelection {
             &canvas_path(self.width, self.height),
             PathOp::Intersect,
         )?;
-        Self::from_path(self.width, self.height, result, self.feather)
+        Self::from_path_with_smoothing(
+            self.width,
+            self.height,
+            result,
+            self.feather,
+            self.antialiased,
+        )
     }
     pub fn from_path(width: u32, height: u32, outline: Path, feather: f64) -> Result<Self> {
+        Self::from_path_with_smoothing(width, height, outline, feather, true)
+    }
+    /// Selection.swift: smoothing belongs to each captured selection, not the current tool setting.
+    pub fn with_antialiasing(self, antialiased: bool) -> Result<Self> {
+        if self.antialiased == antialiased {
+            return Ok(self);
+        }
+        Self::from_path_with_smoothing(
+            self.width,
+            self.height,
+            self.outline,
+            self.feather,
+            antialiased,
+        )
+    }
+    pub fn from_path_with_smoothing(
+        width: u32,
+        height: u32,
+        outline: Path,
+        feather: f64,
+        antialiased: bool,
+    ) -> Result<Self> {
         crate::model::dimensions(width, height)?;
         let info = sk::ImageInfo::new(
             (width as i32, height as i32),
@@ -277,7 +304,9 @@ impl PixelSelection {
         let mut surface = sk::surfaces::raster(&info, None, None)
             .ok_or_else(|| anyhow!("Cannot allocate selection coverage"))?;
         let mut paint = sk::Paint::default();
-        paint.set_anti_alias(true).set_color(sk::Color::WHITE);
+        paint
+            .set_anti_alias(antialiased || feather > 0.)
+            .set_color(sk::Color::WHITE);
         surface.canvas().draw_path(&outline, &paint);
         let mut pixels = vec![0u8; width as usize * height as usize];
         ensure!(
@@ -308,6 +337,7 @@ impl PixelSelection {
             outline,
             bounds,
             feather,
+            antialiased,
         })
     }
 }

@@ -7,6 +7,7 @@ import argparse
 import hashlib
 import importlib.util
 import json
+import math
 import os
 from pathlib import Path
 import random
@@ -138,7 +139,8 @@ def drag(screen, app, excursion, initial, folder, env, window):
     duration = time.perf_counter()-started
     after = desktop.resources(app.pid)
     catchup = time.perf_counter()
-    while abs(screen.edge()-initial) > 1:
+    # Presentation can briefly expose no matching pixel. Still require a settled endpoint.
+    while (lambda edge: edge is None or abs(edge-initial) > 1)(screen.edge()):
         if time.perf_counter()-catchup > 10:
             raise RuntimeError("Drag did not return to its initial visible position")
         time.sleep(.004)
@@ -160,20 +162,29 @@ def run_one(name, trial, args, base_env, out):
     folder = out/f"{name}-{trial}"
     folder.mkdir(parents=True, exist_ok=True)
     env = dict(base_env)
+    layout = getattr(args, 'picsie_layout', 'legacy')
+    fixture = json.loads((args.fixture/'demo.comp/manifest.json').read_text())
+    zoom = min(1., 856/fixture['width'], 654/fixture['height'])
     if name == "gimp":
         env.update(runtime_environment(args.runtime))
         env['LD_LIBRARY_PATH'] += os.pathsep + base_env['LD_LIBRARY_PATH']
         env['PATH'] = str(args.runtime/'usr/bin') + os.pathsep + env['PATH']
         config = Path(env['GIMP3_DIRECTORY'])
+        # The old default-snap-to-* fields are ignored in GIMP 3.2.6.
+        snapping = ('(default-view (snap-to-canvas no) (snap-to-guides no) '
+                    '(snap-to-grid no) (snap-to-path no) (snap-to-bbox no) '
+                    '(snap-to-equidistance no))\n'
+                    if getattr(args, 'disable_snapping', False) else '')
         (config/'gimprc').write_text(
             '(show-welcome-dialog no)\n(config-version "3.2.6")\n'
             '(check-updates no)\n(initial-zoom-to-fit yes)\n'
-            '(devices-share-tool yes)\n')
+            '(devices-share-tool yes)\n'+snapping)
         session = (args.runtime/'etc/gimp/3.0/sessionrc').read_text()
         session = session.replace('(size 800 600)', '(size 1280 860)')
         (config/'sessionrc.performance').write_text(session)
         command = [str(args.runtime/'usr/bin/gimp'), '--no-splash', '--new-instance',
-                   '--console-messages', '--session=performance', str(args.fixture/'demo.ora')]
+                   '--console-messages', '--session=performance',
+                   str(getattr(args, 'gimp_project', None) or args.fixture/'demo.ora')]
     else:
         command = [str(args.picsie)]
         if name == 'picsie-raster':
@@ -197,7 +208,7 @@ def run_one(name, trial, args, base_env, out):
                 ['xdotool', 'search', '--onlyvisible', '--name',
                  'GIMP' if name == 'gimp' else 'Picsie'],
                 env=env, text=True, capture_output=True).stdout.splitlines()
-            if matches and screen.edge() is not None:
+            if matches:
                 window = matches[-1]
                 break
             if app.poll() is not None or time.perf_counter()-started > 120:
@@ -215,7 +226,7 @@ def run_one(name, trial, args, base_env, out):
             time.sleep(.3)
             screenshot(window, folder/'setup-selected-layer.png', env)
             xdo(env, 'mousemove', '405', '841', 'click', '1', 'key', 'ctrl+a')
-            xdo(env, 'type', '71.333333%')
+            xdo(env, 'type', f'{zoom*100:.8f}%')
             xdo(env, 'key', 'Return')
             time.sleep(.3)
             screenshot(window, folder/'setup-zoom.png', env)
@@ -225,12 +236,23 @@ def run_one(name, trial, args, base_env, out):
             # visible canvas is 936 x 734, matching Picsie's canvas.
             xdo(env, 'windowsize', window, '970', '834')
         else:
+            if layout == 'compositor':
+                # Rail/panel/header sizes changed in the Compositor polish pass.
+                # Match the historical 936x734 canvas, then explicitly select Electric blue.
+                xdo(env, 'windowsize', window, '1245', '848')
+                time.sleep(2)
+                xdo(env, 'windowfocus', window)
+                for x, y in [(1111, 20), (1100, 452)]:
+                    xdo(env, 'mousemove', str(x), str(y))
+                    time.sleep(.2)
+                    xdo(env, 'click', '1')
+                    time.sleep(1)
             screen.move(750, 610)
             screen.button(True)
             screen.button(False)
         time.sleep(3)
         geometry = xdo(env, 'getwindowgeometry', '--shell', window)
-        expected_size = (970, 834) if name == 'gimp' else (1280, 860)
+        expected_size = (970, 834) if name == 'gimp' else ((1245, 848) if layout == 'compositor' else (1280, 860))
         fields = dict(line.split('=', 1) for line in geometry.splitlines())
         assert (int(fields['WIDTH']), int(fields['HEIGHT'])) == expected_size, geometry
         screenshot(window, folder/'startup.png', env)
@@ -252,13 +274,14 @@ def run_one(name, trial, args, base_env, out):
             while True:
                 edge = screen.edge()
                 count += 1
-                if edge is not None and abs(edge-previous) >= 5:
+                minimum_change = min(5, max(1, math.floor(10*zoom)-1))
+                if edge is not None and abs(edge-previous) >= minimum_change:
                     break
                 if time.perf_counter()-started > 5:
                     raise RuntimeError(f'{name}: nudge did not become visible')
                 time.sleep(.004)
             duration = (time.perf_counter()-started)*1000
-            expected = (24, 26) if name == 'gimp' else (6, 9)
+            expected = (24, 26) if name == 'gimp' else (max(1, math.floor(10*zoom)-1), math.ceil(10*zoom)+1)
             assert expected[0] <= abs(edge-previous) <= expected[1], (name, previous, edge)
             if i >= 4:
                 latencies.append(duration)
@@ -274,7 +297,7 @@ def run_one(name, trial, args, base_env, out):
         settled = desktop.resources(app.pid)
         host['end'] = host_resources()
         result = {'app': name, 'trial': trial, 'command': command, 'window_geometry': geometry,
-                  'canvas': [936, 734], 'zoom': .7133333333333334,
+                  'canvas': [936, 734], 'zoom': zoom, 'picsie_layout': layout,
                   'initial_edge_x': initial, 'idle': idle,
                   'idle_cpu_percent_one_core': idle_cpu,
                   'nudge_latency_ms': desktop.stats(latencies), 'nudge_samples_ms': latencies,
@@ -305,6 +328,13 @@ def main():
     parser.add_argument('--output', type=Path, default=Path('artifacts/gimp-performance/comparison'))
     parser.add_argument('--display', default=':95')
     parser.add_argument('--trials', type=int, default=3)
+    parser.add_argument('--picsie-layout', choices=['compositor', 'legacy'], default='compositor')
+    parser.add_argument('--disable-snapping', action='store_true',
+                        help='Compare free movement using an isolated Picsie preference file and GIMP config')
+    parser.add_argument('--gimp-project', type=Path, help='Load a prepared XCF instead of the fixture ORA')
+    parser.add_argument('--gpu-icd', type=Path, help='Override the default software Vulkan ICD')
+    parser.add_argument('--software-wsi', action='store_true',
+                        help='Allow hardware Mesa rendering with Xvfb software presentation')
     parser.add_argument('--jitter-nudges', action='store_true',
                         help='Use reproducible varied idle gaps to sample more refresh phases')
     parser.add_argument('--prepare-fixture', action='store_true')
@@ -320,11 +350,25 @@ def main():
     if args.prepare_fixture:
         prepare_fixture(args.fixture)
     args.output.mkdir(parents=True, exist_ok=True)
+    if args.gimp_project:
+        args.gimp_project = args.gimp_project.resolve()
+    if args.gpu_icd:
+        args.gpu_icd = args.gpu_icd.resolve()
+        if not args.gpu_icd.is_file():
+            parser.error('GPU ICD file does not exist')
     env = dict(os.environ, DISPLAY=args.display, WINIT_UNIX_BACKEND='x11',
                XDG_CACHE_HOME=str(args.output/'cache'),
+               XDG_CONFIG_HOME=str(args.output/'config'),
                PATH=str(args.tools/'bin')+os.pathsep+os.environ.get('PATH', ''),
                LD_LIBRARY_PATH=str(args.tools/'lib'),
-               VK_DRIVER_FILES=str(args.tools/'share/vulkan/icd.d/lvp_icd.json'))
+               VK_DRIVER_FILES=str(args.gpu_icd or args.tools/'share/vulkan/icd.d/lvp_icd.json'),
+               PICSIE_GPU_DIAGNOSTICS='1')
+    if args.software_wsi:
+        env['MESA_VK_WSI_DEBUG'] = 'sw'
+    if args.disable_snapping:
+        preferences = args.output/'config/picsie'
+        preferences.mkdir(parents=True, exist_ok=True)
+        (preferences/'ui.json').write_text(json.dumps({'view_options': {'snap': False}}))
     for key in ['WAYLAND_DISPLAY', 'PICSIE_TRACE_DIR']:
         env.pop(key, None)
     version_env = {**env, **runtime_environment(args.runtime)}
@@ -346,11 +390,15 @@ def main():
                          'idle_rss_mib': desktop.stats([r['idle']['rss_mib'] for r in runs]),
                          'drags': {str(n): {
                              'updates_per_second': desktop.stats([r['drags'][i]['visible_updates_per_second'] for r in runs]),
+                             'cpu_percent_one_core': desktop.stats([r['drags'][i]['cpu_percent_one_core'] for r in runs]),
                              'interval_ms': desktop.stats([v for r in runs for v in [
                                  (b[0]-a[0])*1000 for a,b in zip(r['drags'][i]['visible_changes'],r['drags'][i]['visible_changes'][1:])]])
                          } for i,n in enumerate([120,240])}}
-    report = {'scope': 'External input to Xvfb framebuffer; no physical GPU or scanout',
-              'document': 'Six layers, 1200 x 800; GIMP and picsie-raster use rasterized layer assets',
+    fixture = json.loads((args.fixture/'demo.comp/manifest.json').read_text())
+    report = {'scope': 'External input to Xvfb framebuffer; excludes physical compositor and scanout. Check adapter logs for hardware versus software rendering.',
+              'document': f"Six layers, {fixture['width']} x {fixture['height']}; GIMP and picsie-raster use rasterized layer assets",
+              'picsie_layout': args.picsie_layout, 'disable_snapping': args.disable_snapping,
+              'gpu_icd': env['VK_DRIVER_FILES'], 'software_wsi': args.software_wsi,
               'poll_interval_requested_ms': 4, 'trials': args.trials,
               'warmup': 'One complete discarded run per app; rotated measured launch order',
               'gimp_version': gimp_version,

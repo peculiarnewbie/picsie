@@ -976,7 +976,16 @@ test("actual addon preserves palette, transient blend previews, mask coverage an
       dispatch({ type: "toggleMaskLink" });
       await worker({
         type: "setMaskPlacement",
-        placement: { x: 10, y: 0, scaleX: 1, scaleY: 1, rotation: 0, flipX: false, flipY: false },
+        placement: {
+          sampling: "High",
+          x: 10,
+          y: 0,
+          scaleX: 1,
+          scaleY: 1,
+          rotation: 0,
+          flipX: false,
+          flipY: false,
+        },
       });
       await editor.exportImage(png, false);
       assert.equal((await pixel(png, 50, 50))[3], 0);
@@ -996,5 +1005,65 @@ test("actual addon preserves palette, transient blend previews, mask coverage an
       }
     } finally {
       editor.close();
+    }
+  }));
+
+test("selection polish and persistent transform/distortion commands execute through the real addon", async () =>
+  temporary(async (dir) => {
+    const raw = new native.NativeEditor(
+      JSON.stringify({ kind: "new", name: "Interactions", width: 100, height: 100 }),
+    );
+    const dispatch = (command: Command): EditorState =>
+      JSON.parse(raw.dispatch(JSON.stringify(command)));
+    const worker = async (command: Command): Promise<EditorState> =>
+      JSON.parse(await raw.dispatchAsync(JSON.stringify(command)));
+    try {
+      dispatch({ type: "resizeViewport", width: 100, height: 100 });
+      dispatch({ type: "setColor", color: "#ff0000" });
+      dispatch({ type: "setTool", tool: "rectangle" });
+      const modifiers = { shift: false, alt: false, control: false, meta: false };
+      let state = dispatch({
+        type: "pointer",
+        samples: [
+          { phase: "down", point: { x: 10, y: 10 }, modifiers },
+          { phase: "up", point: { x: 60, y: 60 }, modifiers },
+        ],
+      });
+      const before = state.history.undoCount;
+      dispatch({ type: "setSelectionAntialiased", antialiased: false });
+      dispatch({ type: "setTransformRatio", locked: true });
+      state = await worker({ type: "setTransformField", field: "width", value: 100 });
+      assert.equal(state.transformActive, true);
+      assert.equal(state.transformScalePercent, 200);
+      assert.equal(state.document.layers[0]!.scaleY, 2);
+      state = dispatch({ type: "cancelTransform" });
+      assert.equal(state.document.layers[0]!.scaleX, 1);
+      assert.equal(state.history.undoCount, before);
+      assert.throws(() => dispatch({ type: "beginDistort" }), /dispatchAsync/);
+      state = await worker({
+        type: "distortLayer",
+        corners: [
+          { x: 10, y: 10 },
+          { x: 70, y: 10 },
+          { x: 50, y: 60 },
+          { x: 10, y: 60 },
+        ],
+      });
+      assert.ok(state.imageDistortion);
+      assert.equal(state.transformActive, true);
+      state = await worker({ type: "commitTransform" });
+      assert.equal(state.imageDistortion, null);
+      assert.equal(state.history.undoCount, before + 1);
+      const png = join(dir, "distorted.png");
+      await raw.exportImage(png, false);
+      assert.deepEqual(await pixel(png, 60, 15), [255, 0, 0, 255]);
+      assert.equal((await pixel(png, 65, 55))[3], 0);
+      state = await worker({ type: "selectLayerPixels" });
+      assert.equal(state.hasPixelSelection, true);
+      assert.equal(state.canModifySelection, true);
+      assert.equal(state.selectionAntialiased, false);
+      assert.equal(state.selectionEmpty, false);
+    } finally {
+      raw.close();
     }
   }));

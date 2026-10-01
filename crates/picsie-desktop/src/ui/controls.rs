@@ -18,6 +18,7 @@ pub const FIELD_KEYS: &[&str] = &[
     "width",
     "height",
     "rotation",
+    "transform-scale",
     "font-size",
     "tracking",
     "leading",
@@ -26,6 +27,8 @@ pub const FIELD_KEYS: &[&str] = &[
     "hardness",
     "smoothing",
     "selection-amount",
+    "selection-contract",
+    "selection-dialog",
     "feather",
     "new-name",
     "new-width",
@@ -350,9 +353,17 @@ impl Desktop {
                         if key.starts_with("canvas-")
                             || key.starts_with("color-")
                             || key.starts_with("image-")
+                            || key == "selection-dialog"
+                            || matches!(
+                                key,
+                                "x" | "y" | "width" | "height" | "rotation" | "transform-scale"
+                            )
                         {
                             this.commit_field(key, window, cx);
                         }
+                    }
+                    InputEvent::PressEnter { .. } if key == "selection-dialog" => {
+                        this.apply_modal(window, cx);
                     }
                     InputEvent::PressEnter { .. } if key == "inline-name" => {
                         this.finish_rename(true, window, cx);
@@ -452,10 +463,21 @@ impl Desktop {
             self._subscriptions.push(cx.subscribe_in(
                 slider,
                 window,
-                move |this, _, event, _, cx| {
+                move |this, _, event, window, cx| {
                     match event {
                         SliderEvent::Change(SliderValue::Single(value)) => {
                             if this.busy {
+                                return;
+                            }
+                            if matches!(key, "selection-amount" | "feather") {
+                                this.set_field(
+                                    "selection-dialog",
+                                    decimal((*value as f64).max(1.)),
+                                    true,
+                                    window,
+                                    cx,
+                                );
+                                cx.notify();
                                 return;
                             }
                             if matches!(key, "hardness" | "brush-opacity" | "smoothing") {
@@ -491,7 +513,8 @@ impl Desktop {
             ));
         }
         for (key, value) in [
-            ("selection-amount", "5"),
+            ("selection-amount", "1"),
+            ("selection-contract", "1"),
             ("feather", "2"),
             ("new-name", "Untitled"),
             ("new-width", "1200"),
@@ -577,9 +600,23 @@ impl Desktop {
                     transform_decimal(target.height as f64 * target.scale_y),
                 ),
                 ("rotation", transform_decimal(target.rotation)),
+                (
+                    "transform-scale",
+                    transform_decimal(state.transform_scale_percent),
+                ),
             ] {
                 self.set_field(key, value, changed, window, cx);
             }
+            self.sync_select(
+                "transform-sampling",
+                match target.sampling {
+                    picsie_core::model::Sampling::Nearest => "nearest",
+                    picsie_core::model::Sampling::Smooth => "smooth",
+                    picsie_core::model::Sampling::High => "high",
+                },
+                window,
+                cx,
+            );
             self.sync_select("blend", &layer.blend, window, cx);
             let items = state
                 .mask_source_ids
@@ -684,15 +721,21 @@ impl Desktop {
                     self.patch(json!({key:value}));
                 }
                 "name" => self.patch(json!({"name":value})),
-                "x" | "y" | "rotation" => self.transform_patch(json!({key:number(&value)?})),
-                "width" | "height" => {
-                    if let Some(layer) = self.state.as_ref().and_then(Snapshot::selected) {
-                        let (property, size) = if key == "width" {
-                            ("scaleX", layer.width)
-                        } else {
-                            ("scaleY", layer.height)
-                        };
-                        self.transform_patch(json!({property:number(&value)?/size as f64}));
+                "x" | "y" | "width" | "height" | "rotation" | "transform-scale" => {
+                    use picsie_core::editor::TransformField::*;
+                    // Incomplete numeric text stays in the form while typing.
+                    if let Ok(value) = number(&value) {
+                        self.send(Command::SetTransformField {
+                            field: match key {
+                                "x" => X,
+                                "y" => Y,
+                                "width" => Width,
+                                "height" => Height,
+                                "rotation" => Rotation,
+                                _ => ScalePercent,
+                            },
+                            value,
+                        });
                     }
                 }
                 "font-size" => self.text_update(picsie_core::text::TextPatch {
@@ -725,7 +768,22 @@ impl Desktop {
                             / divisor,
                     });
                 }
-                "selection-amount" | "feather" => {
+                "selection-dialog" => {
+                    if let Some(Modal::SelectionAmount(kind)) = self.modal {
+                        if let Ok(value) = number(&value) {
+                            let key = if kind == "Feather" {
+                                "feather"
+                            } else {
+                                "selection-amount"
+                            };
+                            self.sliders[key].update(cx, |slider, cx| {
+                                slider.set_value(value as f32, window, cx)
+                            });
+                        }
+                    }
+                    cx.notify();
+                }
+                "selection-amount" | "selection-contract" | "feather" => {
                     let n = number(&value)?
                         .round()
                         .clamp(1., if key == "feather" { 250. } else { 500. });
@@ -758,6 +816,9 @@ impl Desktop {
         cx: &mut Context<Self>,
     ) {
         match key {
+            "transform-sampling" => self.transform_patch(json!({"sampling": match value {
+                "nearest" => "Nearest", "smooth" => "Smooth", _ => "High",
+            }})),
             "blend" => self.patch(json!({"blend":value})),
             "crop-ratio" => self.send(Command::SetCropRatio {
                 ratio: match value {

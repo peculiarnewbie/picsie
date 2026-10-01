@@ -57,6 +57,39 @@ pub fn bounds_point(l: &Layer, p: Point) -> Point {
         c.y + x * a.sin() + y * a.cos(),
     )
 }
+/// Cache the transform terms while preserving to_world operation order.
+pub(crate) struct PixelMapping {
+    center: Point,
+    half: Point,
+    scale: Point,
+    flip: Point,
+    cos: f64,
+    sin: f64,
+}
+impl PixelMapping {
+    pub(crate) fn new(layer: &Layer) -> Self {
+        let angle = layer.rotation.to_radians();
+        Self {
+            center: center(layer),
+            half: Point::new(layer.width as f64 / 2., layer.height as f64 / 2.),
+            scale: Point::new(layer.scale_x, layer.scale_y),
+            flip: Point::new(
+                if layer.flip_x { -1. } else { 1. },
+                if layer.flip_y { -1. } else { 1. },
+            ),
+            cos: angle.cos(),
+            sin: angle.sin(),
+        }
+    }
+    pub(crate) fn world(&self, point: Point) -> Point {
+        let x = (point.x - self.half.x) * self.scale.x * self.flip.x;
+        let y = (point.y - self.half.y) * self.scale.y * self.flip.y;
+        Point::new(
+            self.center.x + x * self.cos - y * self.sin,
+            self.center.y + x * self.sin + y * self.cos,
+        )
+    }
+}
 pub const HANDLES: [(&str, f64, f64); 8] = [
     ("nw", 0., 0.),
     ("n", 0.5, 0.),

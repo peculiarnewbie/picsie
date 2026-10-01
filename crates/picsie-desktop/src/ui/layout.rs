@@ -184,8 +184,43 @@ impl Desktop {
                     Action::Command(Command::BeginTransform),
                     locked,
                 ),
+                (
+                    "pixels-distort",
+                    "Distort",
+                    Action::Command(Command::BeginDistort),
+                    locked
+                        || state.is_none_or(|s| {
+                            s.selection.ids.len() != 1
+                                || s.selected()
+                                    .is_none_or(|l| l.kind() == "text" || l.kind() == "group")
+                        }),
+                ),
             ],
             "Select" => vec![
+                (
+                    "pixels-expand-menu",
+                    "Expand…",
+                    Action::SelectionAmount("Expand"),
+                    state.is_none_or(|s| !s.can_modify_selection),
+                ),
+                (
+                    "pixels-contract-menu",
+                    "Contract…",
+                    Action::SelectionAmount("Contract"),
+                    state.is_none_or(|s| !s.can_modify_selection),
+                ),
+                (
+                    "pixels-feather-menu",
+                    "Feather…",
+                    Action::SelectionAmount("Feather"),
+                    state.is_none_or(|s| !s.can_modify_selection),
+                ),
+                (
+                    "pixels-layer",
+                    "Layer Pixels",
+                    Action::Command(Command::SelectLayerPixels),
+                    state.is_none_or(|s| s.selected().is_none_or(|l| l.kind() == "group")),
+                ),
                 (
                     "pixels-all",
                     "All",
@@ -456,6 +491,20 @@ impl Desktop {
                         .icon(icon(
                             if *value == Tool::Rectangle && tool == Tool::Ellipse {
                                 "ellipse"
+                            } else if *value == Tool::Marquee
+                                && self
+                                    .state
+                                    .as_ref()
+                                    .is_some_and(|s| s.marquee_kind == "ellipse")
+                            {
+                                "marquee-ellipse"
+                            } else if *value == Tool::Lasso
+                                && self
+                                    .state
+                                    .as_ref()
+                                    .is_some_and(|s| s.lasso_kind == "polygonal")
+                            {
+                                "lasso-polygonal"
                             } else {
                                 id
                             },
@@ -850,6 +899,16 @@ impl Render for Desktop {
             .text_color(rgb(TEXT))
             .text_size(px(12.))
             .track_focus(&self.focus)
+            .on_modifiers_changed(cx.listener(|this, event: &ModifiersChangedEvent, _, cx| {
+                this.cursor_modifiers = picsie_core::editor::Modifiers {
+                    shift: event.modifiers.shift,
+                    alt: event.modifiers.alt,
+                    control: event.modifiers.control,
+                    meta: event.modifiers.platform,
+                };
+                this.refresh_cursor(cx);
+                cx.notify();
+            }))
             .on_key_down(cx.listener(Self::key))
             .child(self.header(cx))
             .child(self.toolbar(cx))

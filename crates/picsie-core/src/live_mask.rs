@@ -1,70 +1,26 @@
 //! LiveLayerMask.swift and LiveMaskGraph, pinned Compositor 609dbeae.
 //! MIT © 2026 Wonder Assembly LLC. Commands use Picsie's multi-selection history.
-use crate::model::{Content, Document};
+use crate::{
+    layer_index::LayerIndex,
+    model::{Content, Document},
+};
 use anyhow::{Result, ensure};
 use std::collections::{HashMap, HashSet};
 
 pub fn validate(doc: &Document) -> Result<()> {
-    let records: HashMap<_, _> = doc.layers.iter().map(|l| (l.id.as_str(), l)).collect();
-    for layer in &doc.layers {
-        let mut current = Some(layer.id.as_str());
-        let mut path = HashSet::new();
-        while let Some(id) = current {
-            ensure!(
-                path.len() < 256 && path.insert(id),
-                "Invalid live mask cycle or depth"
-            );
-            let record = records
-                .get(id)
-                .ok_or_else(|| anyhow::anyhow!("Missing live mask source"))?;
-            if let Some(source) = record.mask_source_id.as_deref() {
-                ensure!(doc.version >= 2, "Live masks require project version 2");
-                ensure!(
-                    !matches!(record.content.as_ref(), Content::Group),
-                    "Folders cannot have live mask links"
-                );
-                let source = records
-                    .get(source)
-                    .ok_or_else(|| anyhow::anyhow!("Missing live mask source"))?;
-                ensure!(
-                    !matches!(source.content.as_ref(), Content::Group),
-                    "Folders cannot supply live masks"
-                );
-            }
-            current = record.mask_source_id.as_deref();
-        }
-    }
+    ensure!(
+        LayerIndex::new(doc).valid_live_masks(),
+        "Invalid live mask graph, source, version or depth"
+    );
     Ok(())
 }
 pub fn can_link(doc: &Document, source: &str, target: &str) -> bool {
-    let mut next = doc.clone();
-    let Some(layer) = next.layers.iter_mut().find(|l| l.id == target) else {
-        return false;
-    };
-    if layer.locked {
-        return false;
-    }
-    layer.mask_source_id = Some(source.to_owned());
-    next.version = 2;
-    validate(&next).is_ok()
+    LayerIndex::new(doc).can_link(source, target)
 }
 pub fn clipping_source(doc: &Document, target: &str) -> Option<String> {
-    let layer = doc.layers.iter().find(|l| l.id == target)?;
-    if layer.locked || matches!(layer.content.as_ref(), Content::Group) {
-        return None;
-    }
-    let siblings: Vec<_> = doc
-        .layers
-        .iter()
-        .filter(|l| l.parent_id == layer.parent_id)
-        .collect();
-    let at = siblings.iter().position(|l| l.id == target)?;
-    let below = *siblings.get(at.checked_sub(1)?)?;
-    if matches!(below.content.as_ref(), Content::Group) {
-        return None;
-    }
-    let source = below.mask_source_id.as_ref().unwrap_or(&below.id);
-    can_link(doc, source, target).then(|| source.clone())
+    LayerIndex::new(doc)
+        .clipping_source(target)
+        .map(str::to_owned)
 }
 pub fn release(doc: &mut Document, target: &str) {
     let Some(layer) = doc.layers.iter().find(|l| l.id == target) else {

@@ -16,6 +16,7 @@ export type HandleGeometry = { centers: Array<Point>; zoom: number; rotation: bo
 export type CursorMap = {
   crop: CropRect | null;
   crop_active: boolean;
+  crop_movable: boolean;
   brush_diameter: number | null;
   origin: Point;
   viewport_zoom: number;
@@ -104,6 +105,7 @@ export type LayerMask = {
   placement?: MaskPlacement;
 };
 export type MaskPlacement = {
+  sampling: Sampling;
   x: number;
   y: number;
   scaleX: number;
@@ -172,6 +174,7 @@ export type Tool =
   | "marquee"
   | "lasso"
   | "wand";
+export type TransformField = "x" | "y" | "width" | "height" | "rotation" | "scalePercent";
 export type LassoKind = "freehand" | "polygonal";
 export type WandSettings = {
   tolerance: number;
@@ -211,6 +214,12 @@ export type SelectionBounds = { x: number; y: number; width: number; height: num
 export type MarqueeKind = "rectangle" | "ellipse";
 export type PixelSelectionMode = "replace" | "add" | "subtract";
 export type Command =
+  | { type: "setSelectionAntialiased"; antialiased: boolean }
+  | { type: "setTransformRatio"; locked: boolean }
+  | { type: "setTransformField"; field: TransformField; value: number }
+  | { type: "selectLayerPixels" }
+  | { type: "beginDistort" }
+  | { type: "distortLayer"; corners: [Point, Point, Point, Point] }
   | { type: "setDisplayScale"; scale: number }
   | { type: "setTextCaretVisible"; visible: boolean }
   | { type: "typeOpacityDigit"; digit: number }
@@ -322,6 +331,7 @@ export type EditorState = {
   blendPreview: [string, Blend] | null;
   transformTarget: Layer | null;
   maskDistortion: [Point, Point, Point, Point] | null;
+  imageDistortion: [Point, Point, Point, Point] | null;
   brushSize: number;
   brushOpacity: number;
   brushHardness: number;
@@ -343,6 +353,12 @@ export type EditorState = {
   wand: WandSettings;
   selectionDraft: boolean;
   transformActive: boolean;
+  selectionAntialiased: boolean;
+  canModifySelection: boolean;
+  selectionEmpty: boolean;
+  locksTransformRatio: boolean;
+  transformScalePercent: number;
+  selectionDraftMode: PixelSelectionMode | null;
   canCopyPixels: boolean;
   viewOptions: ViewOptions;
   displayedGuides: Array<CanvasGuide>;

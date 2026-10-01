@@ -6,7 +6,21 @@ explicitly excluded as a UX reference. The external source checkout was not buil
 
 These are baseline measurements. Subsequent code experiments and verified real-GPU
 results are in [the experiment report](desktop-gimp-experiments.md), including
-the subsequent X11 frame-wakeup comparison. Do not substitute these original
+the subsequent X11 frame-wakeup comparison and the
+[2026-10-01 feature/scale audit](desktop-gimp-experiments.md#fourth-pass-feature-polish-and-document-scale).
+The [expanded twelve-behavior comparison](desktop-gimp-experiments.md#fifth-pass-twelve-behavior-performance-coverage)
+also measures fill, clear, retained crop, image resize, brush and eraser, with
+native stroke observations and explicit output-quality checks. The
+[sixth pass](desktop-gimp-experiments.md#sixth-pass-immutable-raster-and-bounded-pixel-work)
+integrates and repeats the image-painting, selected-pixel and bounded-feather
+optimizations. Further repeated performance testing is required for unmeasured
+features and combinations; the twelve-family inventory is not complete coverage.
+The [seventh pass](desktop-gimp-experiments.md#seventh-pass-layer-ordering-navigation-and-resize-stress)
+records the subsequent 50–1,000-layer CPU ordering/navigation breadth, repeated
+resize controls, native stress interactions and clipping/sampling diagnostics.
+The [requested stress matrix](desktop-gimp-experiments.md#requested-stress-matrix-layer-ordering-navigation-and-resize)
+remains the broader coverage target; its untested variants are tracked explicitly.
+Do not substitute these original
 software-rendering numbers for the newer hardware cohorts.
 
 ## Results

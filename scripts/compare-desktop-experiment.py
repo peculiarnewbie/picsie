@@ -25,6 +25,9 @@ parser.add_argument('--trials', type=int, default=3)
 parser.add_argument('--jitter-nudges', action='store_true',
                     help='Use reproducible varied idle gaps to sample more refresh phases')
 parser.add_argument('--gimp', action='store_true')
+parser.add_argument('--before-layout', choices=['legacy', 'compositor'], default='legacy')
+parser.add_argument('--after-layout', choices=['legacy', 'compositor'], default='legacy')
+parser.add_argument('--disable-snapping', action='store_true')
 parser.add_argument('--before-env', action='append', default=[], metavar='KEY=VALUE')
 parser.add_argument('--after-env', action='append', default=[], metavar='KEY=VALUE')
 args = parser.parse_args()
@@ -46,10 +49,15 @@ args.output.mkdir(parents=True, exist_ok=True)
 tools = root/'artifacts/selection-history/tools/usr'
 env = dict(os.environ, DISPLAY=args.display, WINIT_UNIX_BACKEND='x11',
            XDG_CACHE_HOME=str(args.output/'cache'),
+           XDG_CONFIG_HOME=str(args.output/'config'),
            PATH=str(tools/'bin')+os.pathsep+os.environ.get('PATH', ''),
            LD_LIBRARY_PATH=str(tools/'lib'),
            VK_DRIVER_FILES=str(tools/'share/vulkan/icd.d/lvp_icd.json'))
 env.pop('WAYLAND_DISPLAY', None)
+if args.disable_snapping:
+    preferences = args.output/'config/picsie'
+    preferences.mkdir(parents=True, exist_ok=True)
+    (preferences/'ui.json').write_text(json.dumps({'view_options': {'snap': False}}))
 # A comparison's experiment switches must come from its explicit per-variant
 # overrides, not from the caller's shell or an earlier diagnostic launch.
 for key in list(env):
@@ -62,6 +70,8 @@ manifest = {
     'trials': args.trials,
     'nudge_spacing': 'Seeded 80–147 ms gaps, seed 7391 + trial' if args.jitter_nudges else '100 ms after each visible change',
     'variant_env': variant_env,
+    'layouts': {'before': args.before_layout, 'after': args.after_layout},
+    'disable_snapping': args.disable_snapping,
     'binary_paths': {'before': str(args.before), 'after': str(args.after)},
     'driver_sha256': {p.name: hashlib.sha256(p.read_bytes()).hexdigest() for p in
                       [Path(__file__), root/'scripts/compare-gimp-performance.py', root/'scripts/compare-desktop-performance.py']},
@@ -77,6 +87,7 @@ for trial in range(args.trials+1):
         folder = args.output/name
         folder.mkdir(exist_ok=True)
         args.picsie = args.before if name == 'before' else args.after
+        args.picsie_layout = args.before_layout if name == 'before' else args.after_layout
         launch_env = dict(env)
         for key, value in variant_env.get(name, {}).items():
             if value:

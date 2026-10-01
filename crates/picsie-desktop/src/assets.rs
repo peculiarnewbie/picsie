@@ -60,6 +60,12 @@ impl AssetSource for Assets {
             "picsie/marquee.svg" => Ok(Some(Cow::Borrowed(include_bytes!(
                 "../assets/icons/marquee.svg"
             )))),
+            "picsie/marquee-ellipse.svg" => Ok(Some(Cow::Borrowed(include_bytes!(
+                "../assets/icons/marquee-ellipse.svg"
+            )))),
+            "picsie/lasso-polygonal.svg" => Ok(Some(Cow::Borrowed(include_bytes!(
+                "../assets/icons/lasso-polygonal.svg"
+            )))),
             "picsie/lasso.svg" => Ok(Some(Cow::Borrowed(include_bytes!(
                 "../assets/icons/lasso.svg"
             )))),

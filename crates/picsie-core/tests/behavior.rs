@@ -513,6 +513,7 @@ fn compositor_linked_mask_placement_follows_transform() {
     l.x = 30.;
     l.y = 40.;
     let placed = MaskPlacement {
+        sampling: Sampling::High,
         x: 10.,
         y: 20.,
         scale_x: 1.,
