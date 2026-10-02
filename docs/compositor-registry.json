@@ -1002,14 +1002,20 @@
         },
         {
           "id": "transform.group-box",
-          "implementation": "missing",
-          "polish": "missing",
-          "verification": "source",
+          "implementation": "implemented",
+          "polish": "partial",
+          "verification": "tests",
           "behavior": "Combined transform box for a folder or multiple layers; resize/rotate/numeric edits carry every child from its original placement",
-          "gap": "Multi-layer/group translation exists, but numeric fields and resize/rotation box transforms are unavailable. This needs the source TransformGroup model rather than treating a folder as one raster layer.",
+          "gap": "Group resize/rotate/numeric/flip carry every member from original placement in one undo, with Escape cancel, save/reopen, Shift ratio and locked/hidden/blank exclusion. 16 focused Linux X11 checks pass with screenshots (see native evidence); the shared-harness label promotion is left for combination. Remaining: group distortion (Ctrl/Cmd-drag does plain resize), group sampling stays disabled, locked layers excluded per local move semantics (upstream has no locked field).",
           "evidence": [
             "Compositor/Document/LayerTransform.swift",
-            "Compositor/UI/TransformInspector.swift"
+            "Compositor/UI/TransformInspector.swift",
+            "crates/picsie-core/src/editor/group_transform.rs",
+            "crates/picsie-core/tests/group_transform.rs",
+            "crates/picsie-core/examples/group_transform_shots.rs",
+            "artifacts/group-transforms/verify_group.py",
+            "artifacts/group-transforms/native/report.json",
+            "artifacts/group-transforms/HANDOFF.md"
           ],
           "upstream": [
             "Compositor/Document/LayerTransform.swift",

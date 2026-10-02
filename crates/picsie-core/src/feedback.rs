@@ -170,7 +170,22 @@ impl Editor {
                 return map;
             }
             map.movable = selected.is_some_and(|l| self.history.document.effective(l).0);
-            if self.selection.ids.len() == 1
+            // A folder or multi-selection shows one box around the members
+            // (`TransformOverlay.geometry`'s group branch); handles stay hidden for
+            // a lone folder or anything without transformable members.
+            if (self.view_options.show_controls || self.transform_active())
+                && self.edited_group_box().is_some()
+            {
+                map.handles = self.edited_group_box().map(|b| HandleGeometry {
+                    points: geometry::handles(&b, zoom)
+                        .into_iter()
+                        .map(|(_, p)| p)
+                        .collect(),
+                    zoom,
+                    rotation: true,
+                });
+                map.movable = true;
+            } else if self.selection.ids.len() == 1
                 && (self.view_options.show_controls || self.transform_active())
             {
                 map.handles = self

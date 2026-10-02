@@ -4,7 +4,9 @@ mod interaction_polish;
 mod layer_polish;
 mod operations;
 pub mod publication;
+pub use group_transform::GroupOverlay;
 pub use interaction_polish::TransformField;
+mod group_transform;
 mod placement;
 mod text;
 use crate::{
@@ -19,6 +21,7 @@ use crate::{
 use anyhow::{Result, bail, ensure};
 pub use operations::PixelClipboard;
 use serde::{Deserialize, Serialize};
+use std::cell::RefCell;
 use std::collections::HashSet;
 use std::sync::Arc;
 use ts_rs::TS;
@@ -411,6 +414,12 @@ enum Gesture {
         origin: Point,
         layers: Vec<Layer>,
     },
+    GroupTransform {
+        origin: Point,
+        handle: &'static str,
+        handle_point: Point,
+        drag: Box<group_transform::GroupDrag>,
+    },
     /// A slider drag in flight: property updates preview into one undo step.
     Property,
     Transform {
@@ -493,6 +502,8 @@ pub struct Editor {
     floating: Option<operations::Floating>,
     layer_transform: bool,
     transform_pixel_size: Option<(f64, f64)>,
+    group_transform: Option<group_transform::GroupState>,
+    group_cache: RefCell<group_transform::GroupCache>,
     /// Bumped whenever an edit-text request selects a layer, so the UI can focus its editor.
     pub text_edit_requests: u64,
     gesture: Option<Gesture>,
@@ -572,6 +583,8 @@ impl Editor {
             floating: None,
             layer_transform: false,
             transform_pixel_size: None,
+            group_transform: None,
+            group_cache: RefCell::new(group_transform::GroupCache::default()),
             text_edit_requests: 0,
             gesture: None,
         };
@@ -872,6 +885,20 @@ impl Editor {
         }
         if patch.get("blend").is_some() {
             self.blend_preview = None;
+        }
+        // Group Flip H/V reuses the single-layer patch contract: a flip-only patch
+        // mirrors every member across the box middle as one undo (`flipLayers`).
+        if self.paint_target == PaintTarget::Content
+            && self.independent_mask_layer().is_none()
+            && let Some(properties) = patch.as_object()
+            && !properties.is_empty()
+            && properties
+                .keys()
+                .all(|k| ["flipX", "flipY"].contains(&k.as_str()))
+            && self.cached_group_box().is_some()
+        {
+            self.flip_group(properties.contains_key("flipX"))?;
+            return Ok(());
         }
         let Some(layer) = self.selected() else {
             return Ok(());
@@ -1458,18 +1485,21 @@ impl Editor {
                 if self.floating.is_none()
                     && !self.layer_transform
                     && !self.begin_selection_transform(false, true)?
-                    && self.selection.ids.len() == 1
-                    && self.selected().is_some_and(|l| {
-                        !l.locked
-                            && (!matches!(l.content.as_ref(), Content::Group)
-                                || self.independent_mask_layer().is_some())
-                    })
                 {
-                    self.finish_gesture()?;
-                    self.transform_pixel_size = Some(self.transform_source_size());
-                    self.begin_edit("Transform Layer");
-                    self.layer_transform = true;
-                    self.tool = Tool::Move;
+                    if self.paint_target == PaintTarget::Content && self.begin_group_transform()? {
+                    } else if self.selection.ids.len() == 1
+                        && self.selected().is_some_and(|l| {
+                            !l.locked
+                                && (!matches!(l.content.as_ref(), Content::Group)
+                                    || self.independent_mask_layer().is_some())
+                        })
+                    {
+                        self.finish_gesture()?;
+                        self.transform_pixel_size = Some(self.transform_source_size());
+                        self.begin_edit("Transform Layer");
+                        self.layer_transform = true;
+                        self.tool = Tool::Move;
+                    }
                 }
             }
             Command::CommitTransform => self.commit_transform()?,
@@ -1979,6 +2009,16 @@ impl Editor {
                     delta.x.is_finite() && delta.y.is_finite(),
                     "Invalid movement"
                 );
+                // An open group draft moves as one (`nudgeLayer`); otherwise the
+                // existing multi-layer translation below keeps working.
+                if let Some(state) = &self.group_transform {
+                    let mut draft = state.draft.clone();
+                    draft.x += delta.x;
+                    draft.y += delta.y;
+                    draft.validate()?;
+                    self.preview_group_box(draft)?;
+                    return Ok(());
+                }
                 let mut moving_ids = HashSet::new();
                 for root in self.selected_roots() {
                     moving_ids.insert(root.id.clone());
@@ -2649,6 +2689,65 @@ impl Editor {
                         }
                     }
                 }
+                // Several layers, or a folder: one box around them all, with its own
+                // resize/rotate handles (TransformOverlay's group branch). A press
+                // elsewhere falls through to picking and multi-layer translation.
+                if self.paint_target == PaintTarget::Content
+                    && (self.view_options.show_controls || self.layer_transform)
+                    && let Some(box_layer) = self.edited_group_box()
+                {
+                    let zoom = self.viewport.zoom / self.display_scale;
+                    if let Some(handle) = geometry::hit_handle(&box_layer, p, zoom) {
+                        let open = self.group_transform.is_some();
+                        let (base, original, members) = if open {
+                            let state = self.group_transform.as_ref().unwrap();
+                            (
+                                state.draft.clone(),
+                                state.original.clone(),
+                                state.members.clone(),
+                            )
+                        } else {
+                            let members = self.group_members();
+                            let Some(bx) = group_transform::group_box(&members) else {
+                                return Ok(());
+                            };
+                            self.begin_edit(if handle == "rotate" {
+                                "Rotate layers"
+                            } else {
+                                "Resize layers"
+                            });
+                            // The draft lives in the shared group state for the
+                            // length of the drag, so handles and numeric fields
+                            // track it; Up closes the transaction and clears it.
+                            self.transform_pixel_size =
+                                Some((bx.width as f64 * bx.scale_x, bx.height as f64 * bx.scale_y));
+                            self.group_transform = Some(group_transform::GroupState {
+                                original: bx.clone(),
+                                draft: bx.clone(),
+                                members: members.as_ref().clone(),
+                            });
+                            self.layer_transform = true;
+                            (bx.clone(), bx, members.as_ref().clone())
+                        };
+                        let handle_point = geometry::handles(&base, zoom)
+                            .into_iter()
+                            .find(|h| h.0 == handle)
+                            .map(|h| h.1)
+                            .unwrap_or(p);
+                        self.gesture = Some(Gesture::GroupTransform {
+                            origin: p,
+                            handle,
+                            handle_point,
+                            drag: Box::new(group_transform::GroupDrag {
+                                base,
+                                original,
+                                members,
+                                open,
+                            }),
+                        });
+                        return Ok(());
+                    }
+                }
                 if let Some(l) = self.selected().cloned()
                     && self.selection.ids.len() == 1
                     && !l.locked
@@ -2951,6 +3050,42 @@ impl Editor {
                     }
                 }
             }
+            // A group-box drag carries every member from its original placement
+            // through the box-relative affine (`TransformGroup.following`).
+            Gesture::GroupTransform {
+                origin,
+                handle,
+                handle_point,
+                drag,
+            } => {
+                let draft = if *handle == "rotate" {
+                    geometry::rotate(&drag.base, *origin, p, modifiers.shift)
+                } else {
+                    geometry::resize(
+                        &drag.base,
+                        handle,
+                        Point::new(
+                            handle_point.x + p.x - origin.x,
+                            handle_point.y + p.y - origin.y,
+                        ),
+                        modifiers.shift || self.locks_transform_ratio,
+                        modifiers.alt,
+                    )
+                };
+                if draft.validate().is_ok() {
+                    let mut doc = self.history.document.clone();
+                    group_transform::replace_all(
+                        &mut doc,
+                        group_transform::carry_members(&drag.members, &drag.original, &draft),
+                    );
+                    if doc.validate().is_ok() {
+                        self.history.preview(doc);
+                        if let Some(state) = &mut self.group_transform {
+                            state.draft = draft;
+                        }
+                    }
+                }
+            }
             Gesture::Shape { origin, layer } => {
                 let Some(bounds) =
                     crate::shape::drag_box(*origin, p, modifiers.shift, modifiers.alt)
@@ -3129,10 +3264,24 @@ impl Editor {
             // Property drags are driven by slider commands, not the canvas pointer.
             Gesture::Property => {}
         }
+        let keep_open = matches!(&gesture, Gesture::GroupTransform { drag, .. } if drag.open);
+        let finishing_group =
+            matches!(&gesture, Gesture::GroupTransform { drag, .. } if !drag.open);
         self.gesture = Some(gesture);
         self.update_floating_selection()?;
         if phase == Phase::Up {
-            self.finish_gesture()?;
+            if keep_open {
+                // A persistent Apply/Cancel edit stays open; the drag folds into it.
+                self.gesture = None;
+            } else {
+                self.finish_gesture()?;
+                if finishing_group {
+                    // A handle drag is one undo and leaves no draft behind.
+                    self.group_transform = None;
+                    self.layer_transform = false;
+                    self.transform_pixel_size = None;
+                }
+            }
             if self.floating.as_ref().is_some_and(|f| !f.persistent) {
                 self.commit_transform()?;
             }

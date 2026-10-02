@@ -332,9 +332,10 @@ impl Editor {
     }
     pub fn cancel_transform(&mut self) {
         self.image_distortion = None;
+        self.gesture = None;
         if self.layer_transform {
             self.mask_distortion = None;
-            self.gesture = None;
+            self.group_transform = None;
             self.layer_transform = false;
             self.transform_pixel_size = None;
             let selected = self.history.cancel();
@@ -363,6 +364,9 @@ impl Editor {
                 self.preview_mask_distortion(draft.corners, None)?;
             }
             self.mask_distortion = None;
+            // Group previews already carry every member; ending the transaction
+            // commits the whole box edit as one undo (`commitTransform`).
+            self.group_transform = None;
             self.layer_transform = false;
             self.transform_pixel_size = None;
             self.end_edit();

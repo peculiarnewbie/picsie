@@ -2,7 +2,7 @@
 //! Compositor CanvasViewport / NativeLayerList, 609dbeae, MIT © 2026 Wonder Assembly LLC.
 //! Typed publication and cache lifetime are Rust transport adaptations, not Swift ports.
 use crate::{
-    editor::{Editor, Tool},
+    editor::{Editor, PaintTarget, Tool},
     geometry::Viewport,
     history::Selection,
 };
@@ -42,6 +42,13 @@ pub struct Snapshot {
     pub mask_distortion: Option<[crate::model::Point; 4]>,
     pub image_distortion: Option<[crate::model::Point; 4]>,
     pub transform_target: Option<LayerInfo>,
+    /// Authoritative group-box capability: the shared transform box (draft while
+    /// editing, live otherwise) when the selection is group-transformable, else
+    /// none. The UI enables group numeric fields, ratio lock and flips from this
+    /// instead of guessing from the selection, so an empty folder or a fully
+    /// locked/hidden selection correctly disables them. Bounds always describe a
+    /// valid box the engine would actually transform.
+    pub group_box: Option<GroupBoxInfo>,
     pub brush_size: f64,
     pub brush_opacity: f64,
     pub brush_hardness: f64,
@@ -108,6 +115,15 @@ pub struct Row {
     pub visible: bool,
     pub collapsed: bool,
     pub can_toggle_clipping: bool,
+}
+#[derive(Clone, PartialEq, Deserialize, Serialize)]
+#[serde(rename_all = "camelCase")]
+pub struct GroupBoxInfo {
+    pub x: f64,
+    pub y: f64,
+    pub width: f64,
+    pub height: f64,
+    pub rotation: f64,
 }
 #[derive(Clone, PartialEq, Deserialize, Serialize)]
 #[serde(rename_all = "camelCase")]
@@ -242,6 +258,7 @@ impl Snapshot {
             && self.text_editing == other.text_editing
             && self.text_edit_requests == other.text_edit_requests
             && self.transform_target == other.transform_target
+            && self.group_box == other.group_box
             && self.transform_scale_percent == other.transform_scale_percent
             && Arc::ptr_eq(&self.mask_source_ids, &other.mask_source_ids)
     }
@@ -380,7 +397,26 @@ impl SnapshotPublisher {
             transform_target: editor
                 .independent_mask_layer()
                 .or_else(|| editor.selected().cloned())
-                .map(|l| LayerInfo::of(&l)),
+                .map(|l| LayerInfo::of(&l))
+                .map(|single| {
+                    // Numeric fields describe the shared box for a folder or
+                    // multi-selection (`TransformInspector` over the group draft).
+                    // Mask placement keeps its own target.
+                    if editor.paint_target == PaintTarget::Content
+                        && let Some(box_layer) = editor.edited_group_box()
+                    {
+                        LayerInfo::of(&box_layer)
+                    } else {
+                        single
+                    }
+                }),
+            group_box: editor.edited_group_box().map(|b| GroupBoxInfo {
+                x: b.x,
+                y: b.y,
+                width: b.width as f64 * b.scale_x,
+                height: b.height as f64 * b.scale_y,
+                rotation: b.rotation,
+            }),
             brush_size: editor.brush_size,
             brush_opacity: editor.brush_opacity,
             brush_hardness: editor.brush_hardness,

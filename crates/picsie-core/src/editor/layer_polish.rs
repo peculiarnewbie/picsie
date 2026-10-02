@@ -11,6 +11,10 @@ impl Editor {
         if self.mask_distortion.is_some() {
             return Ok(());
         }
+        // Group distortion is not ported; see begin_image_distortion.
+        if self.group_transform.is_some() {
+            return Ok(());
+        }
         let Some(target) = self.independent_mask_layer() else {
             return Ok(());
         };

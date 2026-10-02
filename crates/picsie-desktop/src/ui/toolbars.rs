@@ -376,6 +376,12 @@ impl Desktop {
                 );
             }
             let layer = state.selected();
+            // A folder or multi-selection edits the shared group box; its numeric
+            // fields, ratio lock and flips stay enabled while sampling (meaningless
+            // for a box) stays off. The engine publishes the authoritative
+            // capability: an empty folder or a selection without transformable
+            // members yields no box and keeps everything disabled.
+            let group = state.group_box.is_some();
             let locked = (state.mask_distortion.is_some() || state.image_distortion.is_some())
                 || layer.is_none_or(|l| {
                     l.locked
@@ -384,13 +390,14 @@ impl Desktop {
                                 && l.mask.as_ref().is_some_and(|m| m["linked"] == false)))
                 })
                 || state.selection.ids.len() != 1;
+            let fields_locked = locked && !group;
             for (key, title, width) in [
                 ("x", "X", 58.),
                 ("y", "Y", 58.),
                 ("width", "W", 62.),
                 ("height", "H", 62.),
             ] {
-                controls = controls.child(self.inline_field(key, title, width, locked));
+                controls = controls.child(self.inline_field(key, title, width, fields_locked));
             }
             controls = controls
                 .child(
@@ -403,7 +410,7 @@ impl Desktop {
                             cx,
                         )
                         .icon(icon("link", 15.))
-                        .disabled(locked || self.busy)
+                        .disabled(fields_locked || self.busy)
                         .tooltip("Lock aspect ratio")
                         .on_click(cx.listener(|this, _, _, cx| {
                             if let Some(s) = &this.state {
@@ -415,9 +422,9 @@ impl Desktop {
                         })),
                     ),
                 )
-                .child(self.inline_field("transform-scale", "Scale", 58., locked))
+                .child(self.inline_field("transform-scale", "Scale", 58., fields_locked))
                 .child(div().flex_shrink_0().text_color(rgb(MUTED)).child("%"))
-                .child(self.inline_field("rotation", "°", 56., locked))
+                .child(self.inline_field("rotation", "°", 56., fields_locked))
                 .child(self.inline_select("transform-sampling", 170., locked));
             if let Some(layer) = layer {
                 let target = state.transform_target.as_ref().unwrap_or(layer);
@@ -431,7 +438,7 @@ impl Desktop {
                         Command::UpdateLayer {
                             patch: json!({property:!value}),
                         },
-                        locked,
+                        fields_locked,
                         false,
                         cx,
                     ));

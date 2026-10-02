@@ -103,10 +103,15 @@ pub struct Engine {
 }
 pub fn preview(editor: &Editor, renderer: &mut Renderer) -> Result<skia_safe::Surface> {
     let displayed = editor.preview_document();
+    // A folder or multi-selection draws one box around its members, like upstream's
+    // group overlay, instead of the per-layer outlines underneath it.
+    let grouped = editor.tool == Tool::Move && editor.group_overlay().is_some();
     let mut surface = renderer.preview(
         &displayed,
         &editor.viewport,
-        if editor.distortion_corners().is_none()
+        if grouped {
+            &[]
+        } else if editor.distortion_corners().is_none()
             && editor.tool == Tool::Move
             && (editor.view_options.show_controls || editor.transform_active())
         {
@@ -132,6 +137,7 @@ pub fn preview(editor: &Editor, renderer: &mut Renderer) -> Result<skia_safe::Su
         editor.selection_draft().as_ref(),
     )?;
     editor.draw_distortion(surface.canvas());
+    editor.draw_group_overlay(surface.canvas());
     editor.draw_placement(surface.canvas());
     editor.draw_text_editor(surface.canvas());
     Ok(surface)

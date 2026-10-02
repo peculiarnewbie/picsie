@@ -45,6 +45,17 @@ impl Editor {
         }
     }
     pub fn transform_scale_percent(&self) -> f64 {
+        // `TransformInspector.pixelSize` for a group is the box when the edit began.
+        if let Some(state) = &self.group_transform {
+            let frozen = self.transform_pixel_size.unwrap_or((
+                state.original.width as f64 * state.original.scale_x,
+                state.original.height as f64 * state.original.scale_y,
+            ));
+            return state.draft.width as f64 * state.draft.scale_x / frozen.0.max(1.) * 100.;
+        }
+        if self.cached_group_box().is_some() {
+            return 100.;
+        }
         let Some(target) = self
             .independent_mask_layer()
             .or_else(|| self.selected().cloned())
@@ -59,6 +70,60 @@ impl Editor {
     pub(super) fn set_transform_field(&mut self, field: TransformField, value: f64) -> Result<()> {
         ensure!(value.is_finite(), "Transform value must be finite");
         if self.distortion_corners().is_some() {
+            return Ok(());
+        }
+        // A folder or multi-selection edits the shared box; every member follows
+        // its original placement (`TransformInspector` over `TransformGroup`).
+        // The box-only query keeps this path free of member clones.
+        if self.paint_target == PaintTarget::Content && self.cached_group_box().is_some() {
+            if !self.transform_active() {
+                self.command(Command::BeginTransform)?;
+            }
+            let Some(state) = &self.group_transform else {
+                return Ok(());
+            };
+            let frozen = self.transform_pixel_size.unwrap_or({
+                let b = &state.original;
+                (b.width as f64 * b.scale_x, b.height as f64 * b.scale_y)
+            });
+            let mut draft = state.draft.clone();
+            let locks = self.locks_transform_ratio;
+            match field {
+                TransformField::X => draft.x = value,
+                TransformField::Y => draft.y = value,
+                TransformField::Rotation => draft.rotation = value % 360.,
+                TransformField::Width | TransformField::Height => {
+                    if value < 1. {
+                        return Ok(());
+                    }
+                    let w = draft.width as f64 * draft.scale_x;
+                    let h = draft.height as f64 * draft.scale_y;
+                    if matches!(field, TransformField::Width) {
+                        if locks {
+                            draft.scale_y *= value / w;
+                        }
+                        draft.scale_x = value / draft.width as f64;
+                    } else {
+                        if locks {
+                            draft.scale_x *= value / h;
+                        }
+                        draft.scale_y = value / draft.height as f64;
+                    }
+                }
+                TransformField::ScalePercent => {
+                    if value <= 0. {
+                        return Ok(());
+                    }
+                    let center = geometry::center(&state.draft);
+                    let w = frozen.0 * value / 100.;
+                    let h = frozen.1 * value / 100.;
+                    draft.scale_x = w / draft.width as f64;
+                    draft.scale_y = h / draft.height as f64;
+                    draft.x = center.x - w / 2.;
+                    draft.y = center.y - h / 2.;
+                }
+            }
+            self.preview_group_box(draft)?;
             return Ok(());
         }
         if !self.transform_active() {
@@ -124,6 +189,11 @@ impl Editor {
     }
     pub(super) fn begin_image_distortion(&mut self) -> Result<()> {
         if self.image_distortion.is_some() {
+            return Ok(());
+        }
+        // Group distortion (resampling every member) is not ported; a group box
+        // edits placement only, so handles never enter the distortion path.
+        if self.group_transform.is_some() {
             return Ok(());
         }
         if !self.transform_active() {
