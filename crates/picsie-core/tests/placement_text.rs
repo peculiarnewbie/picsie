@@ -157,10 +157,7 @@ fn upstream_snap_targets_follow_view_menu() {
         "Red",
         100,
         60,
-        Content::Shape {
-            shape: Shape::Rectangle,
-            color: "#ff0000".into(),
-        },
+        Content::shape(Shape::Rectangle, "#ff0000".into()),
     );
     l.x = 150.;
     l.y = 120.;
@@ -213,10 +210,7 @@ fn upstream_active_layer_moves_outside_bounds_control_drags_freely() {
         "Red",
         100,
         100,
-        Content::Shape {
-            shape: Shape::Rectangle,
-            color: "#ff0000".into(),
-        },
+        Content::shape(Shape::Rectangle, "#ff0000".into()),
     );
     l.x = 150.;
     l.y = 100.;

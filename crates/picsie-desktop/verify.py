@@ -466,6 +466,109 @@ def placement_text_workflows():
     key('ctrl+w');wait(lambda s:not window_exists(window_id),'close layout window')
     window_number=previous_window;focus(re.escape(previous_name)+'.*Picsie')
 
+def shapes_gradients(number):
+    global window_number
+    previous_window=window_number;previous_name=state()['state']['document']['name']
+    click('new-canvas');field('new-name','Shapes gradients',False);field('new-width',400,False);field('new-height',300,False);click('modal-apply');window_number=number;wait(lambda s:s.get('state') is not None);focus('Shapes gradients.*Picsie');x('windowsize',window_id,1281,860);time.sleep(.4);click('actual')
+    def pt(dx,dy):
+        s=state();v=s['state']['viewport'];d=s['state']['document'];b=s['controls']['canvas'];z=v['zoom']
+        return (b[0]+(b[2]-d['width']*z)/2+v['pan']['x']+dx*z,b[1]+(b[3]-d['height']*z)/2+v['pan']['y']+dy*z)
+    def canvas_click(dx,dy):
+        x('mousemove',*map(round,pt(dx,dy)),'click',1);time.sleep(.2);settle()
+    click('tool-rectangle')
+    check('shape header exposes kind buttons and radius',lambda: all(c in state()['controls'] for c in ('shape-rectangle','shape-ellipse','shape-line','field-shape-radius','foreground-picker')))
+    drag(*pt(20,20),*pt(120,90))
+    check('rectangle gesture creates editable shape layer',lambda: (selected()['name']=='Rectangle 1' and selected()['content']['kind']=='shape' and selected()['content']['shape']=='rectangle'))
+    field('shape-radius',24)
+    check('radius numeric commits to tool state',lambda: (state()['state']['shapeCornerRadius']==24))
+    drag(*pt(150,20),*pt(250,90))
+    check('rounded rectangle keeps editable radius',lambda: (selected()['name']=='Rectangle 2' and selected()['content']['corner_radius']==24))
+    shot('24-shapes-header.png')
+    click('shape-line')
+    check('line header exposes width',lambda: ('field-shape-width' in state()['controls']))
+    field('shape-width',6)
+    drag(*pt(20,120),*pt(120,132),modifier='Shift_L')
+    content=selected()['content']
+    check('Shift drag draws a snapped line with width',lambda: (content['kind']=='shape' and content['shape']=='line' and content['line_width']==6 and abs(content['line_start']['y']-content['line_end']['y'])<0.05))
+    shot('25-line-header.png')
+    canvas_click(300,250)
+    key('Shift+u')
+    check('Shift+U cycles line to rectangle',lambda: (state()['state']['tool']=='rectangle'))
+    canvas_click(300,250)
+    key('Tab')
+    check('Tab cycles rectangle to ellipse',lambda: (state()['state']['tool']=='ellipse'))
+    canvas_click(300,250)
+    key('Tab')
+    check('Tab cycles ellipse to line',lambda: (state()['state']['tool']=='line'))
+    click('shape-line')
+    r=bounds('field-shape-width',False)
+    x('mousemove',round(r[0]+r[2]/2),round(r[1]+r[3]/2),'click',1);time.sleep(.15)
+    key('Tab')
+    width=state()['state']['shapeLineWidth']
+    key('Up')
+    check('field Tab preserves traversal (no cycle, no step)',lambda: (state()['state']['tool']=='line' and state()['state']['shapeLineWidth']==width))
+    click('tool-gradient')
+    check('gradient header exposes shape, swatch, style, reverse and opacity',lambda: all(c in state()['controls'] for c in ('gradient-linear','gradient-radial','gradient-swatch','gradient-fg-bg','gradient-fg-transparent','gradient-reverse','field-gradient-opacity')))
+    shot('26-gradient-header.png')
+    canvas_click(300,250)
+    key('Tab')
+    check('Tab toggles gradient linear to radial',lambda: (state()['state']['gradientSettings']['shape']=='radial'))
+    key('Tab')
+    check('Tab toggles gradient radial to linear',lambda: (state()['state']['gradientSettings']['shape']=='linear'))
+    count=state()['state']['history']['undoCount']
+    drag(*pt(20,200),*pt(220,200))
+    check('gradient drag pends a line with Apply/Cancel',lambda: (state()['state']['gradientPending'] and 'gradient-apply' in state()['controls'] and 'gradient-cancel' in state()['controls']))
+    shot('27-gradient-pending.png')
+    click('gradient-apply')
+    check('Apply commits the gradient as one undo',lambda: (not state()['state']['gradientPending'] and state()['state']['history']['undoCount']==count+1))
+    shot('28-gradient-applied.png')
+    drag(*pt(20,200),*pt(220,200))
+    count=state()['state']['history']['undoCount']
+    click('gradient-cancel')
+    check('Cancel discards the pending gradient',lambda: (not state()['state']['gradientPending'] and state()['state']['history']['undoCount']==count))
+    drag(*pt(20,200),*pt(220,200))
+    count=state()['state']['history']['undoCount']
+    key('Return')
+    check('Enter applies the pending gradient',lambda: (not state()['state']['gradientPending'] and state()['state']['history']['undoCount']==count+1))
+    drag(*pt(20,200),*pt(220,200))
+    count=state()['state']['history']['undoCount']
+    key('Escape')
+    check('Escape cancels the pending gradient',lambda: (not state()['state']['gradientPending'] and state()['state']['history']['undoCount']==count))
+    drag(*pt(20,200),*pt(220,200))
+    line=state()['state']['gradientLine']
+    canvas=state()['controls']['canvas']
+    x('mousemove',round(canvas[0]+line[1]['x']),round(canvas[1]+line[1]['y']),'mousedown',1);time.sleep(.15)
+    end=pt(220,260)
+    x('mousemove',round(end[0]),round(end[1]));time.sleep(.2)
+    x('mouseup',1);time.sleep(.25);settle()
+    moved=state()['state']['gradientLine']
+    check('endpoint grab moves only the grabbed end',lambda: (abs(moved[0]['x']-line[0]['x'])<2 and abs(moved[0]['y']-line[0]['y'])<2 and abs(moved[1]['y']-(line[0]['y']+60))<12))
+    shot('29-gradient-endpoint.png')
+    key('Escape')
+    field('gradient-opacity',50)
+    check('opacity percent commits',lambda: (abs(state()['state']['gradientSettings']['opacity']-0.5)<0.001))
+    r=bounds('field-gradient-opacity',False)
+    x('mousemove',round(r[0]+r[2]/2),round(r[1]+r[3]/2),'click',1);time.sleep(.15)
+    key('Up')
+    check('opacity numeric Up steps one percent',lambda: (abs(state()['state']['gradientSettings']['opacity']-0.51)<0.001))
+    key('shift+Down')
+    check('opacity numeric Shift Down steps ten',lambda: (abs(state()['state']['gradientSettings']['opacity']-0.41)<0.001))
+    click('tool-rectangle')
+    click('shape-line')
+    r=bounds('slider-shape-width',False)
+    x('mousemove',round(r[0]+r[2]*0.9),round(r[1]+r[3]/2),'click',1);time.sleep(.3);settle()
+    check('width slider track click raises line width',lambda: (state()['state']['shapeLineWidth']>6))
+    click('properties-menu')
+    click('mask-add')
+    click('paint-mask')
+    click('tool-gradient')
+    drag(*pt(20,200),*pt(220,200))
+    count=state()['state']['history']['undoCount']
+    click('gradient-apply')
+    check('mask gradient applies as one undo',lambda: (not state()['state']['gradientPending'] and state()['state']['history']['undoCount']==count+1))
+    shot('30-gradient-mask.png')
+    window_number=previous_window;focus(re.escape(previous_name)+'.*Picsie')
+
 def interaction_polish(number):
     global window_number
     previous_window=window_number;previous_name=state()['state']['document']['name']
@@ -537,7 +640,7 @@ try:
         print(f'All {len(checks)} polish checks passed. Screenshots: {out}',flush=True)
         raise SystemExit(0)
     check('native window matches installed Picsie desktop identity', lambda: (window_id in x('search', '--onlyvisible', '--class', '^picsie$').splitlines()))
-    check('Compositor chrome, 971×746 canvas and ten grouped tool buttons', lambda: (state()['controls']['canvas'] == [56.,84.,971.,746.] and len([k for k in state()['controls'] if k.startswith('tool-')]) == 10))
+    check('Compositor chrome, 971×746 canvas and eleven grouped tool buttons', lambda: (state()['controls']['canvas'] == [56.,84.,971.,746.] and len([k for k in state()['controls'] if k.startswith('tool-')]) == 11))
     edge=bounds('layers-resize',scroll=False);drag(edge[0],300,edge[0]-150,300)
     check('Layers panel clamps at 352 pixels',lambda: (state()['controls']['canvas'][2]==871))
     edge=bounds('layers-resize',scroll=False);drag(edge[0],300,edge[0]+200,300)
@@ -685,6 +788,7 @@ try:
     shot('09-reopened.png')
     layers_masks_colors(6)
     interaction_polish(7)
+    shapes_gradients(8)
     # The .comp directory picker is verified separately with mouse navigation;
     # GTK's location-entry keyboard behavior is unreliable without a window manager.
     click('add-paint');key('ctrl+q');wait(lambda s:s['modal']=='close');click('modal-cancel')

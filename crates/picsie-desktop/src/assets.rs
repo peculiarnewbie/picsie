@@ -117,6 +117,12 @@ impl AssetSource for Assets {
             "picsie/mask.svg" => Ok(Some(Cow::Borrowed(include_bytes!(
                 "../assets/icons/mask.svg"
             )))),
+            "picsie/line.svg" => Ok(Some(Cow::Borrowed(include_bytes!(
+                "../assets/icons/line.svg"
+            )))),
+            "picsie/gradient.svg" => Ok(Some(Cow::Borrowed(include_bytes!(
+                "../assets/icons/gradient.svg"
+            )))),
             _ => gpui_kit::assets::Assets.load(path),
         }
     }

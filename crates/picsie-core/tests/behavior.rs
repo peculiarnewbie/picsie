@@ -10,10 +10,7 @@ fn layer(name: &str) -> Layer {
         name,
         80,
         60,
-        Content::Shape {
-            shape: Shape::Rectangle,
-            color: "#ff0000".into(),
-        },
+        Content::shape(Shape::Rectangle, "#ff0000".into()),
     )
 }
 fn doc(layers: Vec<Layer>) -> Document {
@@ -694,10 +691,7 @@ fn composite_order_alpha_visibility_and_blend_pixels() {
     let red = layer("Red");
     let mut blue = red.clone();
     blue.id = id();
-    blue.content = Arc::new(Content::Shape {
-        shape: Shape::Rectangle,
-        color: "#0000ff".into(),
-    });
+    blue.content = Arc::new(Content::shape(Shape::Rectangle, "#0000ff".into()));
     blue.opacity = 0.5;
     assert_eq!(
         pix(&doc(vec![red.clone(), blue.clone()]), 10., 10.),
@@ -727,10 +721,7 @@ fn erasing_reveals_only_the_lower_layer() {
     let red = layer("Red");
     let mut blue = red.clone();
     blue.id = id();
-    blue.content = Arc::new(Content::Shape {
-        shape: Shape::Rectangle,
-        color: "#0000ff".into(),
-    });
+    blue.content = Arc::new(Content::shape(Shape::Rectangle, "#0000ff".into()));
     blue.strokes.push(Arc::new(Stroke {
         mode: StrokeMode::Erase,
         color: "#000000".into(),
@@ -748,10 +739,7 @@ fn erasing_reveals_only_the_lower_layer() {
 #[test]
 fn filters_affect_pixels_and_blur_extends_bounds() {
     let mut l = layer("Gray");
-    l.content = Arc::new(Content::Shape {
-        shape: Shape::Rectangle,
-        color: "#808080".into(),
-    });
+    l.content = Arc::new(Content::shape(Shape::Rectangle, "#808080".into()));
     l.brightness = 0.5;
     assert_eq!(pix(&doc(vec![l.clone()]), 10., 10.), [64, 64, 64, 255]);
     l.brightness = 1.;
@@ -1108,8 +1096,14 @@ fn pointer_rotation_and_resize_cancel_restores_original() {
     assert_eq!(e.selected().unwrap(), &l);
     pointer(&mut e, Phase::Down, 80., 60.);
     pointer(&mut e, Phase::Up, 120., 90.);
-    assert_eq!(e.selected().unwrap().scale_x, 1.5);
-    assert_eq!(e.selected().unwrap().scale_y, 1.5);
+    // redrawShape: the resized shape redraws at its displayed size in the same
+    // edit instead of keeping a stretch scale.
+    assert_eq!(
+        (e.selected().unwrap().width, e.selected().unwrap().height),
+        (120, 90)
+    );
+    assert_eq!(e.selected().unwrap().scale_x, 1.);
+    assert_eq!(e.selected().unwrap().scale_y, 1.);
 }
 // Compositor LayerTests.blankLayersAreTransparentAndInsertedAboveSelection.
 #[test]
@@ -1136,7 +1130,7 @@ fn compositor_insertion_and_duplication_preserve_assets_and_transforms() {
     cmd(&mut e, json!({"type":"setTool","tool":"rectangle"}));
     pointer(&mut e, Phase::Down, 10., 10.);
     pointer(&mut e, Phase::Up, 30., 30.);
-    assert_eq!(e.history.document.layers[1].name, "Rectangle");
+    assert_eq!(e.history.document.layers[1].name, "Rectangle 1");
     let source = e.selected().unwrap().clone();
     cmd(&mut e, json!({"type":"duplicate"}));
     let copy = e.selected().unwrap();

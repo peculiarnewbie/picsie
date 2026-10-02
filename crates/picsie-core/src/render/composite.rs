@@ -989,10 +989,7 @@ mod tests {
                 "Overlapping layer",
                 39,
                 31,
-                Content::Shape {
-                    shape: Shape::Ellipse,
-                    color: "#6587ff80".into(),
-                },
+                Content::shape(Shape::Ellipse, "#6587ff80".into()),
             );
             layer.x = 218.5 + (i % 8) as f64 * 7.;
             layer.y = 219. + (i % 5) as f64 * 7.;
@@ -1314,10 +1311,7 @@ mod tests {
             "Blue",
             20,
             20,
-            Content::Shape {
-                shape: Shape::Ellipse,
-                color: "#6587ff80".into(),
-            },
+            Content::shape(Shape::Ellipse, "#6587ff80".into()),
         ));
         let mut renderer = Renderer::default();
         let original = renderer.preview_composite(&doc).unwrap();

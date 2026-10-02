@@ -277,6 +277,9 @@ impl Desktop {
             ("hardness", 100., 1.),
             ("brush-opacity", 100., 1.),
             ("smoothing", 100., 1.),
+            ("shape-width", 100., 1.),
+            ("shape-radius", 200., 1.),
+            ("gradient-opacity", 100., 1.),
             ("selection-amount", 500., 1.),
             ("feather", 250., 1.),
         ]

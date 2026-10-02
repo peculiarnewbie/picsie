@@ -293,11 +293,32 @@ struct SourceCache {
     image: Image,
     used: u64,
 }
+/// shapeTransformPreviewCache: the last rounded rectangle drawn for a transform
+/// in progress, by layer, with the size it was drawn at. Compositor 609dbeae,
+/// MIT © 2026 Wonder Assembly LLC.
+struct ShapePreview {
+    drawn_w: u32,
+    drawn_h: u32,
+    kind: Shape,
+    color: String,
+    corner_radius: f64,
+    line_width: Option<f64>,
+    line_start: Option<Point>,
+    line_end: Option<Point>,
+    mask: Option<Arc<LayerMask>>,
+    image: Image,
+    used: u64,
+}
+/// Bounded preview width for a shape transform in progress, in displayed pixels.
+pub const SHAPE_PREVIEW_BOUND: f64 = 2048.;
 #[derive(Default)]
 pub struct Renderer {
     cache: HashMap<String, SourceCache>,
     cache_pixels: u64,
     clock: u64,
+    shape_previews: HashMap<String, ShapePreview>,
+    shape_preview_pixels: u64,
+    bounded_shape_preview: bool,
     stacks: HashMap<String, projection::Stack>,
     stack_pixels: u64,
     composite: Option<composite::Composite>,
@@ -306,9 +327,144 @@ pub struct Renderer {
     thumbnail_tiles: std::collections::HashMap<String, composite::PreviewTiles>,
 }
 impl Renderer {
+    /// Enable the bounded rounded-rectangle transform preview. Interactive
+    /// preview pipelines opt in; exports, saves and thumbnails keep full
+    /// procedural rendering so a capped image never reaches committed pixels.
+    pub fn set_bounded_shape_preview(&mut self, bounded: bool) {
+        self.bounded_shape_preview = bounded;
+    }
+    /// Rounded-rectangle preview at the dragged size, capped so the long side
+    /// fits SHAPE_PREVIEW_BOUND with the radius scaled down with it. Nil for any
+    /// other layer, which stretches until the redraw at commit.
+    fn shape_transform_preview(&mut self, l: &Layer) -> Option<Image> {
+        if !self.bounded_shape_preview {
+            return None;
+        }
+        let Content::Shape {
+            shape: Shape::Rectangle,
+            color,
+            corner_radius,
+            line_width,
+            line_start,
+            line_end,
+        } = l.content.as_ref()
+        else {
+            return None;
+        };
+        if *corner_radius <= 0. {
+            return None;
+        }
+        // Painted-over shapes are plain pixels, not live styles: only pristine
+        // procedural shapes preview.
+        if !l.strokes.is_empty() {
+            return None;
+        }
+        let displayed_w = l.width as f64 * l.scale_x;
+        let displayed_h = l.height as f64 * l.scale_y;
+        if displayed_w < 1. || displayed_h < 1. {
+            return None;
+        }
+        if (displayed_w - l.width as f64).abs() < 0.5 && (displayed_h - l.height as f64).abs() < 0.5
+        {
+            return None;
+        }
+        let factor = (SHAPE_PREVIEW_BOUND / displayed_w.max(displayed_h)).min(1.);
+        let drawn_w = (displayed_w * factor).round().max(1.) as u32;
+        let drawn_h = (displayed_h * factor).round().max(1.) as u32;
+        self.clock += 1;
+        if let Some(preview) = self.shape_previews.get_mut(&l.id) {
+            let mask_same = match (&preview.mask, &l.mask) {
+                (Some(a), Some(b)) => Arc::ptr_eq(a, b),
+                (None, None) => true,
+                _ => false,
+            };
+            if preview.drawn_w == drawn_w
+                && preview.drawn_h == drawn_h
+                && preview.kind == Shape::Rectangle
+                && preview.color == *color
+                && preview.corner_radius == *corner_radius
+                && preview.line_width == *line_width
+                && preview.line_start == *line_start
+                && preview.line_end == *line_end
+                && mask_same
+            {
+                preview.used = self.clock;
+                return Some(preview.image.clone());
+            }
+        }
+        let mut surface = surface(drawn_w, drawn_h).ok()?;
+        crate::shape::draw_shape(
+            surface.canvas(),
+            drawn_w,
+            drawn_h,
+            Shape::Rectangle,
+            color,
+            corner_radius * factor,
+            *line_width,
+            *line_start,
+            *line_end,
+        );
+        // LiveMaskRenderer applies through the shape preview: the layer's own
+        // mask clips the bounded image, mapped from the source grid.
+        if let Some(mask) = &l.mask
+            && mask.enabled
+        {
+            let coverage = mask_image(mask, l).ok()?;
+            let mut clip = Paint::default();
+            clip.set_blend_mode(BlendMode::DstIn);
+            surface.canvas().draw_image_rect(
+                &coverage,
+                None,
+                skia_safe::Rect::from_wh(drawn_w as f32, drawn_h as f32),
+                &clip,
+            );
+        }
+        let image = surface.image_snapshot();
+        if let Some(old) = self.shape_previews.remove(&l.id) {
+            self.shape_preview_pixels -= old.drawn_w as u64 * old.drawn_h as u64;
+        }
+        self.shape_preview_pixels += drawn_w as u64 * drawn_h as u64;
+        self.shape_previews.insert(
+            l.id.clone(),
+            ShapePreview {
+                drawn_w,
+                drawn_h,
+                kind: Shape::Rectangle,
+                color: color.clone(),
+                corner_radius: *corner_radius,
+                line_width: *line_width,
+                line_start: *line_start,
+                line_end: *line_end,
+                mask: l.mask.clone(),
+                image: image.clone(),
+                used: self.clock,
+            },
+        );
+        while self.shape_preview_pixels > MAX_PIXELS {
+            let Some(id) = self
+                .shape_previews
+                .iter()
+                .min_by_key(|(_, preview)| preview.used)
+                .map(|(id, _)| id.clone())
+            else {
+                break;
+            };
+            let old = self.shape_previews.remove(&id).unwrap();
+            self.shape_preview_pixels -= old.drawn_w as u64 * old.drawn_h as u64;
+        }
+        Some(image)
+    }
     #[allow(deprecated)]
     pub fn layer_surface(&mut self, l: &Layer) -> Result<Image> {
         self.clock += 1;
+        // A rounded rectangle being scaled previews at its dragged size
+        // (bounded, cached); the redraw at commit draws the full asset. This
+        // precedes the source cache so a scaled draft never reuses the resting grid.
+        if let Content::Shape { .. } = l.content.as_ref()
+            && let Some(preview) = self.shape_transform_preview(l)
+        {
+            return Ok(preview);
+        }
         if let Some(entry) = self.cache.get_mut(&l.id) {
             let old = &entry.layer;
             if old.width == l.width
@@ -328,16 +484,25 @@ impl Renderer {
         match l.content.as_ref() {
             Content::Paint => (),
             Content::Group => (),
-            Content::Shape { shape, color } => {
-                let p = paint(color);
-                match shape {
-                    Shape::Rectangle => {
-                        c.draw_rect(rect(l.width, l.height), &p);
-                    }
-                    Shape::Ellipse => {
-                        c.draw_oval(rect(l.width, l.height), &p);
-                    }
-                }
+            Content::Shape {
+                shape,
+                color,
+                corner_radius,
+                line_width,
+                line_start,
+                line_end,
+            } => {
+                crate::shape::draw_shape(
+                    c,
+                    l.width,
+                    l.height,
+                    *shape,
+                    color,
+                    *corner_radius,
+                    *line_width,
+                    *line_start,
+                    *line_end,
+                );
             }
             Content::Gradient { from, to } => {
                 let colors = [color(from), color(to)];
@@ -456,7 +621,10 @@ impl Renderer {
             Content::Shape {
                 shape: Shape::Rectangle,
                 color: value,
-            } => color(value).a() == 255,
+                corner_radius,
+                line_width,
+                ..
+            } => color(value).a() == 255 && *corner_radius == 0. && line_width.is_none(),
             _ => false,
         };
         let direct_fill = opaque_fill
@@ -537,12 +705,24 @@ impl Renderer {
             raster.draw(c, sampling_options(l.sampling), &p);
         } else {
             let image = self.layer_surface(l)?;
-            c.draw_image_with_sampling_options(
-                &image,
-                (0., 0.),
-                sampling_options(l.sampling),
-                Some(&p),
-            );
+            // A bounded shape preview is already in displayed pixels; land it on
+            // the original layer grid rectangle instead of scaling it again.
+            if image.width() != l.width as i32 || image.height() != l.height as i32 {
+                c.draw_image_rect_with_sampling_options(
+                    &image,
+                    None,
+                    skia_safe::Rect::from_wh(l.width as f32, l.height as f32),
+                    sampling_options(l.sampling),
+                    &p,
+                );
+            } else {
+                c.draw_image_with_sampling_options(
+                    &image,
+                    (0., 0.),
+                    sampling_options(l.sampling),
+                    Some(&p),
+                );
+            }
         }
         c.restore();
         Ok(())

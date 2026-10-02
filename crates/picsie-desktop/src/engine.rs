@@ -106,7 +106,10 @@ pub fn preview(editor: &Editor, renderer: &mut Renderer) -> Result<skia_safe::Su
     // A folder or multi-selection draws one box around its members, like upstream's
     // group overlay, instead of the per-layer outlines underneath it.
     let grouped = editor.tool == Tool::Move && editor.group_overlay().is_some();
-    let mut surface = renderer.preview(
+    // Bounded rounded-rectangle previews during interactive resizes; exports,
+    // saves and thumbnails keep full rendering.
+    renderer.set_bounded_shape_preview(true);
+    let surface = renderer.preview(
         &displayed,
         &editor.viewport,
         if grouped {
@@ -135,7 +138,9 @@ pub fn preview(editor: &Editor, renderer: &mut Renderer) -> Result<skia_safe::Su
         },
         None, // SelectionOutline is a native vector overlay; timer ticks don't rasterize the canvas.
         editor.selection_draft().as_ref(),
-    )?;
+    );
+    renderer.set_bounded_shape_preview(false);
+    let mut surface = surface?;
     editor.draw_distortion(surface.canvas());
     editor.draw_group_overlay(surface.canvas());
     editor.draw_placement(surface.canvas());
@@ -192,25 +197,30 @@ fn operate(
             editor.finish_text()?;
             editor.commit_transform()?;
             editor.finish_gesture()?;
+            // A pending gradient preview stays out of the saved file until Apply.
+            let committed = editor.gradient_base_document();
+            let document = committed.as_ref().unwrap_or(&editor.history.document);
             let revision = editor.history.revision.clone();
-            files::save_project(&path, &editor.history.document)?;
-            editor.history.mark_saved(revision);
             let flattened = path
                 .extension()
                 .is_some_and(|e| e.eq_ignore_ascii_case("comp"))
-                && editor.history.document.layers.iter().any(|l| {
+                && document.layers.iter().any(|l| {
                     matches!(
                         l.content.as_ref(),
                         Content::Shape { .. } | Content::Gradient { .. }
                     ) || matches!(l.content.as_ref(), Content::Text { color, .. } if picsie_core::render::color(color).a() != 255)
                 });
+            files::save_project(&path, document)?;
+            editor.history.mark_saved(revision);
             Ok(Some(Outcome::Saved { path, flattened }))
         }
         Operation::Export { path, jpeg } => {
             editor.finish_text()?;
             editor.commit_transform()?;
             editor.finish_gesture()?;
-            let bytes = renderer.export(&editor.history.document, jpeg)?;
+            let committed = editor.gradient_base_document();
+            let bytes =
+                renderer.export(committed.as_ref().unwrap_or(&editor.history.document), jpeg)?;
             files::atomic_write(&path, &bytes)?;
             Ok(Some(Outcome::Exported(path)))
         }

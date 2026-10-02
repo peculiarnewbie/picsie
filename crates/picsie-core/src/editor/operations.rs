@@ -369,6 +369,7 @@ impl Editor {
             self.group_transform = None;
             self.layer_transform = false;
             self.transform_pixel_size = None;
+            self.redraw_committed_shapes();
             self.end_edit();
             return Ok(());
         }

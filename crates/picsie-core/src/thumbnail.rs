@@ -214,10 +214,7 @@ mod tests {
             "Red",
             25,
             25,
-            Content::Shape {
-                shape: Shape::Rectangle,
-                color: "#ff0000".into(),
-            },
+            Content::shape(Shape::Rectangle, "#ff0000".into()),
         );
         layer.x = 25.;
         layer.mask = Some(Arc::new(crate::model::LayerMask {
@@ -246,10 +243,7 @@ mod tests {
             "Red",
             25,
             25,
-            Content::Shape {
-                shape: Shape::Rectangle,
-                color: "#ff0000".into(),
-            },
+            Content::shape(Shape::Rectangle, "#ff0000".into()),
         ));
         let mut thumbs = Thumbnails::default();
         let mut renderer = Renderer::default();
@@ -269,10 +263,7 @@ mod tests {
         doc.layers[0].x += 10.;
         let moved = thumbs.update(&doc, &mut renderer).unwrap()[0].1.clone();
         assert!(!Arc::ptr_eq(&first, &moved));
-        doc.layers[0].content = Arc::new(Content::Shape {
-            shape: Shape::Rectangle,
-            color: "#0000ff".into(),
-        });
+        doc.layers[0].content = Arc::new(Content::shape(Shape::Rectangle, "#0000ff".into()));
         let recolored = thumbs.update(&doc, &mut renderer).unwrap()[0].1.clone();
         assert!(!Arc::ptr_eq(&moved, &recolored));
         doc.layers[0].mask = Some(Arc::new(crate::model::LayerMask {

@@ -64,11 +64,111 @@ struct Record {
     #[serde(default)]
     adjustment: Option<serde_json::Value>,
     #[serde(default)]
-    shape: Option<serde_json::Value>,
+    shape: Option<ShapeRecord>,
     #[serde(default)]
     effects: Option<serde_json::Value>,
     #[serde(default)]
     text: Option<TextRecord>,
+}
+#[derive(Clone, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+struct ShapeRecord {
+    kind: String,
+    red: f64,
+    green: f64,
+    blue: f64,
+    #[serde(default)]
+    corner_radius: f64,
+    #[serde(default)]
+    line_width: Option<f64>,
+    #[serde(default)]
+    start: Option<Point>,
+    #[serde(default)]
+    end: Option<Point>,
+}
+impl ShapeRecord {
+    /// LayerShapeStyle round-trip, Compositor 609dbeae. Only the rectangle/ellipse/line
+    /// subset Picsie draws is accepted; richer records stay explicitly rejected.
+    /// Translucent prototype shapes keep raster only, as upstream styles are opaque RGB.
+    fn from_layer(layer: &Layer) -> Option<Self> {
+        let Content::Shape {
+            shape,
+            color,
+            corner_radius,
+            line_width,
+            line_start,
+            line_end,
+        } = layer.content.as_ref()
+        else {
+            return None;
+        };
+        let rgb = render::color(color);
+        if rgb.a() != 255 {
+            return None;
+        }
+        Some(Self {
+            kind: match shape {
+                Shape::Rectangle => "Rectangle",
+                Shape::Ellipse => "Ellipse",
+                Shape::Line => "Line",
+            }
+            .into(),
+            red: rgb.r() as f64 / 255.,
+            green: rgb.g() as f64 / 255.,
+            blue: rgb.b() as f64 / 255.,
+            corner_radius: *corner_radius,
+            line_width: *line_width,
+            start: *line_start,
+            end: *line_end,
+        })
+    }
+    fn install(&self, layer: &mut Layer) -> Result<()> {
+        let shape = match self.kind.as_str() {
+            "Rectangle" => Shape::Rectangle,
+            "Ellipse" => Shape::Ellipse,
+            "Line" => Shape::Line,
+            _ => bail!("This Compositor project uses live features Picsie cannot edit yet"),
+        };
+        ensure!(
+            [self.red, self.green, self.blue]
+                .iter()
+                .all(|v| v.is_finite() && (0. ..=1.).contains(v)),
+            "Invalid shape color"
+        );
+        ensure!(
+            self.corner_radius.is_finite() && (0. ..=5000.).contains(&self.corner_radius),
+            "Invalid shape corner radius"
+        );
+        if let Some(width) = self.line_width {
+            ensure!(
+                width.is_finite() && (1. ..=5000.).contains(&width),
+                "Invalid line width"
+            );
+        }
+        for end in [&self.start, &self.end].into_iter().flatten() {
+            ensure!(
+                end.x.is_finite()
+                    && end.y.is_finite()
+                    && (0. ..=1.).contains(&end.x)
+                    && (0. ..=1.).contains(&end.y),
+                "Invalid line endpoints"
+            );
+        }
+        layer.content = Arc::new(Content::Shape {
+            shape,
+            color: format!(
+                "#{:02x}{:02x}{:02x}",
+                (self.red * 255.).round() as u8,
+                (self.green * 255.).round() as u8,
+                (self.blue * 255.).round() as u8
+            ),
+            corner_radius: self.corner_radius,
+            line_width: self.line_width,
+            line_start: self.start,
+            line_end: self.end,
+        });
+        layer.validate()
+    }
 }
 #[derive(Clone, Serialize, Deserialize)]
 #[serde(rename_all = "camelCase")]
@@ -440,8 +540,8 @@ pub fn open(path: &Path) -> Result<Document> {
             item.name.chars().count() <= 200,
             "Compositor layer name exceeds Picsie's limit"
         );
-        // Levels/Curves adjustment layers round-trip; every other live
-        // adjustment, shape or effect record is still rejected explicitly.
+        // Levels/Curves adjustment layers and editable shape records round-trip;
+        // every other live adjustment or effect record is still rejected explicitly.
         let adjustment = item
             .adjustment
             .as_ref()
@@ -470,7 +570,7 @@ pub fn open(path: &Path) -> Result<Document> {
             "This Compositor project uses live features Picsie cannot edit yet"
         );
         ensure!(
-            item.shape.is_none() && item.effects.is_none(),
+            item.effects.is_none(),
             "This Compositor project uses live features Picsie cannot edit yet"
         );
         ensure!(
@@ -513,6 +613,13 @@ pub fn open(path: &Path) -> Result<Document> {
                 "Text requires an image asset"
             );
             text.install(&mut layer)?;
+        }
+        if let Some(shape) = &item.shape {
+            ensure!(
+                !item.is_group.unwrap_or(false) && item.text.is_none(),
+                "Shape requires a raster layer"
+            );
+            shape.install(&mut layer)?;
         }
         layer.id = normalized;
         layer.parent_id = item.parent_id.as_deref().map(uuid).transpose()?;
@@ -671,7 +778,7 @@ pub fn save(path: &Path, doc: &Document) -> Result<()> {
                 .as_ref()
                 .map(serde_json::to_value)
                 .transpose()?,
-            shape: None,
+            shape: ShapeRecord::from_layer(layer),
             effects: None,
             text: TextRecord::from_layer(layer),
         });

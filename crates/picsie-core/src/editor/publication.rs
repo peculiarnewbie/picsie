@@ -98,6 +98,12 @@ pub struct Snapshot {
     pub brush_opacity: f64,
     pub brush_hardness: f64,
     pub brush_smoothing: f64,
+    pub shape_corner_radius: f64,
+    pub shape_line_width: f64,
+    pub gradient_settings: crate::gradient::GradientSettings,
+    pub gradient_pending: bool,
+    /// Pending gradient endpoints in view coordinates, for the canvas overlay.
+    pub gradient_line: Option<[crate::model::Point; 2]>,
     pub paint_target: String,
     pub mask_mode: String,
     pub crop_ratio: String,
@@ -299,6 +305,10 @@ impl Snapshot {
             && self.brush_opacity == other.brush_opacity
             && self.brush_hardness == other.brush_hardness
             && self.brush_smoothing == other.brush_smoothing
+            && self.shape_corner_radius == other.shape_corner_radius
+            && self.shape_line_width == other.shape_line_width
+            && self.gradient_settings == other.gradient_settings
+            && self.gradient_pending == other.gradient_pending
             && self.wand.tolerance == other.wand.tolerance
             && self.wand.radius == other.wand.radius
             && self.crop_ratio == other.crop_ratio
@@ -470,6 +480,23 @@ impl SnapshotPublisher {
             brush_opacity: editor.brush_opacity,
             brush_hardness: editor.brush_hardness,
             brush_smoothing: editor.brush_smoothing,
+            shape_corner_radius: editor.shape_corner_radius,
+            shape_line_width: editor.shape_line_width,
+            gradient_settings: editor.gradient_settings,
+            gradient_pending: editor.gradient_edit.is_some(),
+            gradient_line: editor.gradient_edit.as_ref().and_then(|edit| {
+                edit.has_line().then(|| {
+                    let o =
+                        crate::geometry::canvas_origin(&editor.history.document, &editor.viewport);
+                    let map = |p: crate::model::Point| {
+                        crate::model::Point::new(
+                            o.x + p.x * editor.viewport.zoom,
+                            o.y + p.y * editor.viewport.zoom,
+                        )
+                    };
+                    [map(edit.start), map(edit.end)]
+                })
+            }),
             paint_target: enum_name(editor.paint_target),
             mask_mode: enum_name(editor.mask_mode),
             crop_ratio: enum_name(editor.crop_ratio),

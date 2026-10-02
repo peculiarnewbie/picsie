@@ -62,7 +62,7 @@ export type TextPatch = {
 };
 export type TextSelection = { anchor: number; head: number };
 export type SnapLines = { xs: Array<number>; ys: Array<number> };
-export type Shape = "rectangle" | "ellipse";
+export type Shape = "rectangle" | "ellipse" | "line";
 export type FontFamily = "sans-serif" | "serif" | "monospace";
 export type Blend =
   | "source-over"
@@ -93,7 +93,26 @@ export type Sampling = "Nearest" | "Smooth" | "High";
 export type Content =
   | { kind: "paint" }
   | { kind: "group" }
-  | { kind: "shape"; shape: Shape; color: string }
+  | {
+      kind: "shape";
+      shape: Shape;
+      color: string;
+      /**
+       * Document pixels, fixed when a rounded rectangle is drawn; other shapes ignore it.
+       * LayerShapeStyle.cornerRadius, Compositor 609dbeae. MIT © 2026 Wonder Assembly LLC.
+       */
+      corner_radius: number;
+      /**
+       * A line's thickness in document pixels; nil on other shapes.
+       */
+      line_width?: number;
+      /**
+       * A line's ends as fractions of the layer box (0–1); nil on other shapes and
+       * on older lines, which ran corner to corner instead.
+       */
+      line_start?: Point;
+      line_end?: Point;
+    }
   | { kind: "gradient"; from: string; to: string }
   | { kind: "text"; text: string; fontSize: number; fontFamily: FontFamily; color: string }
   | { kind: "image" };
@@ -168,6 +187,8 @@ export type Tool =
   | "eraser"
   | "rectangle"
   | "ellipse"
+  | "line"
+  | "gradient"
   | "text"
   | "hand"
   | "eyedropper"
@@ -243,6 +264,14 @@ export type LayerAdjustment = {
   levels: LevelsSettings;
   curves: CurvesSettings;
 };
+export type GradientShape = "linear" | "radial";
+export type GradientStyle = "foreground-to-background" | "foreground-to-transparent";
+export type GradientSettings = {
+  shape: GradientShape;
+  style: GradientStyle;
+  reversed: boolean;
+  opacity: number;
+};
 export type Command =
   | { type: "setSelectionAntialiased"; antialiased: boolean }
   | { type: "setTransformRatio"; locked: boolean }
@@ -291,6 +320,15 @@ export type Command =
   | { type: "setColor"; color: string }
   | { type: "setBrush"; size: number; opacity: number }
   | { type: "setBrushTip"; hardness: number; smoothing: number }
+  | { type: "setShapeCornerRadius"; radius: number }
+  | { type: "setShapeLineWidth"; width: number }
+  | { type: "cycleShapeKind" }
+  | { type: "setGradientShape"; shape: GradientShape }
+  | { type: "setGradientStyle"; style: GradientStyle }
+  | { type: "setGradientReverse"; reversed: boolean }
+  | { type: "setGradientOpacity"; opacity: number }
+  | { type: "commitGradient" }
+  | { type: "cancelGradient" }
   | { type: "updateLayer"; patch: Partial<Layer> }
   | { type: "addPaintLayer" }
   | { type: "addGradient" }

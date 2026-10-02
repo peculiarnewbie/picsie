@@ -68,6 +68,15 @@ fn main() -> anyhow::Result<()> {
             gpui_kit::init(cx);
             // BasePopover binds Space to its trigger. Text inputs must keep typing spaces.
             cx.bind_keys([KeyBinding::new("space", NoAction, Some("Input"))]);
+            // ShapeTool.toggleShapeKind / cycleToolMode: plain Tab steps the
+            // canvas tool through its modes. Scoped to canvas focus so it
+            // outranks the toolkit Root traversal binding there while fields,
+            // selects and popovers keep ordinary traversal.
+            cx.bind_keys([KeyBinding::new(
+                "tab",
+                crate::ui::menus::CycleToolMode,
+                Some("PicsieCanvas"),
+            )]);
             cx.bind_keys(
                 ["up", "down", "shift-up", "shift-down"]
                     .into_iter()

@@ -17,6 +17,8 @@ import type {
   CropRatio,
   MarqueeKind,
   PixelSelectionMode,
+  GradientShape,
+  GradientStyle,
 } from "./types.ts";
 import type { NativeEditor } from "./native-api";
 export type { SelectionMode, Tool } from "./types.ts";
@@ -182,6 +184,33 @@ export class Editor {
   }
   addGradient() {
     this.dispatch({ type: "addGradient" });
+  }
+  cycleShapeKind() {
+    this.dispatch({ type: "cycleShapeKind" });
+  }
+  setShapeCornerRadius(radius: number) {
+    this.dispatch({ type: "setShapeCornerRadius", radius });
+  }
+  setShapeLineWidth(width: number) {
+    this.dispatch({ type: "setShapeLineWidth", width });
+  }
+  setGradientShape(shape: GradientShape) {
+    this.dispatch({ type: "setGradientShape", shape });
+  }
+  setGradientStyle(style: GradientStyle) {
+    this.dispatch({ type: "setGradientStyle", style });
+  }
+  setGradientReverse(reversed: boolean) {
+    this.dispatch({ type: "setGradientReverse", reversed });
+  }
+  setGradientOpacity(opacity: number) {
+    this.dispatch({ type: "setGradientOpacity", opacity });
+  }
+  commitGradient() {
+    this.dispatch({ type: "commitGradient" });
+  }
+  cancelGradient() {
+    this.dispatch({ type: "cancelGradient" });
   }
   addGroup() {
     this.dispatch({ type: "addGroup" });

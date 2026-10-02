@@ -132,6 +132,9 @@ fn main() {
         picsie_core::adjustment::CurvePoint,
         picsie_core::adjustment::CurvesSettings,
         picsie_core::adjustment::LayerAdjustment,
+        picsie_core::gradient::GradientShape,
+        picsie_core::gradient::GradientStyle,
+        picsie_core::gradient::GradientSettings,
         Command,
         EditorState
     );

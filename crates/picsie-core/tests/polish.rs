@@ -26,10 +26,7 @@ fn editor() -> Editor {
         "Red",
         100,
         100,
-        Content::Shape {
-            shape: Shape::Rectangle,
-            color: "#ff0000".into(),
-        },
+        Content::shape(Shape::Rectangle, "#ff0000".into()),
     );
     layer.x = 100.;
     layer.y = 50.;

@@ -244,6 +244,9 @@ fn numeric_limits(key: &str) -> Option<(f64, f64)> {
         "brightness" | "saturation" => (0., 300.),
         "blur" => (0., 100.),
         "brush-size" => (1., 2000.),
+        "shape-width" => (1., 5000.),
+        "shape-radius" => (0., 5000.),
+        "gradient-opacity" => (1., 100.),
         "selection-amount" | "selection-contract" | "selection-dialog" => (1., 500.),
         "transform-scale" => (1., 10000.),
         "feather" => (1., 250.),
@@ -426,5 +429,92 @@ impl Desktop {
             };
         draw(&outline.contours, 0xffffff, window);
         draw(&outline.dashes(self.selection_phase), 0x000000, window);
+    }
+    /// TransformOverlay.drawGradientLine: the pending line with a faint radial
+    /// rim and colored endpoint squares. Points arrive in view coordinates.
+    pub(super) fn paint_gradient_line(&self, bounds: Bounds<Pixels>, window: &mut Window) {
+        let Some(state) = self.state.as_ref() else {
+            return;
+        };
+        let Some([start, end]) = state.gradient_line else {
+            return;
+        };
+        let point = |p: picsie_core::model::Point| {
+            gpui_kit::point(
+                bounds.origin.x + px(p.x as f32 / self.display_scale),
+                bounds.origin.y + px(p.y as f32 / self.display_scale),
+            )
+        };
+        let line = |width: f32, color: u32, window: &mut Window| {
+            let mut path = PathBuilder::stroke(px(width));
+            path.move_to(point(start));
+            path.line_to(point(end));
+            if let Ok(path) = path.build() {
+                window.paint_path(path, rgb(color));
+            }
+        };
+        if state.gradient_settings.shape == picsie_core::gradient::GradientShape::Radial {
+            let radius =
+                ((end.x - start.x).hypot(end.y - start.y) as f32 / self.display_scale).max(2.);
+            let center = point(start);
+            let ring = |color: u32, window: &mut Window| {
+                let mut path = PathBuilder::stroke(px(1.));
+                for i in 0..=64 {
+                    let angle = i as f32 / 64. * std::f32::consts::TAU;
+                    let p = gpui_kit::point(
+                        center.x + px(angle.cos() * radius),
+                        center.y + px(angle.sin() * radius),
+                    );
+                    if i == 0 {
+                        path.move_to(p);
+                    } else {
+                        path.line_to(p);
+                    }
+                }
+                if let Ok(path) = path.build() {
+                    window.paint_path(path, rgb(color));
+                }
+            };
+            ring(0x000000, window);
+        }
+        line(3., 0x000000, window);
+        line(1., 0xffffff, window);
+        // Endpoint squares in the ramp's first/last colors.
+        let transparent = state.gradient_settings.style
+            == picsie_core::gradient::GradientStyle::ForegroundToTransparent;
+        let (first, last) = if state.gradient_settings.reversed {
+            (
+                if transparent {
+                    state.color.as_str()
+                } else {
+                    state.background_color.as_str()
+                },
+                state.color.as_str(),
+            )
+        } else {
+            (
+                state.color.as_str(),
+                if transparent {
+                    state.color.as_str()
+                } else {
+                    state.background_color.as_str()
+                },
+            )
+        };
+        for (at, fill) in [(start, first), (end, last)] {
+            let center = point(at);
+            let square = Bounds::new(
+                gpui_kit::point(center.x - px(6.), center.y - px(6.)),
+                size(px(12.), px(12.)),
+            );
+            window.paint_quad(quad(
+                square,
+                px(0.),
+                hex_color(fill),
+                px(1.),
+                rgb(0x000000),
+                BorderStyle::Solid,
+            ));
+        }
     }
 }

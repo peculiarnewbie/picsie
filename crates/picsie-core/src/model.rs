@@ -39,6 +39,22 @@ pub enum Content {
     Shape {
         shape: Shape,
         color: String,
+        /// Document pixels, fixed when a rounded rectangle is drawn; other shapes ignore it.
+        /// LayerShapeStyle.cornerRadius, Compositor 609dbeae. MIT © 2026 Wonder Assembly LLC.
+        #[serde(default)]
+        corner_radius: f64,
+        /// A line's thickness in document pixels; nil on other shapes.
+        #[serde(default, skip_serializing_if = "Option::is_none")]
+        #[ts(optional)]
+        line_width: Option<f64>,
+        /// A line's ends as fractions of the layer box (0–1); nil on other shapes and
+        /// on older lines, which ran corner to corner instead.
+        #[serde(default, skip_serializing_if = "Option::is_none")]
+        #[ts(optional)]
+        line_start: Option<Point>,
+        #[serde(default, skip_serializing_if = "Option::is_none")]
+        #[ts(optional)]
+        line_end: Option<Point>,
     },
     Gradient {
         from: String,
@@ -62,6 +78,20 @@ pub enum Content {
 pub enum Shape {
     Rectangle,
     Ellipse,
+    Line,
+}
+impl Content {
+    /// Fill-only constructor for tests and adapters; style fields take their defaults.
+    pub fn shape(shape: Shape, color: String) -> Self {
+        Content::Shape {
+            shape,
+            color: color.into(),
+            corner_radius: 0.,
+            line_width: None,
+            line_start: None,
+            line_end: None,
+        }
+    }
 }
 #[derive(Clone, Copy, Debug, PartialEq, Serialize, Deserialize, TS)]
 #[serde(rename_all = "kebab-case")]
@@ -592,7 +622,35 @@ impl Layer {
                     && self.blur == 0.,
                 "Folders support visibility, opacity, and raster masks"
             ),
-            Content::Shape { color, .. } => ensure!(color_valid(color), "Invalid color"),
+            Content::Shape {
+                color,
+                corner_radius,
+                line_width,
+                line_start,
+                line_end,
+                ..
+            } => {
+                ensure!(color_valid(color), "Invalid color");
+                ensure!(
+                    corner_radius.is_finite() && (0. ..=5000.).contains(corner_radius),
+                    "Invalid shape corner radius"
+                );
+                if let Some(width) = line_width {
+                    ensure!(
+                        width.is_finite() && (1. ..=5000.).contains(width),
+                        "Invalid line width"
+                    );
+                }
+                for end in [line_start, line_end].into_iter().flatten() {
+                    ensure!(
+                        end.x.is_finite()
+                            && end.y.is_finite()
+                            && (0. ..=1.).contains(&end.x)
+                            && (0. ..=1.).contains(&end.y),
+                        "Invalid line endpoints"
+                    );
+                }
+            }
             Content::Gradient { from, to } => ensure!(
                 color_valid(from) && color_valid(to),
                 "Invalid gradient color"
@@ -852,10 +910,7 @@ pub fn demo_document() -> Document {
         560,
         560.,
         155.,
-        Content::Shape {
-            shape: Shape::Ellipse,
-            color: "#6587ff".into(),
-        },
+        Content::shape(Shape::Ellipse, "#6587ff".into()),
     );
     add(
         "Coral orbit",
@@ -863,10 +918,7 @@ pub fn demo_document() -> Document {
         345,
         775.,
         70.,
-        Content::Shape {
-            shape: Shape::Ellipse,
-            color: "#f6a484".into(),
-        },
+        Content::shape(Shape::Ellipse, "#f6a484".into()),
     );
     add(
         "Edition",

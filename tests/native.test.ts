@@ -458,6 +458,88 @@ test("native eyedropper samples the composite through viewport coordinates", asy
   }
 });
 
+test("native shape styles, cycling, lines and package records cross the bridge", async () =>
+  temporary(async (dir) => {
+    const e = session();
+    try {
+      e.viewport = { width: 200, height: 160, zoom: 1, pan: { x: 0, y: 0 } };
+      e.setTool("rectangle");
+      e.setColor("#ff0000");
+      e.setShapeCornerRadius(8);
+      e.pointer("down", { x: 10, y: 10 });
+      e.pointer("up", { x: 50, y: 40 });
+      const rect = e.selected!;
+      assert.equal(rect.name, "Rectangle 1");
+      assert.equal(rect.content.kind, "shape");
+      if (rect.content.kind !== "shape") throw new Error("expected shape");
+      assert.equal(rect.content.shape, "rectangle");
+      e.cycleShapeKind();
+      e.setTool("line");
+      e.setShapeLineWidth(6);
+      e.pointer("down", { x: 60, y: 10 });
+      e.pointer("up", { x: 100, y: 10 });
+      const line = e.selected!;
+      assert.equal(line.name, "Line 1");
+      if (line.content.kind !== "shape") throw new Error("expected line");
+      assert.equal(line.content.line_width, 6);
+      assert.ok(line.content.line_start && line.content.line_end);
+      const project = join(dir, "shapes.comp");
+      await e.save(project);
+      const manifest = JSON.parse(await readFile(join(project, "manifest.json"), "utf8"));
+      const shapes = manifest.layers.filter((l: any) => l.shape);
+      assert.equal(shapes.length, 2);
+      assert.equal(shapes[0].shape.kind, "Rectangle");
+      assert.equal(shapes[0].shape.cornerRadius, 8);
+      assert.equal(shapes[1].shape.kind, "Line");
+      const reopened = await Editor.open(project);
+      try {
+        assert.equal(reopened.document.layers.length, 2);
+        const png = join(dir, "shapes.png");
+        await e.export(png, "png");
+        assert.deepEqual(await pixel(png, 30, 25), [255, 0, 0, 255]);
+      } finally {
+        reopened.close();
+      }
+    } finally {
+      e.close();
+    }
+  }));
+
+test("native gradient tool previews, applies and cancels through the real addon", async () =>
+  temporary(async (dir) => {
+    const e = session();
+    try {
+      e.viewport = { width: 200, height: 160, zoom: 1, pan: { x: 0, y: 0 } };
+      e.setTool("rectangle");
+      e.setColor("#ff0000");
+      e.pointer("down", { x: 10, y: 10 });
+      e.pointer("up", { x: 110, y: 30 });
+      e.setTool("gradient");
+      e.setGradientStyle("foreground-to-background");
+      e.setColor("#000000");
+      const before: number = e.history.undoCount;
+      e.pointer("down", { x: 10.5, y: 20 });
+      e.pointer("move", { x: 110.5, y: 20 });
+      e.pointer("up", { x: 110.5, y: 20 });
+      assert.equal(e.history.undoCount, before);
+      e.commitGradient();
+      assert.equal(e.history.undoCount, before + 1);
+      const png = join(dir, "gradient.png");
+      await e.export(png, "png");
+      const start = await pixel(png, 10, 20);
+      assert.ok(Math.abs((start[0] ?? -100)) <= 3 && start[3] === 255);
+      e.undo();
+      assert.equal(e.history.undoCount, before);
+      e.setTool("gradient");
+      e.pointer("down", { x: 10.5, y: 20 });
+      e.pointer("up", { x: 10.5, y: 20 });
+      e.cancelGradient();
+      assert.equal(e.history.undoCount, before);
+    } finally {
+      e.close();
+    }
+  }));
+
 test("canvas form preserves original ratio across relative and percent edits", () => {
   const draft = new CanvasSizeDraft({ width: 400, height: 200 });
   draft.relative = true;

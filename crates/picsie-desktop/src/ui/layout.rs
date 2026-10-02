@@ -477,12 +477,12 @@ impl Desktop {
             .border_color(rgb(LINE))
             .overflow_y_scroll();
         for (value, id, name, key) in TOOLS {
-            if matches!(value, Tool::Eraser | Tool::Ellipse) {
+            if matches!(value, Tool::Eraser | Tool::Ellipse | Tool::Line) {
                 continue;
             }
             let active = tool == *value
                 || (*value == Tool::Brush && tool == Tool::Eraser)
-                || (*value == Tool::Rectangle && tool == Tool::Ellipse);
+                || (*value == Tool::Rectangle && matches!(tool, Tool::Ellipse | Tool::Line));
             let command = Command::SetTool { tool: *value };
             rail = rail.child(
                 self.probe(
@@ -492,6 +492,8 @@ impl Desktop {
                         .icon(icon(
                             if *value == Tool::Rectangle && tool == Tool::Ellipse {
                                 "ellipse"
+                            } else if *value == Tool::Rectangle && tool == Tool::Line {
+                                "line"
                             } else if *value == Tool::Marquee
                                 && self
                                     .state
@@ -964,7 +966,6 @@ impl Render for Desktop {
             .bg(rgb(BG))
             .text_color(rgb(TEXT))
             .text_size(px(12.))
-            .track_focus(&self.focus)
             .on_modifiers_changed(cx.listener(|this, event: &ModifiersChangedEvent, _, cx| {
                 this.cursor_modifiers = picsie_core::editor::Modifiers {
                     shift: event.modifiers.shift,

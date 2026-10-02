@@ -36,7 +36,7 @@
             "docs/gpui-ui-parity.md"
           ],
           "nativeChecks": [
-            "Compositor chrome, 971\u00d7746 canvas and ten grouped tool buttons",
+            "Compositor chrome, 971\u00d7746 canvas and eleven grouped tool buttons",
             "800\u00d7520 minimum keeps layer footer visible"
           ]
         },
@@ -438,7 +438,7 @@
             "docs/gpui-ui-parity.md"
           ],
           "nativeChecks": [
-            "Compositor chrome, 971\u00d7746 canvas and ten grouped tool buttons"
+            "Compositor chrome, 971\u00d7746 canvas and eleven grouped tool buttons"
           ]
         },
         {
@@ -453,7 +453,7 @@
             "docs/gpui-ui-parity.md"
           ],
           "nativeChecks": [
-            "Compositor chrome, 971\u00d7746 canvas and ten grouped tool buttons"
+            "Compositor chrome, 971\u00d7746 canvas and eleven grouped tool buttons"
           ]
         },
         {
@@ -1768,20 +1768,24 @@
       ],
       "local": [
         "crates/picsie-core/src/shape.rs",
-        "crates/picsie-core/src/editor.rs",
+        "crates/picsie-core/src/gradient.rs",
         "crates/picsie-core/src/model.rs",
-        "crates/picsie-desktop/src/ui/toolbars.rs"
+        "crates/picsie-core/src/editor.rs",
+        "crates/picsie-core/src/comp.rs",
+        "crates/picsie-core/src/render.rs",
+        "crates/picsie-desktop/src/ui/toolbars.rs",
+        "crates/picsie-desktop/src/ui/input.rs"
       ],
       "items": [
         {
           "id": "shapes.rectangle-ellipse",
-          "implementation": "partial",
+          "implementation": "implemented",
           "polish": "partial",
           "verification": "native",
-          "behavior": "Rectangle/ellipse new layer, Shift square/circle, Alt from center",
-          "gap": "Custom fill-only shape records; full source shape style absent.",
+          "behavior": "Rectangle/ellipse new layer with editable kind/RGB fill, Shift square/circle, Alt from center, upstream Rectangle N naming",
+          "gap": "Radius lives in source pixels (upstream keeps document pixels across resizes); drag preview stretches until the bounded renderer preview/commit redraw.",
           "evidence": [
-            "crates/picsie-desktop/verify.py",
+            "crates/picsie-core/tests/shapes_gradients.rs",
             "docs/gpui-ui-parity.md"
           ],
           "upstream": [
@@ -1794,40 +1798,65 @@
         },
         {
           "id": "shapes.line",
-          "implementation": "missing",
-          "polish": "missing",
-          "verification": "source",
-          "behavior": "Draw line with editable width and Shift 45\u00b0 angle snapping",
-          "gap": "Line shape and width controls are absent.",
+          "implementation": "implemented",
+          "polish": "partial",
+          "verification": "native",
+          "behavior": "Line layer with editable width/endpoints, Shift 45-degree snapping, Alt from center",
+          "gap": "Linux X11 at 1x verified; Windows/macOS GUI, Wayland and physical HiDPI remain unverified.",
           "evidence": [
-            "Compositor/Document/ShapeTool.swift"
+            "crates/picsie-core/tests/shapes_gradients.rs",
+            "tests/native.test.ts",
+            "artifacts/shapes-gradients/verify_shapes.py",
+            "docs/gpui-ui-parity.md"
           ],
           "upstream": [
             "Compositor/Document/ShapeTool.swift"
+          ],
+          "nativeChecks": [
+            "Shift drag draws a snapped line with width",
+            "width slider track click raises line width"
           ]
         },
         {
           "id": "shapes.shape-style",
-          "implementation": "missing",
-          "polish": "missing",
-          "verification": "source",
-          "behavior": "Retain editable kind, RGB fill, corner radius and optional line width/endpoints in shape metadata",
-          "gap": "Local fill-only Content shapes lack upstream LayerShapeStyle and rich package records. Source does not have fill/stroke enable switches.",
+          "implementation": "implemented",
+          "polish": "partial",
+          "verification": "native",
+          "behavior": "Editable kind, RGB fill, corner radius, line width/endpoints; painting, gradients and fills bake to plain pixels; resize redraws at displayed size",
+          "gap": "Linux X11 at 1x verified; Windows/macOS GUI, Wayland and physical HiDPI remain unverified.",
           "evidence": [
-            "Compositor/Document/ShapeTool.swift"
+            "crates/picsie-core/tests/shapes_gradients.rs",
+            "tests/native.test.ts",
+            "artifacts/shapes-gradients/verify_shapes.py",
+            "docs/gpui-ui-parity.md"
           ],
           "upstream": [
             "Compositor/Document/ShapeTool.swift"
+          ],
+          "nativeChecks": [
+            "rectangle gesture creates editable shape layer",
+            "rounded rectangle keeps editable radius"
           ]
         },
         {
           "id": "shapes.shape-cycle",
-          "implementation": "partial",
+          "implementation": "implemented",
           "polish": "partial",
-          "verification": "unverified",
-          "behavior": "Tab/Shift-U cycles supported shape modes",
-          "gap": "Not all source shapes present.",
-          "evidence": []
+          "verification": "native",
+          "behavior": "Shift-U cycles Rectangle, Ellipse, Line; G selects the Gradient tool",
+          "gap": "Canvas-scoped Tab routing verified; Shift+Tab keeps toolkit traversal.",
+          "evidence": [
+            "crates/picsie-core/tests/shapes_gradients.rs",
+            "tests/native.test.ts",
+            "artifacts/shapes-gradients/verify_shapes.py",
+            "docs/gpui-ui-parity.md"
+          ],
+          "nativeChecks": [
+            "Shift+U cycles line to rectangle",
+            "Tab cycles rectangle to ellipse",
+            "Tab cycles ellipse to line",
+            "field Tab preserves traversal (no cycle, no step)"
+          ]
         },
         {
           "id": "shapes.gradient-layer",
@@ -1840,34 +1869,70 @@
         },
         {
           "id": "shapes.gradient-tool",
-          "implementation": "missing",
-          "polish": "missing",
-          "verification": "unverified",
-          "behavior": "Linear/radial, foreground-background/transparent, reverse, opacity, draggable endpoints",
-          "gap": "Not implemented.",
-          "evidence": []
+          "implementation": "implemented",
+          "polish": "partial",
+          "verification": "native",
+          "behavior": "Linear/radial, foreground-background/transparent, reverse, opacity, draggable endpoints with preview/Apply/Cancel and one-undo commit",
+          "gap": "Linux X11 at 1x verified; Windows/macOS GUI, Wayland and physical HiDPI remain unverified.",
+          "evidence": [
+            "crates/picsie-core/tests/shapes_gradients.rs",
+            "tests/native.test.ts",
+            "artifacts/shapes-gradients/verify_shapes.py",
+            "docs/gpui-ui-parity.md"
+          ],
+          "upstream": [
+            "Compositor/Document/Gradient.swift",
+            "Compositor/UI/GradientControls.swift"
+          ],
+          "nativeChecks": [
+            "gradient drag pends a line with Apply/Cancel",
+            "Apply commits the gradient as one undo",
+            "Enter applies the pending gradient",
+            "Escape cancels the pending gradient",
+            "endpoint grab moves only the grabbed end",
+            "Tab toggles gradient linear to radial",
+            "Tab toggles gradient radial to linear"
+          ]
         },
         {
           "id": "shapes.gradient-mask",
-          "implementation": "missing",
-          "polish": "missing",
-          "verification": "unverified",
-          "behavior": "Interactive gradient on selected mask with preview/Apply/Cancel",
-          "gap": "Not implemented.",
-          "evidence": []
+          "implementation": "implemented",
+          "polish": "partial",
+          "verification": "native",
+          "behavior": "Interactive gradient on selected mask with preview/Apply/Cancel, placed-grid mapping",
+          "gap": "Linux X11 at 1x verified; Windows/macOS GUI, Wayland and physical HiDPI remain unverified.",
+          "evidence": [
+            "crates/picsie-core/tests/shapes_gradients.rs",
+            "tests/native.test.ts",
+            "artifacts/shapes-gradients/verify_shapes.py",
+            "docs/gpui-ui-parity.md"
+          ],
+          "upstream": [
+            "Compositor/Document/Gradient.swift"
+          ],
+          "nativeChecks": [
+            "mask gradient applies as one undo"
+          ]
         },
         {
           "id": "shapes.corner-radius",
-          "behavior": "Rectangle radius slider 0\u2013200; numeric pixels 0\u20135000 with arrow stepping",
-          "implementation": "missing",
-          "polish": "missing",
-          "verification": "source",
-          "gap": "No rounded rectangle/radius metadata or controls.",
+          "behavior": "Rectangle radius slider 0-200; numeric pixels 0-5000 with arrow stepping",
+          "implementation": "implemented",
+          "polish": "partial",
+          "verification": "native",
+          "gap": "Linux X11 at 1x verified; Windows/macOS GUI, Wayland and physical HiDPI remain unverified.",
           "evidence": [
-            "Compositor/UI/ShapeControls.swift"
+            "crates/picsie-core/tests/shapes_gradients.rs",
+            "tests/native.test.ts",
+            "artifacts/shapes-gradients/verify_shapes.py",
+            "docs/gpui-ui-parity.md"
           ],
           "upstream": [
             "Compositor/UI/ShapeControls.swift"
+          ],
+          "nativeChecks": [
+            "radius numeric commits to tool state",
+            "rounded rectangle keeps editable radius"
           ]
         }
       ]

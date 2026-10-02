@@ -4,10 +4,39 @@ use gpui_kit::component::input as text_input;
 gpui_kit::actions!(
     picsie,
     [
-        New, Open, OpenComp, Import, Save, SaveAs, SaveComp, ExportPng, ExportJpeg, Close, Quit,
-        UndoCanvas, RedoCanvas, AllPixels, Deselect, Inverse, Fill, CanvasSize, Paint, Gradient,
-        Clipping, Duplicate, CopyMerged, Merge, Transform, ImageSize, Raise, Lower, Fit, Actual,
-        ZoomIn, ZoomOut
+        New,
+        Open,
+        OpenComp,
+        Import,
+        Save,
+        SaveAs,
+        SaveComp,
+        ExportPng,
+        ExportJpeg,
+        Close,
+        Quit,
+        UndoCanvas,
+        RedoCanvas,
+        AllPixels,
+        Deselect,
+        Inverse,
+        Fill,
+        CanvasSize,
+        Paint,
+        Gradient,
+        Clipping,
+        Duplicate,
+        CopyMerged,
+        Merge,
+        Transform,
+        ImageSize,
+        Raise,
+        Lower,
+        Fit,
+        Actual,
+        ZoomIn,
+        ZoomOut,
+        CycleToolMode
     ]
 );
 #[derive(Default)]

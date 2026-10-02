@@ -205,9 +205,13 @@ impl Editor {
     }
     pub(super) fn layer_polish_command(&mut self, command: &Command) -> Result<bool> {
         match command {
-            Command::SetColor { color } => self.set_palette_color(color.clone(), false)?,
+            Command::SetColor { color } => {
+                self.set_palette_color(color.clone(), false)?;
+                self.refresh_gradient()?;
+            }
             Command::SetPaletteColor { color, background } => {
-                self.set_palette_color(color.clone(), *background)?
+                self.set_palette_color(color.clone(), *background)?;
+                self.refresh_gradient()?;
             }
             // EditorCanvas.sampleColor assigns the image foreground even with a mask targeted;
             // the black/white mask palette remains independent.
@@ -219,6 +223,7 @@ impl Editor {
                 if !matches!(self.gesture, Some(Gesture::Brush { .. })) {
                     self.color = color.clone();
                 }
+                self.refresh_gradient()?;
             }
             Command::SetTextColor { color, draft_id } => {
                 ensure!(
@@ -258,6 +263,7 @@ impl Editor {
                     self.set_palette_color(self.background_color.clone(), false)?;
                     self.background_color = old;
                 }
+                self.refresh_gradient()?;
             }
             Command::ResetPaletteColors => {
                 if matches!(self.gesture, Some(Gesture::Brush { .. })) {
@@ -269,6 +275,7 @@ impl Editor {
                     self.set_palette_color("#000000".into(), false)?;
                     self.background_color = "#ffffff".into();
                 }
+                self.refresh_gradient()?;
             }
             Command::PreviewBlendMode { id, mode } => {
                 self.blend_preview = id

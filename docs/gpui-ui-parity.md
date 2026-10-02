@@ -43,7 +43,7 @@ Adaptations and remaining gaps: Linux/Windows menus replace macOS application
 menu/titlebar integration. Existing documents still use separate windows, not
 upstream's project tabs. The layers/masks/color pass below adds foreground/background swatches, swap/default controls and the movable picker. Mask rows now show
 grayscale thumbnails with a distinct editing-target border. The existing brightness/saturation/blur controls are retained in a palette; these are not upstream's full floating
-adjustment/effect panels. Panel width and view options now persist in platform configuration; tool, brush and font defaults remain session-local. The 2026-10-01 pass adds ratio lock, scale percentage and transform sampling; richer shape tools remain absent. No nonfunctional controls were added for those gaps.
+adjustment/effect panels. Panel width and view options now persist in platform configuration; tool, brush and font defaults remain session-local. The 2026-10-01 pass adds ratio lock, scale percentage and transform sampling. The 2026-10-02 shapes pass adds the editable shape/gradient headers below; Tab cycling required canvas-scoped routing (see below). No nonfunctional controls were added for remaining gaps.
 
 The preceding shell pass's complete native workflow run passed **90 checks**, including panel resize
 limits, short-window scrolling, all previously verified engine workflows, and
@@ -235,6 +235,8 @@ This pass polishes existing tools and shared controls:
 - Source Crop ratio picker, live dimensions, enabled state, default nonediting frame,
   dimmed surround, rule-of-thirds lines and bordered handles. Expanded-crop rendering
   outside current document bounds remains a tracked gap.
+
+The 2026-10-02 shapes/gradients pass ran **24 focused native checks** on Linux X11 at 1x (display :112, software Vulkan): editable shape headers (kind buttons, radius/width sliders and numerics, fill swatch), Shift-snapped line drawing, Shift+U and Tab cycling (Tab routes through a canvas-scoped `PicsieCanvas` key context so fields/selects keep traversal), gradient headers (linear/radial, style, reverse, opacity, swatch, Mask badge), pending-line Apply/Cancel, Enter/Escape, endpoint grabbing, opacity percent with arrow stepping, slider track-click, and mask-target Apply. Screenshots live with the focused script run. Tab cannot work through the generic bubble handler because the toolkit Root binding outranks it; the canvas action binding was verified natively instead.
 
 The final release binary passed **all 140 combined native checks** on Linux X11 at
 1× with software Vulkan, including real clipboard exchange, GTK file dialogs,

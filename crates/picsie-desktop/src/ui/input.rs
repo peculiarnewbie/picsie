@@ -13,6 +13,7 @@ pub(super) const TOOLS: &[(Tool, &str, &str, &str)] = &[
     (Tool::Eraser, "eraser", "Eraser", "E"),
     (Tool::Rectangle, "rectangle", "Shape", "U"),
     (Tool::Ellipse, "ellipse", "Ellipse", "O"),
+    (Tool::Gradient, "gradient", "Gradient", "G"),
     (Tool::Text, "text", "Type", "T"),
     (Tool::Eyedropper, "eyedropper", "Eyedropper", "I"),
     (Tool::Hand, "hand", "Hand", "H"),
@@ -75,6 +76,39 @@ impl Desktop {
             .overflow_hidden()
             .bg(rgb(0x1b1b1b))
             .cursor(cursor)
+            .track_focus(&self.focus)
+            .key_context("PicsieCanvas")
+            .on_action(cx.listener(|this, _: &menus::CycleToolMode, _, cx| {
+                // ShapeTool.toggleShapeKind / cycleToolMode: Tab steps the
+                // current tool through its modes. Deeper than the toolkit
+                // Root traversal binding, so canvas focus wins; anything
+                // else keeps ordinary traversal by not stopping propagation.
+                let Some(state) = this.state.as_ref() else {
+                    return;
+                };
+                if this.modal.is_some()
+                    || this.open_palette.is_some()
+                    || this.busy
+                    || state.text_editing
+                {
+                    return;
+                }
+                if matches!(state.tool, Tool::Rectangle | Tool::Ellipse | Tool::Line) {
+                    this.send(Command::CycleShapeKind);
+                    cx.stop_propagation();
+                } else if state.tool == Tool::Gradient {
+                    this.send(Command::SetGradientShape {
+                        shape: if state.gradient_settings.shape
+                            == picsie_core::gradient::GradientShape::Linear
+                        {
+                            picsie_core::gradient::GradientShape::Radial
+                        } else {
+                            picsie_core::gradient::GradientShape::Linear
+                        },
+                    });
+                    cx.stop_propagation();
+                }
+            }))
             .capture_any_mouse_down(cx.listener(|this, event: &MouseDownEvent, window, cx| {
                 if event.button != MouseButton::Left
                     || this.busy
@@ -405,6 +439,7 @@ impl Desktop {
                         }
                         if let Some(this) = paint.upgrade() {
                             this.read(cx).paint_selection_outline(bounds, window);
+                            this.read(cx).paint_gradient_line(bounds, window);
                             this.read(cx).paint_selection_badge(bounds, window);
                             this.read(cx).paint_brush_outline(bounds, window);
                             this.read(cx).paint_sample_ring(window);
@@ -615,6 +650,16 @@ impl Desktop {
         } else if m.alt && (key == "backspace" || key == "delete") {
             Some(Action::Command(Command::FillSelection))
         } else if !m.alt {
+            // ShapeTool.toggleShapeKind: Shift-U steps Rectangle, Ellipse, Line.
+            // Plain Tab cycles through the canvas PicsieCanvas action binding.
+            if m.shift
+                && key == "u"
+                && matches!(state.tool, Tool::Rectangle | Tool::Ellipse | Tool::Line)
+            {
+                self.act(Action::Command(Command::CycleShapeKind), window, cx);
+                cx.stop_propagation();
+                return;
+            }
             if let Some((tool, _, _, _)) = TOOLS
                 .iter()
                 .find(|(_, _, _, shortcut)| shortcut.eq_ignore_ascii_case(&key))
@@ -631,12 +676,16 @@ impl Desktop {
                             match state.tool {
                                 Tool::Crop => Command::CancelCrop,
                                 Tool::Marquee | Tool::Lasso => Command::CancelPixelSelection,
+                                Tool::Gradient => Command::CancelGradient,
                                 _ => Command::CancelGesture,
                             }
                         }))
                     }
                     "enter" if state.transform_active => {
                         Some(Action::Command(Command::CommitTransform))
+                    }
+                    "enter" if state.gradient_pending => {
+                        Some(Action::Command(Command::CommitGradient))
                     }
                     "enter" if state.selection_draft => {
                         Some(Action::Command(Command::FinishSelection))

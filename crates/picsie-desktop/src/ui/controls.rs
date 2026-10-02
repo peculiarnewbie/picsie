@@ -26,6 +26,9 @@ pub const FIELD_KEYS: &[&str] = &[
     "brush-opacity",
     "hardness",
     "smoothing",
+    "shape-width",
+    "shape-radius",
+    "gradient-opacity",
     "selection-amount",
     "selection-contract",
     "selection-dialog",
@@ -497,6 +500,24 @@ impl Desktop {
                                 });
                                 return;
                             }
+                            if key == "shape-width" {
+                                this.send(Command::SetShapeLineWidth {
+                                    width: *value as f64,
+                                });
+                                return;
+                            }
+                            if key == "shape-radius" {
+                                this.send(Command::SetShapeCornerRadius {
+                                    radius: *value as f64,
+                                });
+                                return;
+                            }
+                            if key == "gradient-opacity" {
+                                this.send(Command::SetGradientOpacity {
+                                    opacity: (*value as f64 / 100.).clamp(0.01, 1.),
+                                });
+                                return;
+                            }
                             if this.editing_slider != Some(key) {
                                 this.send(Command::BeginPropertyEdit {
                                     label: format!("Edit layer {key}"),
@@ -577,6 +598,12 @@ impl Desktop {
             ("brush-opacity", decimal(state.brush_opacity * 100.)),
             ("hardness", decimal(state.brush_hardness * 100.)),
             ("smoothing", decimal(state.brush_smoothing)),
+            ("shape-width", decimal(state.shape_line_width)),
+            ("shape-radius", decimal(state.shape_corner_radius)),
+            (
+                "gradient-opacity",
+                decimal(state.gradient_settings.opacity * 100.),
+            ),
             ("wand-tolerance", decimal(state.wand.tolerance as f64)),
         ] {
             self.set_field(key, value, false, window, cx);
@@ -587,6 +614,9 @@ impl Desktop {
             ("hardness", state.brush_hardness * 100.),
             ("brush-opacity", state.brush_opacity * 100.),
             ("smoothing", state.brush_smoothing),
+            ("shape-width", state.shape_line_width.min(100.)),
+            ("shape-radius", state.shape_corner_radius.min(200.)),
+            ("gradient-opacity", state.gradient_settings.opacity * 100.),
         ] {
             self.sliders[key].update(cx, |slider, cx| slider.set_value(value as f32, window, cx));
         }
@@ -820,6 +850,15 @@ impl Desktop {
                             / divisor,
                     });
                 }
+                "shape-width" => self.send(Command::SetShapeLineWidth {
+                    width: number(&value)?.clamp(1., 5000.),
+                }),
+                "shape-radius" => self.send(Command::SetShapeCornerRadius {
+                    radius: number(&value)?.clamp(0., 5000.),
+                }),
+                "gradient-opacity" => self.send(Command::SetGradientOpacity {
+                    opacity: (number(&value)?.clamp(1., 100.) / 100.).clamp(0.01, 1.),
+                }),
                 "selection-dialog" => {
                     if let Some(Modal::SelectionAmount(kind)) = self.modal {
                         if let Ok(value) = number(&value) {

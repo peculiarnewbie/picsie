@@ -6,6 +6,7 @@ use gpui_kit::component::checkbox::Checkbox;
 use gpui_kit::component::popover::Popover;
 use picsie_core::{
     editor::LassoKind,
+    gradient::{GradientShape, GradientStyle},
     model::MaskMode,
     pixel_selection::{MarqueeKind, PixelSelectionMode},
 };
@@ -18,7 +19,8 @@ impl Desktop {
             Tool::Move=>"Drag to move · Handles resize · Shift keeps proportions · Space to pan",
             Tool::Brush=>"Drag to paint · [ ] size · Shift [ ] hardness · Digits opacity · X mask mode · Space to pan",
             Tool::Eraser=>"Drag to erase · [ ] size · Shift [ ] hardness · Digits opacity · Space to pan",
-            Tool::Rectangle|Tool::Ellipse=>"Drag to draw · Shift square/circle · Alt from center · Space to pan",
+            Tool::Rectangle|Tool::Ellipse|Tool::Line=>"Drag to draw · Shift square/circle · Alt from center · Space to pan",
+            Tool::Gradient=>"Drag a gradient line · Endpoints drag · Shift snaps angle · Enter applies · Space to pan",
             Tool::Text=>"Click for point text · Drag a paragraph box · Space to pan",
             Tool::Hand=>"Drag to pan · Scroll to zoom",
             Tool::Eyedropper=>"Click the canvas to sample a color",
@@ -30,6 +32,83 @@ impl Desktop {
         }.into()
     }
 
+    /// Compact track-plus-numeric control for tool headers, following the
+    /// ShapeControls/GradientControls slider-plus-field rows.
+    pub(super) fn header_slider(
+        &self,
+        key: &'static str,
+        title: &str,
+        width: f32,
+        unit: &str,
+        disabled: bool,
+    ) -> Div {
+        row()
+            .gap(px(6.))
+            .flex_shrink_0()
+            .child(div().text_color(rgb(MUTED)).child(title.to_owned()))
+            .child(
+                self.probe(
+                    format!("slider-{key}"),
+                    Slider::new(&self.sliders[key])
+                        .disabled(disabled || self.busy)
+                        .w(px(width)),
+                ),
+            )
+            .child(
+                self.numeric_field(
+                    key,
+                    Input::new(&self.fields[key])
+                        .small()
+                        .map(|input| Styled::h(input, px(26.)))
+                        .bg(rgb(0x202020))
+                        .text_size(px(12.))
+                        .disabled(disabled || self.busy)
+                        .aria_label(key.to_owned())
+                        .w(px(48.)),
+                ),
+            )
+            .child(div().text_color(rgb(MUTED)).child(unit.to_owned()))
+    }
+    /// Current gradient ramp over white, so a transparent end reads as a fade.
+    /// GradientControls paints its swatch over a checkerboard; the flat white
+    /// base is the local adaptation.
+    pub(super) fn gradient_swatch(&self) -> Stateful<Div> {
+        let (start, end) = self
+            .state
+            .as_ref()
+            .map(|s| {
+                let from = hex_color(&s.color);
+                let to = if s.gradient_settings.style == GradientStyle::ForegroundToTransparent {
+                    hsla(0., 0., 0., 0.)
+                } else {
+                    hex_color(&s.background_color)
+                };
+                if s.gradient_settings.reversed {
+                    (to, from)
+                } else {
+                    (from, to)
+                }
+            })
+            .unwrap_or((rgb(0).into(), rgb(0xffffff).into()));
+        self.probe(
+            "gradient-swatch",
+            div()
+                .w(px(56.))
+                .h(px(18.))
+                .rounded(px(3.))
+                .bg(rgb(0xffffff))
+                .child(
+                    div()
+                        .size_full()
+                        .rounded(px(3.))
+                        .bg(gpui_kit::linear_gradient(
+                            90.,
+                            gpui_kit::linear_color_stop(start, 0.),
+                            gpui_kit::linear_color_stop(end, 1.),
+                        )),
+                ),
+        )
+    }
     pub(super) fn inline_field(
         &self,
         key: &'static str,
@@ -331,7 +410,8 @@ impl Desktop {
             match state.tool {
                 Tool::Brush => "Brush",
                 Tool::Eraser => "Eraser",
-                Tool::Rectangle | Tool::Ellipse => "Shape",
+                Tool::Rectangle | Tool::Ellipse | Tool::Line => "Shape",
+                Tool::Gradient => "Gradient",
                 Tool::Text => "Type",
                 Tool::Hand => "Hand",
                 Tool::Eyedropper => "Eyedropper",
@@ -861,29 +941,124 @@ impl Desktop {
                 }
                 return bar;
             }
-            Tool::Rectangle | Tool::Ellipse => {
-                controls = controls
-                    .child(self.command_button(
-                        "shape-rectangle",
-                        "Rectangle",
-                        Command::SetTool {
-                            tool: Tool::Rectangle,
-                        },
+            Tool::Rectangle | Tool::Ellipse | Tool::Line => {
+                for (id, title, tool) in [
+                    ("shape-rectangle", "Rectangle", Tool::Rectangle),
+                    ("shape-ellipse", "Ellipse", Tool::Ellipse),
+                    ("shape-line", "Line", Tool::Line),
+                ] {
+                    controls = controls.child(self.command_button(
+                        id,
+                        title,
+                        Command::SetTool { tool },
                         false,
-                        state.tool == Tool::Rectangle,
+                        state.tool == tool,
                         cx,
-                    ))
-                    .child(self.command_button(
-                        "shape-ellipse",
-                        "Ellipse",
-                        Command::SetTool {
-                            tool: Tool::Ellipse,
-                        },
+                    ));
+                }
+                // ShapeControls.swift: rectangles take a 0…200 track radius with a
+                // 0…5000 numeric field; lines take a 1…100 track width with a 1…5000
+                // field. The fill is always the foreground color; upstream exposes
+                // no fill/stroke enable switches.
+                if state.tool == Tool::Line {
+                    controls = controls.child(self.header_slider(
+                        "shape-width",
+                        "Width",
+                        100.,
+                        "px",
                         false,
-                        state.tool == Tool::Ellipse,
+                    ));
+                }
+                if state.tool == Tool::Rectangle {
+                    controls = controls.child(self.header_slider(
+                        "shape-radius",
+                        "Radius",
+                        100.,
+                        "px",
+                        false,
+                    ));
+                }
+                controls = controls.child(self.foreground_swatch(cx, false));
+            }
+            Tool::Gradient => {
+                // GradientControls.swift: linear/radial segmented shape, style
+                // choice, reverse toggle and 1…100% opacity around a swatch of the
+                // current ramp. A pending line offers Cancel/Apply.
+                for (id, title, shape) in [
+                    ("gradient-linear", "Linear", GradientShape::Linear),
+                    ("gradient-radial", "Radial", GradientShape::Radial),
+                ] {
+                    controls = controls.child(self.command_button(
+                        id,
+                        title,
+                        Command::SetGradientShape { shape },
+                        false,
+                        state.gradient_settings.shape == shape,
                         cx,
-                    ))
-                    .child(self.foreground_swatch(cx, false));
+                    ));
+                }
+                controls = controls.child(self.gradient_swatch());
+                for (id, title, style) in [
+                    (
+                        "gradient-fg-bg",
+                        "Foreground to Background",
+                        GradientStyle::ForegroundToBackground,
+                    ),
+                    (
+                        "gradient-fg-transparent",
+                        "Foreground to Transparent",
+                        GradientStyle::ForegroundToTransparent,
+                    ),
+                ] {
+                    controls = controls.child(self.command_button(
+                        id,
+                        title,
+                        Command::SetGradientStyle { style },
+                        false,
+                        state.gradient_settings.style == style,
+                        cx,
+                    ));
+                }
+                controls = controls.child(self.command_button(
+                    "gradient-reverse",
+                    "Reverse",
+                    Command::SetGradientReverse {
+                        reversed: !state.gradient_settings.reversed,
+                    },
+                    false,
+                    state.gradient_settings.reversed,
+                    cx,
+                ));
+                controls = controls.child(self.header_slider(
+                    "gradient-opacity",
+                    "Opacity",
+                    100.,
+                    "%",
+                    false,
+                ));
+                if state.paint_target == "mask" {
+                    controls =
+                        controls.child(div().flex_shrink_0().text_color(rgb(MUTED)).child("Mask"));
+                }
+                if state.gradient_pending {
+                    controls = controls
+                        .child(self.command_button(
+                            "gradient-cancel",
+                            "Cancel",
+                            Command::CancelGradient,
+                            false,
+                            false,
+                            cx,
+                        ))
+                        .child(self.command_button(
+                            "gradient-apply",
+                            "Apply",
+                            Command::CommitGradient,
+                            false,
+                            false,
+                            cx,
+                        ));
+                }
             }
             Tool::Hand => {
                 controls = controls.child(hint(

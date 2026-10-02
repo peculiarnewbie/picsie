@@ -64,14 +64,8 @@ fn opaque_fills_preserve_exact_pixels_and_fractional_draws_keep_the_old_path() {
             from: "#12345680".into(),
             to: "#efd531".into(),
         },
-        Content::Shape {
-            shape: Shape::Rectangle,
-            color: "#38a7d9".into(),
-        },
-        Content::Shape {
-            shape: Shape::Rectangle,
-            color: "#38a7d990".into(),
-        },
+        Content::shape(Shape::Rectangle, "#38a7d9".into()),
+        Content::shape(Shape::Rectangle, "#38a7d990".into()),
     ] {
         for x in [-7., 0., 13., 13.5] {
             for opacity in [1., 0.63] {
@@ -228,10 +222,7 @@ fn retained_preview_matches_full_after_moves_and_viewport_or_overlay_changes() {
         .flat_map(|i| [(i * 37) as u8, (i * 73) as u8, (i * 19) as u8, i as u8])
         .collect();
     for content in [
-        Content::Shape {
-            shape: Shape::Ellipse,
-            color: "#6587ff80".into(),
-        },
+        Content::shape(Shape::Ellipse, "#6587ff80".into()),
         Content::Gradient {
             from: "#12345680".into(),
             to: "#efd531".into(),
@@ -283,10 +274,7 @@ fn retained_preview_matches_full_after_moves_and_viewport_or_overlay_changes() {
                         "Overlap",
                         30,
                         27,
-                        Content::Shape {
-                            shape: Shape::Ellipse,
-                            color: "#ef638280".into(),
-                        },
+                        Content::shape(Shape::Ellipse, "#ef638280".into()),
                     );
                     overlap.x = 34.;
                     overlap.y = 9.;

@@ -33,7 +33,7 @@ Port Compositor's existing behavior and algorithms before designing alternatives
 | `model.rs`, `render.rs`, `editor.rs`                  | [LayerMask.swift](https://github.com/robbietilton/Compositor/blob/609dbeae2ef68ef4fc82d67e4981a49852eb6e13/Compositor/Document/LayerMask.swift), [LayerMaskTests.swift](https://github.com/robbietilton/Compositor/blob/609dbeae2ef68ef4fc82d67e4981a49852eb6e13/CompositorTests/LayerMaskTests.swift), [MaskTransformTests.swift](https://github.com/robbietilton/Compositor/blob/609dbeae2ef68ef4fc82d67e4981a49852eb6e13/CompositorTests/MaskTransformTests.swift)       | New masks begin as 1×1 grayscale assets; completed strokes materialize immutable 8-bit coverage. Masks may be linked or placed independently; linked placement follows layer transforms. Old stroke lists remain readable. Local brush stamps and placed-mask resampling still differ from CoreGraphics.                                                                                                                                                                                                                                                                                                          |
 | `model.rs`, `editor.rs`, `render.rs`                  | [LayerGroups.swift](https://github.com/robbietilton/Compositor/blob/609dbeae2ef68ef4fc82d67e4981a49852eb6e13/Compositor/Document/LayerGroups.swift), [GroupTests.swift](https://github.com/robbietilton/Compositor/blob/609dbeae2ef68ef4fc82d67e4981a49852eb6e13/CompositorTests/GroupTests.swift)                                                                                                                                                                          | Parent IDs, cycle/depth validation, depth-first rows, collapse, inherited visibility, pass-through opacity, grouping, and subtree deletion/duplication. QuickGUI offers folder drag targets and Into/Out actions. Folder masks multiply each descendant's coverage; live clipping is described below.                                                                                                                                                                                                                                                                                                             |
 | `pixel_selection.rs`, `editor.rs`, `render.rs`        | [Selection.swift](https://github.com/robbietilton/Compositor/blob/609dbeae2ef68ef4fc82d67e4981a49852eb6e13/Compositor/Document/Selection.swift), [SelectionTests.swift](https://github.com/robbietilton/Compositor/blob/609dbeae2ef68ef4fc82d67e4981a49852eb6e13/CompositorTests/SelectionTests.swift), [SelectionFeatherTests.swift](https://github.com/robbietilton/Compositor/blob/609dbeae2ef68ef4fc82d67e4981a49852eb6e13/CompositorTests/SelectionFeatherTests.swift) | Rectangular/elliptical marquee and freehand lasso, replace/add/subtract, antialiased coverage, select all/deselect, coverage-clipped pixel clearing, and Select → Modify → Feather (`featherSelection`, `coverageBounds`). Rust stores coverage and rasterizes edited layer pixels. Fill, Invert, Expand, and Contract are supported. Polygonal lasso, color wand, selection movement and selected-pixel transforms are supported in the native app; object selection and persisted selection state remain unsupported. Completed selection edits, including Feather, participate in undo/redo.                                                                                 |
-| `comp.rs`, `files.rs`                                 | [ProjectStore.swift](https://github.com/robbietilton/Compositor/blob/609dbeae2ef68ef4fc82d67e4981a49852eb6e13/Compositor/IO/ProjectStore.swift), [ProjectTests.swift](https://github.com/robbietilton/Compositor/blob/609dbeae2ef68ef4fc82d67e4981a49852eb6e13/CompositorTests/ProjectTests.swift)                                                                                                                                                                          | Reads versions 1–8 and writes version 8 directory packages with `manifest.json`, UUID-named PNG assets, grayscale mask PNGs, transforms, sampling, folders, opacity, and blend modes. Validates paths and writes a complete sibling package before replacement. Picsie's limits apply. Folder masks (version 6+) and linked mask sources (version 5+) round-trip. Live effects, adjustments and editable upstream shape metadata are rejected on import. Guides and live text round-trip. Picsie shapes/gradients and legacy translucent text rasterize on export, with a UI notice. `.picsie`/`.electropic` files remain readable. |
+| `comp.rs`, `files.rs`                                 | [ProjectStore.swift](https://github.com/robbietilton/Compositor/blob/609dbeae2ef68ef4fc82d67e4981a49852eb6e13/Compositor/IO/ProjectStore.swift), [ProjectTests.swift](https://github.com/robbietilton/Compositor/blob/609dbeae2ef68ef4fc82d67e4981a49852eb6e13/CompositorTests/ProjectTests.swift)                                                                                                                                                                          | Reads versions 1–8 and writes version 8 directory packages with `manifest.json`, UUID-named PNG assets, grayscale mask PNGs, transforms, sampling, folders, opacity, and blend modes. Validates paths and writes a complete sibling package before replacement. Picsie's limits apply. Folder masks (version 6+) and linked mask sources (version 5+) round-trip. Live effects and adjustments are rejected on import; editable shape records round-trip (see the shapes pass). Guides and live text round-trip. Prototype translucent shapes/gradients and legacy translucent text rasterize on export, with a UI notice. `.picsie`/`.electropic` files remain readable. |
 
 The Rust behavior suite translates or adapts the cited crop, mask, group, selection, and package scenarios, including package overwrite and unsafe asset names; `tests/native.test.ts` runs those command paths through the actual addon. The upstream AppKit suite cannot run in this Linux workspace, and parity is claimed only for the behaviors stated above.
 
@@ -57,7 +57,7 @@ The Swift/AppKit suite has not been executed in this Linux workspace. These are 
 | Ratio modifier     | `TransformDrag.updated`, `lockRatio != shift` | User-requested Shift-to-preserve maps to upstream with `lockRatio = false`; a persistent ratio-lock toggle is absent.                                                                                                                                                                                                                  |
 | Masks and painting | `LayerMask.swift`, upstream brush engine      | Software brush spacing, curves, coverage union/accumulation, and opacity follow BrushStroke.swift. Native tip rasterization and placed-mask sampling differ from CoreGraphics. GPU coverage, tiled mask publication, healing, and cloning remain. Legacy vector strokes stay readable.                                       |
 | Selection          | `Selection.swift`                             | Coverage remains session-only but is restored by undo/redo, including feather metadata and explicit empty selections. Polygonal lasso, color wand, outline movement, selected-pixel movement/duplication and transforms, and the pixel clipboard are present in the native UI. Object selection, the antialiasing toggle, and pixel-color inversion remain. Selection inversion and foreground Fill are implemented. |
-| Project files      | `ProjectStore.swift`                          | The `.comp` adapter supports the raster/folder/raster-mask/live-mask subset within Picsie's lower limits. `.picsie` remains a single JSON file; `.comp` retains guides and live RGB text; Picsie shapes/gradients and legacy translucent text rasterize. Rich upstream records are rejected explicitly.                                                                |
+| Project files      | `ProjectStore.swift`                          | The `.comp` adapter supports the raster/folder/raster-mask/live-mask subset within Picsie's lower limits. `.picsie` remains a single JSON file; `.comp` retains guides, live RGB text and editable shape styles; prototype translucent shapes/gradient layers and legacy translucent text rasterize. Rich upstream records are rejected explicitly.                                                                |
 | UI and limits      | Upstream `UI/`, model validation              | GPUI Kit controls, the retained QuickGUI reference, and 8192 side/24MP/100-layer bounds are adaptations.                                                                                                                                                                                                                                                                 |
 
 ## Canvas Size and history port
@@ -647,3 +647,48 @@ preservation on transparency, stacked/double adjustments, non-normal base blends
 folder stack-position boundaries, merge baking, export equality and reopened
 editing. Destructive image-menu Levels/Curves editing, HSV and all other
 adjustment kinds remain unported gaps. The Swift/AppKit suite was not executed.
+
+## Editable shapes and interactive gradients (2026-10-02)
+
+`crates/picsie-core/src/shape.rs`, `gradient.rs`, `model.rs`, `editor.rs`,
+`render.rs` and `comp.rs` translate the pinned `ShapeTool.swift`,
+`Gradient.swift`, `ShapeControls.swift` and `GradientControls.swift`
+(`609dbeae`), with the GPUI Kit headers in `crates/picsie-desktop/src/ui/`.
+MIT © 2026 Wonder Assembly LLC.
+
+- Shape layers keep upstream `LayerShapeStyle` semantics in `Content::Shape`:
+  editable kind (rectangle/ellipse/line), RGB fill, document-pixel corner radius,
+  and optional line width plus fractional endpoints. Rounded rectangles clamp the
+  radius to half the shorter side (pill); lines stroke corner-to-corner with round
+  caps when no ends are stored. Line drags snap to 45° with Shift and grow from
+  the center with Alt; Shift-U cycles the three kinds (Tab is consumed by toolkit focus traversal); new layers take the
+  next `Rectangle N`/`Ellipse N`/`Line N` name. There are no fill/stroke enable
+  switches, per source. Old fill-only projects deserialize through defaults.
+- Resizing redraws the shape at its displayed size on commit (`redrawShape`),
+  preserving radius/width and pinning the mask footprint through compensated
+  explicit placement; legacy mask strokes bake into coverage with a version-2
+  bump. Transform previews serve a bounded (2048) cached raster with the radius
+  scaled down, as `shapeTransformPreview` does; other shapes stretch until
+  commit. Painting, gradients and fills bake a shape to plain pixels, as upstream
+  drops liveness once pixels change elsewhere.
+- The Gradient tool edits the selected layer or mask in place: linear/radial,
+  foreground-background/transparent, reverse and 1–100% opacity over draggable
+  endpoints with preview/Apply/Cancel and one-undo commits. Switches of tool,
+  layer or target apply the pending line; Undo/Escape cancel it; saves and
+  exports exclude the preview until Apply. Fills run through Skia linear/radial
+  shaders over the placed target grid with the retained base and soft selection
+  clipping, after `BrushStroke.fillGradient`/`paintCanvas`; masks resolve gray
+  through the placed grid.
+- `.comp` packages round-trip editable shape records (`kind`, RGB, corner
+  radius, line width/endpoints) alongside the raster; unknown kinds and invalid
+  records are rejected, translucent prototype shapes keep raster only, and the
+  prototype full-canvas gradient layer stays readable.
+
+Necessary adaptations: shapes are procedural vector layers (not raster assets
+with image-identity liveness), so this is not claimed as a full direct port;
+radius units are source pixels; the gradient swatch uses a flat white base
+instead of a checkerboard; the 2048 preview cap and placement compensation reuse
+local grid/renderer machinery. `crates/picsie-core/tests/shapes_gradients.rs`
+translates the `ShapeToolTests`/`GradientTests` scenarios (labeled) with local
+regressions kept separate; `tests/native.test.ts` drives the commands through
+the actual addon.

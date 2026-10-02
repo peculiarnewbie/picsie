@@ -9,6 +9,7 @@ pub mod editor;
 pub mod feedback;
 pub mod files;
 pub mod geometry;
+pub mod gradient;
 pub mod history;
 pub mod image_size;
 pub mod layer_index;

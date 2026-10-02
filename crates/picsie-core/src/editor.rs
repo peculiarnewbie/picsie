@@ -35,6 +35,8 @@ pub enum Tool {
     Eraser,
     Rectangle,
     Ellipse,
+    Line,
+    Gradient,
     Text,
     Hand,
     Eyedropper,
@@ -245,6 +247,27 @@ pub enum Command {
         hardness: f64,
         smoothing: f64,
     },
+    SetShapeCornerRadius {
+        radius: f64,
+    },
+    SetShapeLineWidth {
+        width: f64,
+    },
+    CycleShapeKind,
+    SetGradientShape {
+        shape: crate::gradient::GradientShape,
+    },
+    SetGradientStyle {
+        style: crate::gradient::GradientStyle,
+    },
+    SetGradientReverse {
+        reversed: bool,
+    },
+    SetGradientOpacity {
+        opacity: f64,
+    },
+    CommitGradient,
+    CancelGradient,
     UpdateLayer {
         #[ts(type = "Partial<Layer>")]
         patch: serde_json::Value,
@@ -536,6 +559,15 @@ pub struct Editor {
     transform_pixel_size: Option<(f64, f64)>,
     group_transform: Option<group_transform::GroupState>,
     group_cache: RefCell<group_transform::GroupCache>,
+    /// Shape tool defaults. ShapeControls.swift: rounded-rectangle radius in document
+    /// pixels (0 keeps corners square) and line thickness; the tool draws no
+    /// fill/stroke enable switches. Compositor 609dbeae. MIT © 2026 Wonder Assembly LLC.
+    pub shape_corner_radius: f64,
+    pub shape_line_width: f64,
+    /// Gradient tool settings and the pending line edit, if any.
+    pub gradient_settings: crate::gradient::GradientSettings,
+    pub gradient_edit: Option<crate::gradient::GradientEdit>,
+    gradient_handle: Option<crate::gradient::GradientHandle>,
     /// Bumped whenever an edit-text request selects a layer, so the UI can focus its editor.
     pub text_edit_requests: u64,
     gesture: Option<Gesture>,
@@ -605,6 +637,11 @@ impl Editor {
             viewport: Viewport::default(),
             crop_rect: None,
             crop_ratio: CropRatio::Free,
+            shape_corner_radius: 0.,
+            shape_line_width: 4.,
+            gradient_settings: crate::gradient::GradientSettings::default(),
+            gradient_edit: None,
+            gradient_handle: None,
             collapsed_groups: HashSet::new(),
             marquee_kind: MarqueeKind::Rectangle,
             selection_mode: PixelSelectionMode::Replace,
@@ -735,6 +772,16 @@ impl Editor {
             .map(|d| serde_json::to_value(d.mode).unwrap())
             .unwrap_or(serde_json::Value::Null);
         state["backgroundColor"] = self.background_color.clone().into();
+        state["shapeCornerRadius"] = self.shape_corner_radius.into();
+        state["shapeLineWidth"] = self.shape_line_width.into();
+        state["gradientSettings"] = serde_json::to_value(&self.gradient_settings).unwrap();
+        state["gradientPending"] = self.gradient_edit.is_some().into();
+        state["gradientLine"] =
+            serde_json::to_value(self.gradient_edit.as_ref().and_then(|edit| {
+                edit.has_line()
+                    .then(|| serde_json::json!({"start": edit.start, "end": edit.end}))
+            }))
+            .unwrap();
         state["imageDistortion"] =
             serde_json::to_value(self.image_distortion.as_ref().map(|d| d.corners)).unwrap();
         state["maskDistortion"] = serde_json::to_value(self.mask_distortion_corners()).unwrap();
@@ -782,6 +829,18 @@ impl Editor {
         rows
     }
     pub fn select(&mut self, id: Option<String>, mode: SelectionMode) -> Result<()> {
+        // Switching layers applies the pending gradient, as in Photoshop; reselecting
+        // the gradient's own layer keeps it pending.
+        if self.gradient_edit.is_some()
+            && !(matches!(mode, SelectionMode::Replace)
+                && id.as_deref()
+                    == self
+                        .gradient_edit
+                        .as_ref()
+                        .map(|edit| edit.layer_id.as_str()))
+        {
+            self.resolve_gradient()?;
+        }
         self.finish_gesture()?;
         let Some(id) = id.filter(|id| self.history.document.layers.iter().any(|l| l.id == *id))
         else {
@@ -873,6 +932,52 @@ impl Editor {
     ) -> Result<()> {
         doc.validate()?;
         self.finish_gesture()?;
+        let mut doc = doc;
+        // An immediate commit redraws scaled shapes full; a nested preview
+        // (persistent transform, property drag) keeps bounded renderer previews
+        // until its own commit.
+        if self.history.before_document().is_none() {
+            // One indexed pass over the incoming layers; the current document is
+            // looked up once and only changed eligible shape layers are redrawn.
+            let current: std::collections::HashMap<&str, &Layer> = self
+                .history
+                .document
+                .layers
+                .iter()
+                .map(|layer| (layer.id.as_str(), layer))
+                .collect();
+            let mut baked_version = false;
+            for layer in &mut doc.layers {
+                if !matches!(layer.content.as_ref(), Content::Shape { .. }) {
+                    continue;
+                }
+                if (layer.width as f64 * layer.scale_x).round() == layer.width as f64
+                    && (layer.height as f64 * layer.scale_y).round() == layer.height as f64
+                    && layer.scale_x == 1.
+                    && layer.scale_y == 1.
+                {
+                    continue;
+                }
+                let Some(old) = current.get(layer.id.as_str()) else {
+                    continue;
+                };
+                let baked_strokes = old
+                    .mask
+                    .as_ref()
+                    .is_some_and(|mask| !mask.strokes.is_empty());
+                if let Some(redrawn) = crate::shape::redraw_at_displayed_size(layer) {
+                    baked_version |= baked_strokes
+                        && redrawn
+                            .mask
+                            .as_ref()
+                            .is_some_and(|mask| mask.strokes.is_empty());
+                    *layer = redrawn;
+                }
+            }
+            if baked_version {
+                doc.version = 2;
+            }
+        }
         self.begin_edit(label);
         self.history.preview(doc);
         if let Some(ids) = selection {
@@ -1195,6 +1300,7 @@ impl Editor {
                 | Gesture::TextResize { .. }
                 | Gesture::TextBox { .. }
         ) {
+            self.redraw_committed_shapes();
             self.end_edit();
         }
         self.snap_lines = (vec![], vec![]);
@@ -1270,6 +1376,247 @@ impl Editor {
         doc.replace(layer);
         self.edit("Edit mask", doc, None)
     }
+    /// EditorSession.nextShapeName: "Rectangle 1", "Ellipse 2", … skipping names in use.
+    fn next_shape_name(&self, kind: &str) -> String {
+        let names: std::collections::HashSet<&str> = self
+            .history
+            .document
+            .layers
+            .iter()
+            .map(|l| l.name.as_str())
+            .collect();
+        let mut number = 1;
+        loop {
+            let candidate = format!("{kind} {number}");
+            if !names.contains(candidate.as_str()) {
+                return candidate;
+            }
+            number += 1;
+        }
+    }
+    fn shape_kind(&self) -> Shape {
+        match self.tool {
+            Tool::Ellipse => Shape::Ellipse,
+            Tool::Line => Shape::Line,
+            _ => Shape::Rectangle,
+        }
+    }
+    /// ShapeTool.toggleShapeKind: Shift-U (and Tab) steps Rectangle, Ellipse, Line.
+    /// A drag in flight is discarded, as upstream cancels the shape first.
+    fn cycle_shape_kind(&mut self) {
+        if matches!(self.gesture, Some(Gesture::Shape { .. })) {
+            self.cancel_gesture();
+        }
+        self.tool = match self.tool {
+            Tool::Rectangle => Tool::Ellipse,
+            Tool::Ellipse => Tool::Line,
+            Tool::Line => Tool::Rectangle,
+            _ => Tool::Rectangle,
+        };
+    }
+    /// Gradient.swift: the selected layer or mask takes a gradient when it could be
+    /// painted (single unlocked visible target; an explicit empty selection blocks).
+    /// A pending line on the same target restarts, as beginGradient replaces it.
+    fn begin_gradient(&mut self, at: Point) -> Result<()> {
+        if self.tool != Tool::Gradient || !at.x.is_finite() || !at.y.is_finite() {
+            return Ok(());
+        }
+        if !self.can_edit_pixels() {
+            return Ok(());
+        }
+        let mask = self.paint_target == PaintTarget::Mask;
+        let layer = self.selected().cloned().unwrap();
+        // A pending line on another target is replaced, as upstream starts a new edit.
+        self.cancel_gradient();
+        let base_image = crate::gradient::rasterize_base(&layer, mask)?;
+        self.begin_edit(if mask { "Gradient Mask" } else { "Gradient" });
+        self.gradient_edit = Some(crate::gradient::GradientEdit {
+            layer_id: layer.id.clone(),
+            mask,
+            start: at,
+            end: at,
+            base: layer,
+            base_image,
+        });
+        self.gradient_handle = Some(crate::gradient::GradientHandle::End);
+        self.refresh_gradient()
+    }
+    /// EditorCanvas.beginGradientDrag: grabbing a pending endpoint (within ten
+    /// screen points) moves just that end; anywhere else starts a new line.
+    fn begin_gradient_drag(&mut self, at: Point) -> Result<()> {
+        let grab = match &self.gradient_edit {
+            Some(edit)
+                if edit.has_line()
+                    && edit.mask == (self.paint_target == PaintTarget::Mask)
+                    && Some(edit.layer_id.as_str()) == self.selected_id() =>
+            {
+                let threshold = 10. * self.display_scale / self.viewport.zoom.max(0.01);
+                if edit.end.distance(at) <= threshold {
+                    Some(crate::gradient::GradientHandle::End)
+                } else if edit.start.distance(at) <= threshold {
+                    Some(crate::gradient::GradientHandle::Start)
+                } else {
+                    None
+                }
+            }
+            _ => None,
+        };
+        match grab {
+            Some(handle) => {
+                self.gradient_handle = Some(handle);
+                Ok(())
+            }
+            None => self.begin_gradient(at),
+        }
+    }
+    /// Re-renders the pending gradient from its endpoints, settings, and palette.
+    /// Redrawing restarts from the base pixels, so moving the line never accumulates.
+    fn refresh_gradient(&mut self) -> Result<()> {
+        let Some(edit) = self.gradient_edit.clone() else {
+            return Ok(());
+        };
+        let mut doc = self.history.document.clone();
+        if edit.has_line() {
+            let layer = crate::gradient::fill_layer(
+                &edit,
+                &self.history.document,
+                self.history.pixel_selection.as_ref(),
+                &self.gradient_settings,
+                &self.color,
+                &self.background_color,
+            )?;
+            doc.replace(layer);
+        } else {
+            doc.replace(edit.base.clone());
+        }
+        self.history.preview(doc);
+        Ok(())
+    }
+    fn move_gradient(&mut self, mut at: Point, square: bool) -> Result<()> {
+        let (Some(edit), Some(handle)) = (&mut self.gradient_edit, self.gradient_handle) else {
+            return Ok(());
+        };
+        if !at.x.is_finite() || !at.y.is_finite() {
+            return Ok(());
+        }
+        // Shift snaps the line to eighths of a turn around the other end.
+        if square {
+            let anchor = match handle {
+                crate::gradient::GradientHandle::Start => edit.end,
+                crate::gradient::GradientHandle::End => edit.start,
+            };
+            at = crate::shape::snap_line_end(anchor, at);
+        }
+        match handle {
+            crate::gradient::GradientHandle::Start => edit.start = at,
+            crate::gradient::GradientHandle::End => edit.end = at,
+        }
+        self.refresh_gradient()
+    }
+    /// Ends a drag; a click without a line leaves nothing pending.
+    fn end_gradient_drag(&mut self) {
+        self.gradient_handle = None;
+        if self
+            .gradient_edit
+            .as_ref()
+            .is_none_or(|edit| !edit.has_line())
+        {
+            self.cancel_gradient();
+        }
+    }
+    /// Document without the pending gradient preview, for save and export: the
+    /// preview must not leak into committed files or history until Apply.
+    pub fn gradient_base_document(&self) -> Option<Document> {
+        let edit = self.gradient_edit.as_ref()?;
+        let mut doc = self.history.document.clone();
+        doc.replace(edit.base.clone());
+        Some(doc)
+    }
+    fn cancel_gradient(&mut self) {
+        if self.gradient_edit.is_none() {
+            return;
+        }
+        self.gradient_edit = None;
+        self.gradient_handle = None;
+        let selection = self.history.cancel();
+        self.restore_selection(selection);
+    }
+    /// redrawShape at commit: scaled shape layers redraw at full displayed size
+    /// as part of the committing edit, preserving document-pixel radius/width
+    /// and mask footprints. Draft previews keep original geometry and rely on
+    /// the bounded renderer preview instead. Shared hook for the group
+    /// transform work at final integration.
+    fn redraw_committed_shapes(&mut self) {
+        // One in-place pass; only scaled shape layers clone (Arc contents shared),
+        // untouched layers are never touched.
+        let mut baked_version = false;
+        {
+            let layers = &mut self.history.document.layers;
+            let mut index = 0;
+            while index < layers.len() {
+                let eligible = matches!(layers[index].content.as_ref(), Content::Shape { .. })
+                    && ((layers[index].width as f64 * layers[index].scale_x).round()
+                        != layers[index].width as f64
+                        || (layers[index].height as f64 * layers[index].scale_y).round()
+                            != layers[index].height as f64
+                        || layers[index].scale_x != 1.
+                        || layers[index].scale_y != 1.);
+                if eligible {
+                    let current = layers[index].clone();
+                    let baked_strokes = current
+                        .mask
+                        .as_ref()
+                        .is_some_and(|mask| !mask.strokes.is_empty());
+                    if let Some(redrawn) = crate::shape::redraw_at_displayed_size(&current) {
+                        baked_version |= baked_strokes
+                            && redrawn
+                                .mask
+                                .as_ref()
+                                .is_some_and(|mask| mask.strokes.is_empty());
+                        layers[index] = redrawn;
+                    }
+                }
+                index += 1;
+            }
+        }
+        if baked_version {
+            self.history.document.version = 2;
+        }
+    }
+    fn commit_gradient(&mut self) -> Result<()> {
+        let Some(edit) = self.gradient_edit.clone() else {
+            return Ok(());
+        };
+        if !edit.has_line() {
+            self.cancel_gradient();
+            return Ok(());
+        }
+        let layer = crate::gradient::fill_layer(
+            &edit,
+            &self.history.document,
+            self.history.pixel_selection.as_ref(),
+            &self.gradient_settings,
+            &self.color,
+            &self.background_color,
+        )?;
+        let mut doc = self.history.document.clone();
+        if edit.mask {
+            doc.version = 2;
+        }
+        doc.replace(layer);
+        self.history.preview(doc);
+        self.gradient_edit = None;
+        self.gradient_handle = None;
+        self.end_edit();
+        Ok(())
+    }
+    /// Switching tools, layers, or targets applies the pending gradient, as in Photoshop.
+    fn resolve_gradient(&mut self) -> Result<()> {
+        if self.gradient_edit.is_some() {
+            self.commit_gradient()?;
+        }
+        Ok(())
+    }
     pub fn command(&mut self, command: Command) -> Result<()> {
         if self.layer_polish_command(&command)? {
             return Ok(());
@@ -1281,7 +1628,10 @@ impl Editor {
         if let Command::TypeOpacityDigit { digit } = command {
             ensure!(digit <= 9, "Invalid opacity digit");
             if !matches!(self.gesture, Some(Gesture::Brush { .. }))
-                && matches!(self.tool, Tool::Move | Tool::Brush | Tool::Eraser)
+                && matches!(
+                    self.tool,
+                    Tool::Move | Tool::Brush | Tool::Eraser | Tool::Gradient
+                )
             {
                 let now = std::time::Instant::now();
                 let percent = if let Some((previous, time)) = self.pending_opacity_digit
@@ -1296,6 +1646,10 @@ impl Editor {
                 let opacity = percent as f64 / 100.;
                 if matches!(self.tool, Tool::Brush | Tool::Eraser) {
                     self.brush_opacity = opacity;
+                } else if self.tool == Tool::Gradient {
+                    // Gradient.typeOpacityDigit: digits drive the gradient opacity.
+                    self.gradient_settings.opacity = opacity;
+                    self.refresh_gradient()?;
                 } else {
                     let mut doc = self.history.document.clone();
                     for layer in &mut doc.layers {
@@ -1402,6 +1756,45 @@ impl Editor {
             )
         {
             self.commit_transform()?;
+        }
+        // A pending gradient previews inside its own history transaction. Any other
+        // edit commits it first (Gradient.resolveGradient); palette and navigation
+        // commands only refresh the preview or leave it alone.
+        if self.gradient_edit.is_some()
+            && !matches!(
+                &command,
+                Command::Pointer { .. }
+                    | Command::SetGradientShape { .. }
+                    | Command::SetGradientStyle { .. }
+                    | Command::SetGradientReverse { .. }
+                    | Command::SetGradientOpacity { .. }
+                    | Command::CommitGradient
+                    | Command::CancelGradient
+                    | Command::FinishGesture
+                    | Command::CancelGesture
+                    | Command::Undo
+                    | Command::Redo
+                    | Command::Select { .. }
+                    | Command::SetTool { .. }
+                    | Command::SetPaintTarget { .. }
+                    | Command::BeginTransform
+                    | Command::SetColor { .. }
+                    | Command::SetSampledForeground { .. }
+                    | Command::SwapPaletteColors
+                    | Command::ResetPaletteColors
+                    | Command::SetBrush { .. }
+                    | Command::SetBrushTip { .. }
+                    | Command::TypeOpacityDigit { .. }
+                    | Command::StepBrushHardness { .. }
+                    | Command::Zoom { .. }
+                    | Command::Pan { .. }
+                    | Command::SetViewport { .. }
+                    | Command::ResizeViewport { .. }
+                    | Command::SetDisplayScale { .. }
+                    | Command::Fit
+            )
+        {
+            self.resolve_gradient()?;
         }
         match command {
             Command::BeginDistort => {
@@ -1552,6 +1945,7 @@ impl Editor {
             Command::CancelAdjustmentEdit => self.cancel_adjustment_edit(),
             Command::CommitAdjustmentEdit => self.commit_adjustment_edit()?,
             Command::BeginTransform => {
+                self.resolve_gradient()?;
                 if self.floating.is_none()
                     && !self.layer_transform
                     && !self.begin_selection_transform(false, true)?
@@ -1630,6 +2024,10 @@ impl Editor {
             }
             Command::SetTool { tool } => {
                 self.cancel_polygon();
+                // Switching tools applies the pending gradient, as in Photoshop.
+                if tool != self.tool {
+                    self.resolve_gradient()?;
+                }
                 if matches!(self.gesture, Some(Gesture::Shape { .. })) {
                     self.cancel_gesture();
                 } else {
@@ -1695,6 +2093,7 @@ impl Editor {
                 );
                 self.brush_size = size;
                 self.brush_opacity = opacity;
+                self.refresh_gradient()?;
             }
             Command::SetBrushTip {
                 hardness,
@@ -1706,7 +2105,45 @@ impl Editor {
                 );
                 self.brush_hardness = hardness;
                 self.brush_smoothing = smoothing;
+                self.refresh_gradient()?;
             }
+            Command::SetShapeCornerRadius { radius } => {
+                ensure!(
+                    radius.is_finite(),
+                    "Enter a corner radius between 0 and 5000 pixels"
+                );
+                self.shape_corner_radius = radius.clamp(0., 5000.);
+            }
+            Command::SetShapeLineWidth { width } => {
+                ensure!(
+                    width.is_finite(),
+                    "Enter a line width between 1 and 5000 pixels"
+                );
+                self.shape_line_width = width.clamp(1., 5000.);
+            }
+            Command::CycleShapeKind => self.cycle_shape_kind(),
+            Command::SetGradientShape { shape } => {
+                self.gradient_settings.shape = shape;
+                self.refresh_gradient()?;
+            }
+            Command::SetGradientStyle { style } => {
+                self.gradient_settings.style = style;
+                self.refresh_gradient()?;
+            }
+            Command::SetGradientReverse { reversed } => {
+                self.gradient_settings.reversed = reversed;
+                self.refresh_gradient()?;
+            }
+            Command::SetGradientOpacity { opacity } => {
+                ensure!(
+                    opacity.is_finite() && (0.01..=1.).contains(&opacity),
+                    "Gradient opacity must be between 1% and 100%"
+                );
+                self.gradient_settings.opacity = opacity;
+                self.refresh_gradient()?;
+            }
+            Command::CommitGradient => self.commit_gradient()?,
+            Command::CancelGradient => self.cancel_gradient(),
             Command::UpdateLayer { patch } if text_property => {
                 let content: Content = serde_json::from_value(patch["content"].clone())?;
                 let Content::Text {
@@ -2432,6 +2869,10 @@ impl Editor {
             }
             Command::SetPaintTarget { target } => {
                 self.finish_gesture()?;
+                // Switching targets applies the pending gradient, as in Photoshop.
+                if target != self.paint_target {
+                    self.resolve_gradient()?;
+                };
                 if target == PaintTarget::Content
                     || (self.selection.ids.len() == 1
                         && self.selected().and_then(|l| l.mask.as_ref()).is_some())
@@ -2513,6 +2954,7 @@ impl Editor {
                 if self.adjustment_edit.is_some() {
                     self.cancel_adjustment_edit();
                 }
+                self.cancel_gradient();
                 if self.floating.is_some() || self.layer_transform {
                     self.cancel_transform();
                     return Ok(());
@@ -2527,6 +2969,7 @@ impl Editor {
                 if self.adjustment_edit.is_some() {
                     self.cancel_adjustment_edit();
                 }
+                self.cancel_gradient();
                 if self.floating.is_some() || self.layer_transform {
                     self.cancel_transform();
                     return Ok(());
@@ -2544,7 +2987,13 @@ impl Editor {
                     self.finish_gesture()?;
                 }
             }
-            Command::CancelGesture => self.cancel_gesture(),
+            Command::CancelGesture => {
+                if self.gradient_edit.is_some() {
+                    self.cancel_gradient();
+                } else {
+                    self.cancel_gesture();
+                }
+            }
             Command::Pointer { samples } => {
                 ensure!(samples.len() <= 4096, "Too many pointer samples");
                 for sample in samples {
@@ -2566,6 +3015,10 @@ impl Editor {
             modifiers,
         } = sample;
         if phase == Phase::Cancel {
+            if self.tool == Tool::Gradient && self.gradient_handle.is_some() {
+                self.end_gradient_drag();
+                return Ok(());
+            }
             self.cancel_gesture();
             return Ok(());
         }
@@ -2911,33 +3364,51 @@ impl Editor {
             {
                 return Ok(());
             }
-            if matches!(self.tool, Tool::Rectangle | Tool::Ellipse) {
+            if matches!(self.tool, Tool::Rectangle | Tool::Ellipse | Tool::Line) {
                 if self.history.document.layers.len() >= crate::model::MAX_LAYERS {
                     return Ok(());
                 }
-                let ellipse = self.tool == Tool::Ellipse;
+                // ShapeTool.beginShape: the anchor snaps to whole document pixels; a
+                // rectangle takes the current radius, other shapes take none.
+                let anchor = Point::new(p.x.round(), p.y.round());
+                let kind = self.shape_kind();
+                let label = match kind {
+                    Shape::Rectangle => "Rectangle",
+                    Shape::Ellipse => "Ellipse",
+                    Shape::Line => "Line",
+                };
                 let mut l = Layer::new(
-                    if ellipse { "Ellipse" } else { "Rectangle" },
+                    &self.next_shape_name(label),
                     1,
                     1,
                     Content::Shape {
-                        shape: if ellipse {
-                            Shape::Ellipse
-                        } else {
-                            Shape::Rectangle
-                        },
+                        shape: kind,
                         color: self.color.clone(),
+                        corner_radius: if kind == Shape::Rectangle {
+                            self.shape_corner_radius
+                        } else {
+                            0.
+                        },
+                        line_width: (kind == Shape::Line).then_some(self.shape_line_width),
+                        line_start: None,
+                        line_end: None,
                     },
                 );
-                l.x = p.x;
-                l.y = p.y;
+                l.x = anchor.x;
+                l.y = anchor.y;
                 self.begin_edit("Draw shape");
                 self.history.preview(self.inserted(vec![l.clone()]));
                 self.single_selection(Some(l.id.clone()));
                 self.gesture = Some(Gesture::Shape {
-                    origin: p,
+                    origin: anchor,
                     layer: l,
                 });
+                return Ok(());
+            }
+            if self.tool == Tool::Gradient {
+                // EditorCanvas.beginGradientDrag: grabbing an endpoint moves it, else a
+                // new line starts. Shift snapping applies while dragging, not here.
+                self.begin_gradient_drag(p)?;
                 return Ok(());
             }
             if matches!(self.tool, Tool::Brush | Tool::Eraser) {
@@ -3040,6 +3511,16 @@ impl Editor {
             } else {
                 return Ok(());
             }
+        }
+        // The gradient drag is not a Gesture: the line stays pending after release,
+        // with Apply/Cancel in the header, until it is committed or cancelled.
+        if self.tool == Tool::Gradient && self.gradient_handle.is_some() {
+            match phase {
+                Phase::Move => self.move_gradient(p, modifiers.shift)?,
+                Phase::Up | Phase::Cancel => self.end_gradient_drag(),
+                Phase::Down => {}
+            }
+            return Ok(());
         }
         let Some(mut gesture) = self.gesture.take() else {
             return Ok(());
@@ -3181,26 +3662,86 @@ impl Editor {
                 }
             }
             Gesture::Shape { origin, layer } => {
-                let Some(bounds) =
-                    crate::shape::drag_box(*origin, p, modifiers.shift, modifiers.alt)
-                else {
-                    if phase == Phase::Up {
-                        self.cancel_gesture();
-                    } else {
-                        self.gesture = Some(gesture);
+                let line = matches!(
+                    layer.content.as_ref(),
+                    Content::Shape {
+                        shape: Shape::Line,
+                        ..
                     }
-                    return Ok(());
-                };
-                let mut l = layer.clone();
-                l.x = bounds.x;
-                l.y = bounds.y;
-                l.width = bounds.width as u32;
-                l.height = bounds.height as u32;
-                if let Err(error) = dimensions(l.width, l.height) {
-                    self.cancel_gesture();
-                    return Err(error);
+                );
+                if line {
+                    // ShapeTool.dragShape's line branch: Shift snaps the angle to
+                    // eighths of a turn rather than squaring a box.
+                    let mut end = p;
+                    if modifiers.shift {
+                        end = crate::shape::snap_line_end(*origin, p);
+                    }
+                    // A click without a drag makes nothing, as for other shapes.
+                    if (end.x - origin.x).abs() < 1. && (end.y - origin.y).abs() < 1. {
+                        if phase == Phase::Up {
+                            self.cancel_gesture();
+                        } else {
+                            self.gesture = Some(gesture);
+                        }
+                        return Ok(());
+                    }
+                    let thickness = match layer.content.as_ref() {
+                        Content::Shape { line_width, .. } => line_width.unwrap_or(4.),
+                        _ => 4.,
+                    };
+                    // The layer is the dragged box with room for the stroke's own
+                    // thickness around it; the ends stay fractional so a scaled line
+                    // still runs between the same two places.
+                    let bounds = crate::shape::line_box(*origin, end, thickness, modifiers.alt);
+                    let (x0, y0) = (bounds.x.floor(), bounds.y.floor());
+                    let (x1, y1) = (
+                        (bounds.x + bounds.width).ceil(),
+                        (bounds.y + bounds.height).ceil(),
+                    );
+                    let mut l = layer.clone();
+                    l.x = x0;
+                    l.y = y0;
+                    l.width = (x1 - x0).max(1.) as u32;
+                    l.height = (y1 - y0).max(1.) as u32;
+                    if let Err(error) = dimensions(l.width, l.height) {
+                        self.cancel_gesture();
+                        return Err(error);
+                    }
+                    let unit = |point: Point| {
+                        Point::new((point.x - x0) / (x1 - x0), (point.y - y0) / (y1 - y0))
+                    };
+                    if let Content::Shape {
+                        line_start,
+                        line_end,
+                        ..
+                    } = Arc::make_mut(&mut l.content)
+                    {
+                        *line_start = Some(unit(*origin));
+                        *line_end = Some(unit(end));
+                    }
+                    self.history.preview(self.with_layers(vec![l]));
+                } else {
+                    let Some(bounds) =
+                        crate::shape::drag_box(*origin, p, modifiers.shift, modifiers.alt)
+                    else {
+                        if phase == Phase::Up {
+                            self.cancel_gesture();
+                        } else {
+                            self.gesture = Some(gesture);
+                        }
+                        return Ok(());
+                    };
+                    let mut l = layer.clone();
+                    l.x = bounds.x;
+                    l.y = bounds.y;
+                    l.width = bounds.width as u32;
+                    l.height = bounds.height as u32;
+                    if let Err(error) = dimensions(l.width, l.height) {
+                        self.cancel_gesture();
+                        return Err(error);
+                    }
+                    self.history.preview(self.with_layers(vec![l]));
                 }
-                self.history.preview(self.with_layers(vec![l]));
             }
             Gesture::Brush { stroke } => {
                 let update = (|| -> Result<Layer> {

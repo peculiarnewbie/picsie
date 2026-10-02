@@ -14,10 +14,7 @@ fn layer(w: u32, h: u32, color: &str) -> Layer {
         "Color",
         w,
         h,
-        Content::Shape {
-            shape: Shape::Rectangle,
-            color: color.into(),
-        },
+        Content::shape(Shape::Rectangle, color.into()),
     )
 }
 fn editor() -> Editor {
