@@ -623,3 +623,27 @@ Pinned GIMP `app/display/gimpdisplayshell-scroll.c` and `gimpdisplayshell-scale.
 were inspected as secondary performance references: retained viewport pixels and
 cached scale values explain why navigation need not revisit all layer data.
 No GIMP implementation was copied or translated. GIMP's UX is not adopted.
+
+## Levels and Curves adjustment layers (2026-10-02)
+
+Pinned sources remain `609dbeae2ef68ef4fc82d67e4981a49852eb6e13`, MIT
+© 2026 Wonder Assembly LLC:
+
+| Local implementation | Compositor source | Adaptation |
+| --- | --- | --- |
+| `adjustment.rs` | `Document/LayerAdjustment.swift`, `Document/Levels.swift`, `Document/LevelsAutomatic.swift`, `Document/Curves.swift`, `Rendering/LevelsPixels.c`, `Rendering/BrushPixels.c` | Levels channels/ranges/normalization, RGB-mean alpha-weighted histogram, display-scale capping, auto contrast/color/neutral, eyedropper calibration and Hermite curves are translated. Only Levels/Curves kinds exist; the C kernels are exact integer ports over premultiplied RGBA, including soft-alpha rounding. Legacy `hue/saturation/lightness/colorize` scalars serialize so Compositor still decodes our packages. |
+| `editor/adjustments.rs`, `model.rs`, `layer_index.rs` | `Document/AdjustmentEditing.swift`, `Document/LayerAdjustment.swift::addAdjustment`, `Document/LiveLayerMask.swift::LiveMaskGraph` | Adjustment layers are document-sized Paint layers with validated settings; live-mask sources can never be adjustments while clipped adjustments stay valid targets. Add/reopen share one undo transaction per edit with live preview, preview toggle, cancel and commit; sampling re-renders the live composite below instead of a frozen source image. |
+| `render/projection.rs`, `render/composite.rs` | `Rendering/LiveMaskRenderer.swift::drawComposite/adjust`, `Rendering/AdjustmentSurface.swift`, `Rendering/EditorCanvas.swift::drawLayers` | Sourceless adjustments remap the accumulated composite in stack order; clipped adjustments compose inside their base's shared-alpha stack (unpremultiply, recolor, restore alpha once) before the base blend. Non-normal blends run on opaque colors with alpha restored. Identity/normal adjustments are exact no-ops. Retained chunk checkpoints are bypassed once per frame while adjustments are present; other documents keep the optimized path. |
+| `comp.rs`, `files.rs` | `IO/ProjectStore.swift::validate/save` | Version-7+ Levels/Curves records round-trip with masks, clipping links, opacity and blend modes; every other live adjustment/shape/effect record is still rejected explicitly. `.picsie` JSON carries the same settings with old projects decoding to no adjustment. |
+| `picsie-desktop/src/ui/adjustments.rs` | `UI/LevelsSheet.swift`, `UI/CurvesControls.swift` | Modeless 440pt floating panel (draggable title, Escape cancels, Enter applies): 150pt histogram with draggable input black/gamma/white handles using the source log formula, output ramp with output handles, numeric fields, channel picker, Black/Gray/White canvas eyedroppers, Contrast/Color/Neutral auto, Reset, Preview toggle and Cancel/Apply. Curves keeps the 260pt graph with click-add, neighbor-clamped drag, interior-only removal and channel-switch selection reset. Upstream slider-track dragging is not ported. |
+
+`crates/picsie-core/tests/adjustments.rs` translates the input-clipping, gamma,
+output-inversion, alpha, channel-order, histogram, display-scale, auto and
+sampling scenarios from `LevelsTests.swift`; the global/clipped/opacity/mask,
+blend-with-alpha-restoration, persistence, duplication and undo scenarios from
+`AdjustmentLayerTests.swift`; and the settings-shape scenario from
+`ImageAdjustmentTests.swift`. Separately labeled local fixtures cover soft-alpha
+preservation on transparency, stacked/double adjustments, non-normal base blends,
+folder stack-position boundaries, merge baking, export equality and reopened
+editing. Destructive image-menu Levels/Curves editing, HSV and all other
+adjustment kinds remain unported gaps. The Swift/AppKit suite was not executed.

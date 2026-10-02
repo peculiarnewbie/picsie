@@ -81,6 +81,11 @@ pub fn release_detached(doc: &mut Document) {
     let mut bases: HashMap<Option<String>, Option<String>> = HashMap::new();
     for layer in &mut doc.layers {
         let base = bases.entry(layer.parent_id.clone()).or_default();
+        // Adjustments never anchor a clipping stack (see prepareStacks), so a
+        // passing adjustment neither disturbs the chain nor becomes its base.
+        if layer.adjustment.is_some() {
+            continue;
+        }
         if let Some(source) = &layer.mask_source_id {
             if Some(source) != base.as_ref() {
                 layer.mask_source_id = None;

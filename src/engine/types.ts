@@ -136,6 +136,7 @@ export type Layer = {
   brightness: number;
   saturation: number;
   blur: number;
+  adjustment?: LayerAdjustment;
   content: Content;
   textLayout?: TextLayout;
   mask?: LayerMask;
@@ -213,6 +214,35 @@ export type LayerRow = {
 export type SelectionBounds = { x: number; y: number; width: number; height: number };
 export type MarqueeKind = "rectangle" | "ellipse";
 export type PixelSelectionMode = "replace" | "add" | "subtract";
+export type AdjustmentKind = "Levels" | "Curves";
+export type LevelsChannel = "RGB" | "Red" | "Green" | "Blue";
+export type LevelRange = {
+  black: number;
+  gamma: number;
+  white: number;
+  outputBlack: number;
+  outputWhite: number;
+};
+export type LevelsSettings = {
+  channel: LevelsChannel;
+  ranges: [LevelRange, LevelRange, LevelRange, LevelRange];
+};
+export type LevelsSample = "black" | "gray" | "white";
+export type LevelsAuto = "contrast" | "color" | "neutral";
+export type CurvePoint = { x: number; y: number };
+export type CurvesSettings = {
+  channel: LevelsChannel;
+  channels: [Array<CurvePoint>, Array<CurvePoint>, Array<CurvePoint>, Array<CurvePoint>];
+};
+export type LayerAdjustment = {
+  kind: AdjustmentKind;
+  hue: number;
+  saturation: number;
+  lightness: number;
+  colorize: boolean;
+  levels: LevelsSettings;
+  curves: CurvesSettings;
+};
 export type Command =
   | { type: "setSelectionAntialiased"; antialiased: boolean }
   | { type: "setTransformRatio"; locked: boolean }
@@ -271,6 +301,16 @@ export type Command =
   | { type: "duplicate" }
   | { type: "layerViaCopy" }
   | { type: "mergeLayers" }
+  | { type: "addAdjustment"; kind: AdjustmentKind }
+  | { type: "beginAdjustmentEdit"; id: string }
+  | { type: "updateAdjustmentLevels"; settings: LevelsSettings; preview: boolean }
+  | { type: "updateAdjustmentCurves"; settings: CurvesSettings; preview: boolean }
+  | { type: "setAdjustmentPreview"; preview: boolean }
+  | { type: "autoLevels"; mode: LevelsAuto }
+  | { type: "sampleLevels"; point: Point; mode: LevelsSample }
+  | { type: "setLevelsSampleMode"; mode: LevelsSample | null }
+  | { type: "cancelAdjustmentEdit" }
+  | { type: "commitAdjustmentEdit" }
   | { type: "beginTransform" }
   | { type: "commitTransform" }
   | { type: "cancelTransform" }

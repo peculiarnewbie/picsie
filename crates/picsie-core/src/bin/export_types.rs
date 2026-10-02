@@ -123,6 +123,15 @@ fn main() {
         picsie_core::pixel_selection::SelectionBounds,
         picsie_core::pixel_selection::MarqueeKind,
         picsie_core::pixel_selection::PixelSelectionMode,
+        picsie_core::adjustment::AdjustmentKind,
+        picsie_core::adjustment::LevelsChannel,
+        picsie_core::adjustment::LevelRange,
+        picsie_core::adjustment::LevelsSettings,
+        picsie_core::adjustment::LevelsSample,
+        picsie_core::adjustment::LevelsAuto,
+        picsie_core::adjustment::CurvePoint,
+        picsie_core::adjustment::CurvesSettings,
+        picsie_core::adjustment::LayerAdjustment,
         Command,
         EditorState
     );

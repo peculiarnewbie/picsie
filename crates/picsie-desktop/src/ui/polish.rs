@@ -248,6 +248,8 @@ fn numeric_limits(key: &str) -> Option<(f64, f64)> {
         "transform-scale" => (1., 10000.),
         "feather" => (1., 250.),
         "wand-tolerance" | "color-r" | "color-g" | "color-b" => (0., 255.),
+        "levels-black" | "levels-white" | "levels-out-black" | "levels-out-white" => (0., 255.),
+        "levels-gamma" => (0.1, 9.99),
         _ => return None,
     })
 }

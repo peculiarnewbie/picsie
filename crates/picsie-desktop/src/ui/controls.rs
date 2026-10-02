@@ -44,6 +44,11 @@ pub const FIELD_KEYS: &[&str] = &[
     "image-height",
     "image-resolution",
     "wand-tolerance",
+    "levels-black",
+    "levels-gamma",
+    "levels-white",
+    "levels-out-black",
+    "levels-out-white",
 ];
 pub const BLENDS: &[(&str, &str)] = &[
     ("source-over", "Normal"),
@@ -648,6 +653,53 @@ impl Desktop {
                 }
             }
         }
+        if let Some(edit) = state.adjustment_edit.as_ref() {
+            let channel = match edit.kind {
+                picsie_core::adjustment::AdjustmentKind::Levels => edit.levels.channel,
+                picsie_core::adjustment::AdjustmentKind::Curves => edit.curves.channel,
+            };
+            let channel_name = match channel {
+                picsie_core::adjustment::LevelsChannel::Rgb => "rgb",
+                picsie_core::adjustment::LevelsChannel::Red => "red",
+                picsie_core::adjustment::LevelsChannel::Green => "green",
+                picsie_core::adjustment::LevelsChannel::Blue => "blue",
+            };
+            let panel = (edit.layer_id.clone(), channel_name.to_owned());
+            if self.adjustment_panel.as_ref() != Some(&panel) {
+                self.adjustment_panel = Some(panel);
+                self.curves_drag = None;
+                self.curves_selected = None;
+                self.curves_working = None;
+                self.levels_drag = None;
+            }
+            self.sync_select("levels-channel", channel_name, window, cx);
+            self.sync_select("curves-channel", channel_name, window, cx);
+            let current = edit.levels.ranges[channel.index()];
+            for (key, value) in [
+                ("levels-black", current.black),
+                ("levels-gamma", current.gamma),
+                ("levels-white", current.white),
+                ("levels-out-black", current.output_black),
+                ("levels-out-white", current.output_white),
+            ] {
+                self.set_field(
+                    key,
+                    if key == "levels-gamma" {
+                        format!("{:.2}", value)
+                    } else {
+                        format!("{:.0}", value)
+                    },
+                    false,
+                    window,
+                    cx,
+                );
+            }
+        } else if self.adjustment_panel.take().is_some() {
+            self.curves_drag = None;
+            self.curves_selected = None;
+            self.curves_working = None;
+            self.levels_drag = None;
+        }
         let layer = &state.current_text;
         let layout = layer
             .text_layout
@@ -789,6 +841,38 @@ impl Desktop {
                         .clamp(1., if key == "feather" { 250. } else { 500. });
                     self.set_field(key, decimal(n), true, window, cx);
                 }
+                "levels-black" | "levels-white" | "levels-out-black" | "levels-out-white" => {
+                    let Some(edit) = self.state.as_ref().and_then(|s| s.adjustment_edit.clone())
+                    else {
+                        return Ok(());
+                    };
+                    let value = number(&value)?.round().clamp(0., 255.);
+                    let mut settings = edit.levels;
+                    let range = &mut settings.ranges[settings.channel.index()];
+                    match key {
+                        "levels-black" => range.black = value,
+                        "levels-white" => range.white = value,
+                        "levels-out-black" => range.output_black = value,
+                        _ => range.output_white = value,
+                    }
+                    self.send(Command::UpdateAdjustmentLevels {
+                        settings,
+                        preview: edit.preview,
+                    });
+                }
+                "levels-gamma" => {
+                    let Some(edit) = self.state.as_ref().and_then(|s| s.adjustment_edit.clone())
+                    else {
+                        return Ok(());
+                    };
+                    let value = number(&value)?.clamp(0.1, 9.99);
+                    let mut settings = edit.levels;
+                    settings.ranges[settings.channel.index()].gamma = value;
+                    self.send(Command::UpdateAdjustmentLevels {
+                        settings,
+                        preview: edit.preview,
+                    });
+                }
                 "wand-tolerance" => {
                     if let Some(state) = &self.state {
                         let mut settings = state.wand;
@@ -820,6 +904,36 @@ impl Desktop {
                 "nearest" => "Nearest", "smooth" => "Smooth", _ => "High",
             }})),
             "blend" => self.patch(json!({"blend":value})),
+            "levels-channel" => {
+                if let Some(edit) = self.state.as_ref().and_then(|s| s.adjustment_edit.clone()) {
+                    let mut settings = edit.levels;
+                    settings.channel = match value {
+                        "red" => picsie_core::adjustment::LevelsChannel::Red,
+                        "green" => picsie_core::adjustment::LevelsChannel::Green,
+                        "blue" => picsie_core::adjustment::LevelsChannel::Blue,
+                        _ => picsie_core::adjustment::LevelsChannel::Rgb,
+                    };
+                    self.send(Command::UpdateAdjustmentLevels {
+                        settings,
+                        preview: edit.preview,
+                    });
+                }
+            }
+            "curves-channel" => {
+                if let Some(edit) = self.state.as_ref().and_then(|s| s.adjustment_edit.clone()) {
+                    let mut settings = edit.curves;
+                    settings.channel = match value {
+                        "red" => picsie_core::adjustment::LevelsChannel::Red,
+                        "green" => picsie_core::adjustment::LevelsChannel::Green,
+                        "blue" => picsie_core::adjustment::LevelsChannel::Blue,
+                        _ => picsie_core::adjustment::LevelsChannel::Rgb,
+                    };
+                    self.send(Command::UpdateAdjustmentCurves {
+                        settings,
+                        preview: edit.preview,
+                    });
+                }
+            }
             "crop-ratio" => self.send(Command::SetCropRatio {
                 ratio: match value {
                     "original" => picsie_core::crop::CropRatio::Original,

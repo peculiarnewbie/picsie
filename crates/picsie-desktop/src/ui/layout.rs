@@ -6,6 +6,7 @@ use gpui_kit::component::{
     menu::{DropdownMenu, PopupMenu, PopupMenuItem},
     popover::Popover,
 };
+use picsie_core::adjustment::AdjustmentKind;
 impl Desktop {
     fn menu_item(
         &self,
@@ -623,14 +624,19 @@ impl Desktop {
                         "%",
                         locked,
                     )),
-            )
-            .child(
-                self.probe("layer-list", self.layer_list(state, cx))
-                    .flex_1()
-                    .min_h_0()
-                    .overflow_hidden()
-                    .w_full(),
             );
+        // Idle adjustment layers offer a reopen affordance; the open editor
+        // floats as a modeless panel over the canvas.
+        if let Some(section) = self.adjustment_section(state, cx) {
+            panel = panel.child(section);
+        }
+        panel = panel.child(
+            self.probe("layer-list", self.layer_list(state, cx))
+                .flex_1()
+                .min_h_0()
+                .overflow_hidden()
+                .w_full(),
+        );
         let entity = cx.entity();
         let props = entity.clone();
         let effects = entity;
@@ -709,29 +715,88 @@ impl Desktop {
                                     .tooltip("Adjustments"),
                             )
                             .content(move |_, _, cx| {
-                                effects.update(cx, |this, _| {
+                                effects.update(cx, |this, cx| {
+                                    let adjustment = this
+                                        .state
+                                        .as_ref()
+                                        .and_then(|s| s.selected())
+                                        .and_then(|l| l.adjustment);
                                     section("Adjustments")
                                         .w(px(330.))
+                                        .child(
+                                            row()
+                                                .child(
+                                                    this.probe(
+                                                        "add-levels",
+                                                        this.raw_button(
+                                                            "add-levels-button",
+                                                            "Levels",
+                                                            false,
+                                                            cx,
+                                                        )
+                                                        .on_click(cx.listener(
+                                                            |this, _, window, cx| {
+                                                                this.commit_active_fields(window, cx);
+                                                                this.open_palette = None;
+                                                                this.send(
+                                                                    Command::AddAdjustment {
+                                                                        kind: AdjustmentKind::Levels,
+                                                                    },
+                                                                );
+                                                                window.focus(&this.focus, cx);
+                                                                cx.notify();
+                                                            },
+                                                        )),
+                                                    ),
+                                                )
+                                                .child(
+                                                    this.probe(
+                                                        "add-curves",
+                                                        this.raw_button(
+                                                            "add-curves-button",
+                                                            "Curves",
+                                                            false,
+                                                            cx,
+                                                        )
+                                                        .on_click(cx.listener(
+                                                            |this, _, window, cx| {
+                                                                this.commit_active_fields(window, cx);
+                                                                this.open_palette = None;
+                                                                this.send(
+                                                                    Command::AddAdjustment {
+                                                                        kind: AdjustmentKind::Curves,
+                                                                    },
+                                                                );
+                                                                window.focus(&this.focus, cx);
+                                                                cx.notify();
+                                                            },
+                                                        )),
+                                                    ),
+                                                ),
+                                        )
+                                        .child(hint(
+                                            "Nondestructive layers. Other Compositor adjustments are not supported yet.",
+                                        ))
                                         .child(this.slider(
                                             "brightness",
                                             "Brightness",
                                             0.,
                                             "%",
-                                            false,
+                                            adjustment.is_some(),
                                         ))
                                         .child(this.slider(
                                             "saturation",
                                             "Saturation",
                                             0.,
                                             "%",
-                                            false,
+                                            adjustment.is_some(),
                                         ))
                                         .child(this.slider(
                                             "blur",
                                             "Gaussian blur",
                                             0.,
                                             "px",
-                                            false,
+                                            adjustment.is_some(),
                                         ))
                                 })
                             }),
@@ -890,6 +955,7 @@ impl Render for Desktop {
         self.probes.lock().unwrap().clear();
         let weak = cx.weak_entity();
         let modal = self.modal_view(cx);
+        let adjustment = self.adjustment_overlay(cx);
         menus::bind(div(), cx)
             .size_full()
             .flex()
@@ -931,6 +997,7 @@ impl Render for Desktop {
             )
             .child(self.footer(cx))
             .children(modal)
+            .children(adjustment)
             .child(
                 canvas(
                     |_, _, _| {},

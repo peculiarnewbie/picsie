@@ -7,6 +7,8 @@ pub mod publication;
 pub use group_transform::GroupOverlay;
 pub use interaction_polish::TransformField;
 mod group_transform;
+mod adjustments;
+pub use adjustments::AdjustmentEdit;
 mod placement;
 mod text;
 use crate::{
@@ -262,6 +264,35 @@ pub enum Command {
     Duplicate,
     LayerViaCopy,
     MergeLayers,
+    AddAdjustment {
+        kind: crate::adjustment::AdjustmentKind,
+    },
+    BeginAdjustmentEdit {
+        id: String,
+    },
+    UpdateAdjustmentLevels {
+        settings: crate::adjustment::LevelsSettings,
+        preview: bool,
+    },
+    UpdateAdjustmentCurves {
+        settings: crate::adjustment::CurvesSettings,
+        preview: bool,
+    },
+    SetAdjustmentPreview {
+        preview: bool,
+    },
+    AutoLevels {
+        mode: crate::adjustment::LevelsAuto,
+    },
+    SampleLevels {
+        point: Point,
+        mode: crate::adjustment::LevelsSample,
+    },
+    SetLevelsSampleMode {
+        mode: Option<crate::adjustment::LevelsSample>,
+    },
+    CancelAdjustmentEdit,
+    CommitAdjustmentEdit,
     BeginTransform,
     CommitTransform,
     CancelTransform,
@@ -500,6 +531,7 @@ pub struct Editor {
     polygon: Option<SelectionDraft>,
     polygon_cursor: Option<Point>,
     floating: Option<operations::Floating>,
+    pub adjustment_edit: Option<AdjustmentEdit>,
     layer_transform: bool,
     transform_pixel_size: Option<(f64, f64)>,
     group_transform: Option<group_transform::GroupState>,
@@ -581,6 +613,7 @@ impl Editor {
             polygon: None,
             polygon_cursor: None,
             floating: None,
+            adjustment_edit: None,
             layer_transform: false,
             transform_pixel_size: None,
             group_transform: None,
@@ -672,7 +705,8 @@ impl Editor {
                 .as_ref()
                 .is_none_or(|s| s.bounds.is_some())
             && self.selected().is_some_and(|l| {
-                !l.locked
+                l.adjustment.is_none()
+                    && !l.locked
                     && self.history.document.effective(l).0
                     && if self.paint_target == PaintTarget::Mask {
                         l.mask.as_ref().is_some_and(|m| m.enabled)
@@ -940,6 +974,16 @@ impl Editor {
                     .keys()
                     .all(|k| ["name", "visible", "locked", "opacity", "mask"].contains(&k.as_str())),
                 "Folders support only name, visibility, lock, and opacity"
+            );
+        }
+        if layer.adjustment.is_some() {
+            // Adjustment layers keep document geometry and prototype appearance;
+            // only identity, visibility, lock, opacity, blend and masks change.
+            ensure!(
+                patch.keys().all(|k| {
+                    ["name", "visible", "locked", "opacity", "blend", "mask"].contains(&k.as_str())
+                }),
+                "Adjustment layers support only name, visibility, lock, opacity, blend, and mask"
             );
         }
         // Property validation never serializes image bytes or brush point arrays on the UI thread.
@@ -1361,6 +1405,11 @@ impl Editor {
         }
         match command {
             Command::BeginDistort => {
+                if self.selected().is_some_and(|l| l.adjustment.is_some())
+                    && self.independent_mask_layer().is_none()
+                {
+                    return Ok(());
+                }
                 if self.independent_mask_layer().is_some() {
                     self.begin_mask_distortion()?;
                 } else {
@@ -1378,6 +1427,13 @@ impl Editor {
             }
             Command::SetTransformRatio { locked } => self.locks_transform_ratio = locked,
             Command::SetTransformField { field, value } => {
+                if self
+                    .selected()
+                    .is_some_and(|l| l.adjustment.is_some() && !l.locked)
+                    && self.independent_mask_layer().is_none()
+                {
+                    return Ok(());
+                }
                 self.set_transform_field(field, value)?
             }
             Command::SelectLayerPixels => {
@@ -1481,6 +1537,20 @@ impl Editor {
             }
             Command::LayerViaCopy => self.layer_via_copy()?,
             Command::MergeLayers => self.merge_layers()?,
+            Command::AddAdjustment { kind } => self.add_adjustment(kind)?,
+            Command::BeginAdjustmentEdit { id } => self.begin_adjustment_edit(id)?,
+            Command::UpdateAdjustmentLevels { settings, preview } => {
+                self.update_adjustment_levels(settings, preview)?
+            }
+            Command::UpdateAdjustmentCurves { settings, preview } => {
+                self.update_adjustment_curves(settings, preview)?
+            }
+            Command::SetAdjustmentPreview { preview } => self.set_adjustment_preview(preview)?,
+            Command::AutoLevels { mode } => self.auto_levels(mode)?,
+            Command::SampleLevels { point, mode } => self.sample_levels(point, mode)?,
+            Command::SetLevelsSampleMode { mode } => self.set_levels_sample_mode(mode),
+            Command::CancelAdjustmentEdit => self.cancel_adjustment_edit(),
+            Command::CommitAdjustmentEdit => self.commit_adjustment_edit()?,
             Command::BeginTransform => {
                 if self.floating.is_none()
                     && !self.layer_transform
@@ -1490,6 +1560,8 @@ impl Editor {
                     } else if self.selection.ids.len() == 1
                         && self.selected().is_some_and(|l| {
                             !l.locked
+                                && (l.adjustment.is_none()
+                                    || self.independent_mask_layer().is_some())
                                 && (!matches!(l.content.as_ref(), Content::Group)
                                     || self.independent_mask_layer().is_some())
                         })
@@ -1910,7 +1982,13 @@ impl Editor {
                             .as_ref()
                             .is_some_and(|id| removing.contains(id))
                     {
-                        *layer = renderer.bake_live_mask(&self.history.document, layer)?;
+                        // Clipped adjustments hold no pixels to bake; their link
+                        // is released while pixel layers take the Bake path.
+                        if layer.adjustment.is_some() {
+                            layer.mask_source_id = None;
+                        } else {
+                            *layer = renderer.bake_live_mask(&self.history.document, layer)?;
+                        }
                     }
                 }
                 doc.layers.retain(|l| !removing.contains(&l.id));
@@ -2029,7 +2107,12 @@ impl Editor {
                     .document
                     .layers
                     .iter()
-                    .filter(|l| moving_ids.contains(&l.id) && !l.locked && l.visible)
+                    .filter(|l| {
+                        moving_ids.contains(&l.id)
+                            && !l.locked
+                            && l.visible
+                            && l.adjustment.is_none()
+                    })
                     .cloned()
                     .collect();
                 if !layers.is_empty() {
@@ -2427,6 +2510,9 @@ impl Editor {
                 }
             }
             Command::Undo => {
+                if self.adjustment_edit.is_some() {
+                    self.cancel_adjustment_edit();
+                }
                 if self.floating.is_some() || self.layer_transform {
                     self.cancel_transform();
                     return Ok(());
@@ -2438,6 +2524,9 @@ impl Editor {
                 self.restore_selection(s);
             }
             Command::Redo => {
+                if self.adjustment_edit.is_some() {
+                    self.cancel_adjustment_edit();
+                }
                 if self.floating.is_some() || self.layer_transform {
                     self.cancel_transform();
                     return Ok(());
@@ -2658,6 +2747,7 @@ impl Editor {
                 if self.selection.ids.len() == 1
                     && self.selected().is_some_and(|l| {
                         !l.locked
+                            && l.adjustment.is_none()
                             && !matches!(l.content.as_ref(), Content::Group | Content::Text { .. })
                     })
                 {
@@ -2804,7 +2894,11 @@ impl Editor {
                         layers: self
                             .selected_layers()
                             .into_iter()
-                            .filter(|l| !l.locked && self.history.document.effective(l).0)
+                            .filter(|l| {
+                                !l.locked
+                                    && l.adjustment.is_none()
+                                    && self.history.document.effective(l).0
+                            })
                             .collect(),
                     });
                 }

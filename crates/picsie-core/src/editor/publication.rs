@@ -17,6 +17,51 @@ use std::{
     sync::Arc,
 };
 
+#[derive(Clone, PartialEq, Deserialize, Serialize)]
+#[serde(rename_all = "camelCase")]
+pub struct AdjustmentEditInfo {
+    pub layer_id: String,
+    pub kind: crate::adjustment::AdjustmentKind,
+    pub levels: crate::adjustment::LevelsSettings,
+    pub curves: crate::adjustment::CurvesSettings,
+    pub preview: bool,
+    pub histogram: Vec<Vec<f64>>,
+    pub histogram_peak: Vec<f64>,
+    pub curve_samples: Vec<[f64; 2]>,
+    pub sample_mode: Option<crate::adjustment::LevelsSample>,
+}
+
+impl AdjustmentEditInfo {
+    fn of(edit: &crate::editor::AdjustmentEdit) -> Self {
+        let histogram_peak = edit
+            .histogram
+            .iter()
+            .map(|bins| crate::adjustment::histogram_display_scale(bins))
+            .collect();
+        // Engine-evaluated curve polyline for the working channel, so the UI
+        // draws presentation geometry without reimplementing Hermite math.
+        let mut curve_samples = Vec::new();
+        if edit.working.kind == crate::adjustment::AdjustmentKind::Curves {
+            let channel = edit.working.curves.channel.index();
+            for i in 0..=64 {
+                let x = i as f64 * 255. / 64.;
+                curve_samples.push([x, edit.working.curves.value(x, channel)]);
+            }
+        }
+        Self {
+            layer_id: edit.layer_id.clone(),
+            kind: edit.working.kind,
+            levels: edit.working.levels.clone(),
+            curves: edit.working.curves.clone(),
+            preview: edit.preview,
+            histogram: edit.histogram.iter().map(|bins| bins.to_vec()).collect(),
+            histogram_peak,
+            curve_samples,
+            sample_mode: edit.sample_mode,
+        }
+    }
+}
+
 #[derive(Clone, Deserialize, Serialize)]
 #[serde(rename_all = "camelCase")]
 pub struct Snapshot {
@@ -77,6 +122,7 @@ pub struct Snapshot {
     pub can_copy_pixels: bool,
     pub layer_rows: Arc<Vec<Row>>,
     pub mask_source_ids: Arc<Vec<String>>,
+    pub adjustment_edit: Option<AdjustmentEditInfo>,
     pub can_edit_pixels: bool,
     pub can_toggle_clipping: bool,
     pub has_pixel_selection: bool,
@@ -149,6 +195,7 @@ pub struct LayerInfo {
     pub sampling: crate::model::Sampling,
     pub parent_id: Option<String>,
     pub mask_source_id: Option<String>,
+    pub adjustment: Option<crate::adjustment::AdjustmentKind>,
     pub content: Value,
     pub text_layout: Option<crate::text::TextLayout>,
     pub mask: Option<Value>,
@@ -191,6 +238,7 @@ impl LayerInfo {
             sampling: layer.sampling,
             parent_id: layer.parent_id.clone(),
             mask_source_id: layer.mask_source_id.clone(),
+            adjustment: layer.adjustment.as_ref().map(|a| a.kind),
             content,
             text_layout: layer.text_layout.clone(),
             mask,
@@ -260,6 +308,7 @@ impl Snapshot {
             && self.transform_target == other.transform_target
             && self.group_box == other.group_box
             && self.transform_scale_percent == other.transform_scale_percent
+            && self.adjustment_edit == other.adjustment_edit
             && Arc::ptr_eq(&self.mask_source_ids, &other.mask_source_ids)
     }
 }
@@ -443,6 +492,7 @@ impl SnapshotPublisher {
             can_copy_pixels: editor.can_copy_pixels(),
             layer_rows: self.rows.clone(),
             mask_source_ids: self.mask_sources.clone(),
+            adjustment_edit: editor.adjustment_edit.as_ref().map(AdjustmentEditInfo::of),
             can_edit_pixels: editor.can_edit_pixels(),
             can_toggle_clipping: self.target_can_toggle_clipping && editor.selection.ids.len() == 1,
             has_pixel_selection: selection.is_some(),

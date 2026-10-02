@@ -438,6 +438,11 @@ impl Renderer {
         mode: Blend,
         opacity: f64,
     ) -> Result<()> {
+        // Adjustment layers carry no pixels of their own; the projection draws
+        // them by remapping the composite beneath instead.
+        if l.adjustment.is_some() {
+            return Ok(());
+        }
         let mut p = Paint::default();
         p.set_anti_alias(true)
             .set_alpha((opacity * 255.).round() as u8)
@@ -784,6 +789,9 @@ impl Renderer {
                 selection.contains(&l.id)
                     && l.visible
                     && !matches!(l.content.as_ref(), Content::Group)
+                    // Sourceless adjustments own no placeable pixels; their row
+                    // selection still shows. Mask targeting keeps its outline.
+                    && (mask_id == Some(l.id.as_str()) || l.adjustment.is_none())
             })
             .collect();
         let map = |p: Point| Point::new(o.x + p.x * v.zoom, o.y + p.y * v.zoom);
@@ -1212,6 +1220,70 @@ pub fn rgba_pixels(image: &Image) -> Result<Vec<u8>> {
         "Cannot read native image"
     );
     Ok(pixels)
+}
+/// Premultiplied RGBA bytes for the adjustment kernels, which port
+/// `LevelsPixels.c` and `BrushPixels.c` step for step. This is a channel
+/// swizzle of the surface's native layout, not a color conversion.
+pub fn premul_pixels(image: &Image) -> Result<Vec<u8>> {
+    let info = sk::ImageInfo::new(
+        (image.width(), image.height()),
+        sk::ColorType::RGBA8888,
+        sk::AlphaType::Premul,
+        None,
+    );
+    let mut pixels = vec![0; image.width() as usize * image.height() as usize * 4];
+    ensure!(
+        image.read_pixels(
+            &info,
+            &mut pixels,
+            image.width() as usize * 4,
+            (0, 0),
+            sk::image::CachingHint::Disallow
+        ),
+        "Cannot read premultiplied image"
+    );
+    Ok(pixels)
+}
+pub fn premul_image(width: u32, height: u32, pixels: &[u8]) -> Result<Image> {
+    dimensions(width, height)?;
+    ensure!(
+        pixels.len() == width as usize * height as usize * 4,
+        "Premultiplied pixels do not match their dimensions"
+    );
+    let info = sk::ImageInfo::new(
+        (width as i32, height as i32),
+        sk::ColorType::RGBA8888,
+        sk::AlphaType::Premul,
+        None,
+    );
+    sk::images::raster_from_data(&info, sk::Data::new_copy(pixels), width as usize * 4)
+        .ok_or_else(|| anyhow!("Cannot create premultiplied image"))
+}
+pub(crate) fn read_surface_pixels(
+    surface: &mut Surface,
+    info: &sk::ImageInfo,
+    width: u32,
+    height: u32,
+) -> Result<Vec<u8>> {
+    let mut pixels = vec![0u8; width as usize * height as usize * 4];
+    ensure!(
+        surface.read_pixels(info, &mut pixels, width as usize * 4, (0, 0)),
+        "Cannot read surface pixels"
+    );
+    Ok(pixels)
+}
+pub(crate) fn write_surface_pixels(
+    surface: &mut Surface,
+    pixels: &[u8],
+    width: u32,
+    height: u32,
+) -> Result<()> {
+    let image = premul_image(width, height, pixels)?;
+    surface.canvas().clear(Color::TRANSPARENT);
+    let mut paint = Paint::default();
+    paint.set_blend_mode(BlendMode::Src);
+    surface.canvas().draw_image(&image, (0., 0.), Some(&paint));
+    Ok(())
 }
 pub fn rgba_image(width: u32, height: u32, pixels: &[u8]) -> Result<Image> {
     dimensions(width, height)?;

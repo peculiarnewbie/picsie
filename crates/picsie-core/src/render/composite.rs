@@ -67,7 +67,10 @@ pub(super) struct PreviewTiles {
 
 pub(super) fn tiled_preview_eligible(doc: &Document) -> bool {
     doc.layers.iter().all(|l| {
-        simple(l)
+        // Adjustment layers remap the composite beneath them, which the padded
+        // piece path cannot provide; they keep the ordinary composite.
+        l.adjustment.is_none()
+            && simple(l)
             && l.x.fract() == 0.
             && l.y.fract() == 0.
             && l.blend == Blend::SourceOver
@@ -222,6 +225,7 @@ pub(super) fn same_layer(a: &Layer, b: &Layer) -> bool {
         && a.brightness == b.brightness
         && a.saturation == b.saturation
         && a.blur == b.blur
+        && a.adjustment == b.adjustment
         && Arc::ptr_eq(&a.content, &b.content)
         && match (&a.mask, &b.mask) {
             (None, None) => true,
@@ -236,7 +240,8 @@ pub(super) fn same_layer(a: &Layer, b: &Layer) -> bool {
 }
 
 fn simple(layer: &Layer) -> bool {
-    layer.parent_id.is_none()
+    layer.adjustment.is_none()
+        && layer.parent_id.is_none()
         && layer.mask_source_id.is_none()
         && layer.mask.is_none()
         && layer.blur == 0.
@@ -613,6 +618,7 @@ impl Renderer {
         source.saturation = 1.;
         source.brightness = 1.;
         source.blur = 0.;
+        source.adjustment = None;
         let mut picture = doc.clone();
         picture.layers = vec![source.clone()];
         if tiled_preview_eligible(&picture)
@@ -779,6 +785,34 @@ impl Renderer {
         }
         dimensions(document.width, document.height)?;
         let plan = super::projection::Projection::new(document);
+        if plan.has_adjustments() {
+            // Adjustment layers read the composite beneath them, so retained
+            // chunk checkpoints cannot replay across them. Render the adjusted
+            // document directly; checkpoint reuse resumes once they are gone.
+            let image = self.composite_adjusted(&plan)?;
+            let info = sk::ImageInfo::new_n32_premul(
+                (document.width as i32, document.height as i32),
+                None,
+            );
+            let mut pixels = vec![0u8; document.width as usize * document.height as usize * 4];
+            ensure!(
+                image.read_pixels(
+                    &info,
+                    &mut pixels,
+                    document.width as usize * 4,
+                    (0, 0),
+                    sk::image::CachingHint::Disallow
+                ),
+                "Cannot retain adjusted composite"
+            );
+            self.composite = Some(Composite {
+                document: document.clone(),
+                pixels,
+                image: image.clone(),
+                prefixes: std::collections::HashMap::new(),
+            });
+            return Ok(image);
+        }
         let stable = previous
             .as_ref()
             .filter(|_| !matches!(damage, Damage::Full))

@@ -56,7 +56,10 @@ pub fn resize(doc: &Document, options: &ImageSizeOptions) -> Result<Document> {
             .fold(f64::NEG_INFINITY, f64::max);
         let (w, h) = ((right - left).max(1.) as u32, (bottom - top).max(1.) as u32);
         dimensions(w, h)?;
-        if !matches!(old.content.as_ref(), Content::Group) {
+        // Adjustment layers carry no pixels to resample; only their masks and
+        // full-document geometry follow the new size.
+        let is_adjustment = old.adjustment.is_some();
+        if !matches!(old.content.as_ref(), Content::Group) && !is_adjustment {
             used += w as u64 * h as u64;
             ensure!(
                 used <= MAX_PIXELS,
@@ -147,6 +150,12 @@ pub fn resize(doc: &Document, options: &ImageSizeOptions) -> Result<Document> {
         layer.flip_x = false;
         layer.flip_y = false;
         layer.sampling = options.sampling;
+        if layer.adjustment.is_some() {
+            layer.x = 0.;
+            layer.y = 0.;
+            layer.width = options.width;
+            layer.height = options.height;
+        }
     }
     for guide in &mut next.guides {
         guide.scale(sx, sy);

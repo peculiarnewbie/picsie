@@ -40,7 +40,10 @@ impl<'a> Projection<'a> {
         while at < layers.len() {
             let layer = layers[at];
             let mut end = at + 1;
-            if layer.mask_source_id.is_none() {
+            // LiveMaskRenderer.prepareStacks (609dbeae): adjustments never anchor
+            // a clipping stack, but clipped adjustments stay inside their base's
+            // stack so they recolor the base before it blends over the backdrop.
+            if layer.mask_source_id.is_none() && layer.adjustment.is_none() {
                 while end < layers.len()
                     && layers[end].mask_source_id.as_deref() == Some(&layer.id)
                     && layers[end].parent_id == layer.parent_id
@@ -59,6 +62,9 @@ impl<'a> Projection<'a> {
             layers,
             nodes,
         }
+    }
+    pub fn has_adjustments(&self) -> bool {
+        self.layers.iter().any(|l| l.adjustment.is_some())
     }
 }
 
@@ -462,7 +468,60 @@ impl Renderer {
     pub(super) fn draw_projection(&mut self, doc: &Document, canvas: &Canvas) -> Result<()> {
         let plan = Projection::new(doc);
         self.retain_projection_sources(&plan.index);
+        if plan.has_adjustments() {
+            // Adjustment layers read the composite beneath them, which a bare
+            // canvas cannot provide. Render the adjusted document, then place it
+            // under the caller's transform and clip.
+            let image = self.composite_adjusted(&plan)?;
+            canvas.draw_image(&image, (0., 0.), None);
+            return Ok(());
+        }
         self.draw_projection_range(&plan, 0..plan.nodes.len(), canvas)
+    }
+    /// One atomic compositing node: a shared-alpha clipping stack or a single
+    /// layer with its live-source clip. Adjustment singletons are handled by
+    /// the caller, which owns the surface beneath them.
+    fn draw_node(&mut self, plan: &Projection<'_>, node: &Node, canvas: &Canvas) -> Result<()> {
+        let Some(clip) = canvas.local_clip_bounds() else {
+            return Ok(());
+        };
+        let index = &plan.index;
+        let layers = &plan.layers;
+        let at = node.layers.start;
+        let end = node.layers.end;
+        let layer = layers[at];
+        if !node.bounds.intersects(clip) {
+            return Ok(());
+        }
+        canvas.save();
+        self.clip_folders(index, layer, canvas)?;
+        if end > at + 1 {
+            if let Some((image, bounds)) = self.stack_image(&index, &layers[at..end], clip)? {
+                let mut paint = Paint::default();
+                paint.set_blend_mode(blend(layer.blend));
+                blends::apply(&mut paint, layer.blend)?;
+                canvas.draw_image(image, (bounds.left as f32, bounds.top as f32), Some(&paint));
+            }
+        } else {
+            if let Some(source) = &layer.mask_source_id {
+                let mut region = support(layer);
+                region.intersect(clip);
+                let region = region.round_out();
+                let coverage = self.coverage_region(index, source, region)?;
+                let matrix = sk::Matrix::translate((region.left as f32, region.top as f32));
+                let shader = coverage
+                    .to_shader(
+                        (sk::TileMode::Decal, sk::TileMode::Decal),
+                        sk::SamplingOptions::default(),
+                        &matrix,
+                    )
+                    .ok_or_else(|| anyhow!("Cannot clip live mask"))?;
+                canvas.clip_shader(shader, None);
+            }
+            self.draw_own_with_opacity(layer, canvas, layer.blend, index.effective(layer).1)?;
+        }
+        canvas.restore();
+        Ok(())
     }
     pub(super) fn draw_projection_range(
         &mut self,
@@ -470,57 +529,277 @@ impl Renderer {
         range: std::ops::Range<usize>,
         canvas: &Canvas,
     ) -> Result<()> {
-        let Some(clip) = canvas.local_clip_bounds() else {
+        // No in-repo caller reaches this with adjustments: preview_composite
+        // takes its once-per-frame bypass above and draw_projection branches
+        // before ranging. The fallback keeps direct callers correct (one full
+        // composite per call, never per chunk).
+        if plan.has_adjustments() {
+            let image = self.composite_adjusted(plan)?;
+            canvas.draw_image(&image, (0., 0.), None);
             return Ok(());
-        };
-        let index = &plan.index;
-        let layers = &plan.layers;
+        }
         for node in &plan.nodes[range] {
-            let at = node.layers.start;
-            let end = node.layers.end;
-            let layer = layers[at];
-            if node.bounds.intersects(clip) {
-                canvas.save();
-                self.clip_folders(&index, layer, canvas)?;
-                if end > at + 1 {
-                    if let Some((image, bounds)) =
-                        self.stack_image(&index, &layers[at..end], clip)?
-                    {
-                        let mut paint = Paint::default();
-                        paint.set_blend_mode(blend(layer.blend));
-                        blends::apply(&mut paint, layer.blend)?;
-                        canvas.draw_image(
-                            image,
-                            (bounds.left as f32, bounds.top as f32),
-                            Some(&paint),
-                        );
-                    }
-                } else {
-                    if let Some(source) = &layer.mask_source_id {
-                        let mut region = support(layer);
-                        region.intersect(clip);
-                        let region = region.round_out();
-                        let coverage = self.coverage_region(&index, source, region)?;
-                        let matrix = sk::Matrix::translate((region.left as f32, region.top as f32));
-                        let shader = coverage
-                            .to_shader(
-                                (sk::TileMode::Decal, sk::TileMode::Decal),
-                                sk::SamplingOptions::default(),
-                                &matrix,
-                            )
-                            .ok_or_else(|| anyhow!("Cannot clip live mask"))?;
-                        canvas.clip_shader(shader, None);
-                    }
-                    self.draw_own_with_opacity(
-                        layer,
-                        canvas,
-                        layer.blend,
-                        index.effective(layer).1,
-                    )?;
+            self.draw_node(plan, node, canvas)?;
+        }
+        Ok(())
+    }
+    /// AdjustmentSurface-style full-document composite (609dbeae): every layer
+    /// draws in stack order into one owned surface, and each adjustment layer
+    /// remaps the straight-alpha pixels beneath it through its Levels/Curves
+    /// tables before layers above continue. Own masks, clipping links, folder
+    /// masks, opacity and blend modes follow LiveMaskRenderer.adjust.
+    pub(super) fn composite_adjusted(&mut self, plan: &Projection<'_>) -> Result<Image> {
+        let doc = plan.index.document;
+        let mut accum = surface(doc.width, doc.height)?;
+        accum.canvas().clear(Color::TRANSPARENT);
+        self.retain_projection_sources(&plan.index);
+        for node in &plan.nodes {
+            let layer = plan.layers[node.layers.start];
+            if layer.adjustment.is_some() {
+                // LiveMaskRenderer.drawComposite: a clipped adjustment outside its
+                // base's stack draws nothing; only sourceless layers adjust the
+                // accumulated composite.
+                if layer.mask_source_id.is_none() {
+                    self.apply_global_adjustment(&plan.index, layer, &mut accum)?;
                 }
-                canvas.restore();
+            } else if node.layers.len() > 1
+                && plan.layers[node.layers.clone()]
+                    .iter()
+                    .any(|l| l.adjustment.is_some())
+            {
+                self.render_adjusted_stack(plan, node, accum.canvas())?;
+            } else {
+                self.draw_node(plan, node, accum.canvas())?;
             }
         }
+        Ok(accum.image_snapshot())
+    }
+    /// Blend two opaque premultiplied images with a layer blend mode. Colors
+    /// stay opaque throughout; the caller restores alpha afterwards, exactly
+    /// like `LiveMaskRenderer.adjust`'s blend path.
+    fn blend_opaque(
+        base: &[u8],
+        top: &[u8],
+        width: u32,
+        height: u32,
+        mode: Blend,
+    ) -> Result<Vec<u8>> {
+        let base_image = premul_image(width, height, base)?;
+        let top_image = premul_image(width, height, top)?;
+        let mut blend_surface = surface(width, height)?;
+        blend_surface
+            .canvas()
+            .draw_image(&base_image, (0., 0.), None);
+        let mut paint = Paint::default();
+        paint.set_blend_mode(blend(mode));
+        blends::apply(&mut paint, mode)?;
+        blend_surface
+            .canvas()
+            .draw_image(&top_image, (0., 0.), Some(&paint));
+        premul_pixels(&blend_surface.image_snapshot())
+    }
+    /// Grayscale coverage of an adjustment layer's own mask in document pixels.
+    /// Adjustment layers always span the document, so the mask image maps 1:1.
+    fn adjustment_mask_coverage(
+        mask: &LayerMask,
+        layer: &Layer,
+        width: u32,
+        height: u32,
+    ) -> Result<Vec<u8>> {
+        let coverage = mask_image(mask, layer)?;
+        let info = sk::ImageInfo::new(
+            (width as i32, height as i32),
+            sk::ColorType::Alpha8,
+            sk::AlphaType::Premul,
+            None,
+        );
+        let mut bytes = vec![0u8; width as usize * height as usize];
+        ensure!(
+            coverage.read_pixels(
+                &info,
+                &mut bytes,
+                width as usize,
+                (0, 0),
+                sk::image::CachingHint::Disallow
+            ),
+            "Cannot read adjustment mask"
+        );
+        Ok(bytes)
+    }
+    /// LiveMaskRenderer.adjust (609dbeae) for a sourceless adjustment layer:
+    /// remap the accumulated composite through the Levels/Curves tables, then
+    /// replace those pixels through the layer's own mask, folder masks,
+    /// opacity and blend mode. Non-normal modes blend opaque unpremultiplied
+    /// colors with the original alpha restored afterwards, so translucent
+    /// coverage is never composited over itself.
+    fn apply_global_adjustment(
+        &mut self,
+        index: &LayerIndex<'_>,
+        layer: &Layer,
+        surface: &mut Surface,
+    ) -> Result<()> {
+        let adjustment = layer
+            .adjustment
+            .as_ref()
+            .ok_or_else(|| anyhow!("Missing adjustment"))?;
+        let opacity = index.effective(layer).1;
+        if opacity <= 0. {
+            return Ok(());
+        }
+        if adjustment.is_identity() && layer.blend == Blend::SourceOver {
+            return Ok(());
+        }
+        let (width, height) = (surface.width() as u32, surface.height() as u32);
+        let info = sk::ImageInfo::new(
+            (width as i32, height as i32),
+            sk::ColorType::RGBA8888,
+            sk::AlphaType::Premul,
+            None,
+        );
+        let mut below = vec![0u8; width as usize * height as usize * 4];
+        ensure!(
+            surface.read_pixels(&info, &mut below, width as usize * 4, (0, 0)),
+            "Cannot read adjusted pixels"
+        );
+        let tables = adjustment.tables();
+        let mut mapped = below.clone();
+        crate::adjustment::apply_tables_premul(&mut mapped, &tables);
+        if layer.blend != Blend::SourceOver {
+            let alpha: Vec<u8> = below.chunks_exact(4).map(|p| p[3]).collect();
+            let mut opaque_base = below.clone();
+            crate::adjustment::unpremultiply_opaque(&mut opaque_base);
+            let mut opaque_top = mapped.clone();
+            crate::adjustment::unpremultiply_opaque(&mut opaque_top);
+            mapped = Self::blend_opaque(&opaque_base, &opaque_top, width, height, layer.blend)?;
+            crate::adjustment::restore_alpha(&mut mapped, &alpha);
+        }
+        // CoreImage blend-with-mask merging: mix by opacity, keeping alpha;
+        // masks and folder coverage clip the replacement draw itself.
+        let amount = (opacity * 255.).round().clamp(0., 255.) as u32;
+        let mut output = below;
+        if amount < 255 {
+            for (out, src) in output.chunks_exact_mut(4).zip(mapped.chunks_exact(4)) {
+                for c in 0..4 {
+                    out[c] = ((src[c] as u32 * amount + out[c] as u32 * (255 - amount) + 127) / 255)
+                        as u8;
+                }
+            }
+        } else {
+            output = mapped;
+        }
+        let image = premul_image(width, height, &output)?;
+        let canvas = surface.canvas();
+        canvas.save();
+        self.clip_folders(index, layer, canvas)?;
+        if let Some(mask) = &layer.mask
+            && mask.enabled
+        {
+            let coverage = mask_image(mask, layer)?;
+            let shader = coverage
+                .to_shader(
+                    (sk::TileMode::Decal, sk::TileMode::Decal),
+                    sk::SamplingOptions::default(),
+                    &sk::Matrix::new_identity(),
+                )
+                .ok_or_else(|| anyhow!("Cannot clip adjustment mask"))?;
+            canvas.clip_shader(shader, None);
+        }
+        // The output already holds the final composite: replace, never
+        // source-over, so equal alpha never thickens.
+        let mut paint = Paint::default();
+        paint.set_blend_mode(BlendMode::Src);
+        canvas.draw_image(&image, (0., 0.), Some(&paint));
+        canvas.restore();
+        Ok(())
+    }
+    /// A clipping stack containing adjustment children, following
+    /// LiveMaskRenderer.drawComposite: the base renders into a group surface,
+    /// alpha is set aside while children (including adjustments) recolor its
+    /// opaque colors, then the original alpha is restored once before the
+    /// group blends over the backdrop with the base's blend mode.
+    fn render_adjusted_stack(
+        &mut self,
+        plan: &Projection<'_>,
+        node: &Node,
+        canvas: &Canvas,
+    ) -> Result<()> {
+        let index = &plan.index;
+        let doc = index.document;
+        let (width, height) = (doc.width, doc.height);
+        let base = plan.layers[node.layers.start];
+        let mut group = surface(width, height)?;
+        group.canvas().clear(Color::TRANSPARENT);
+        self.draw_own_with_opacity(
+            base,
+            group.canvas(),
+            Blend::SourceOver,
+            index.effective(base).1,
+        )?;
+        let info = sk::ImageInfo::new(
+            (width as i32, height as i32),
+            sk::ColorType::RGBA8888,
+            sk::AlphaType::Premul,
+            None,
+        );
+        let mut pixels = read_surface_pixels(&mut group, &info, width, height)?;
+        let alpha: Vec<u8> = pixels.chunks_exact(4).map(|p| p[3]).collect();
+        crate::adjustment::unpremultiply_opaque(&mut pixels);
+        write_surface_pixels(&mut group, &pixels, width, height)?;
+        for child in &plan.layers[node.layers.start + 1..node.layers.end] {
+            if let Some(adjustment) = &child.adjustment {
+                let child_opacity = index.effective(child).1;
+                if child_opacity > 0.
+                    && (!adjustment.is_identity() || child.blend != Blend::SourceOver)
+                {
+                    let mut current = read_surface_pixels(&mut group, &info, width, height)?;
+                    let mut mapped = current.clone();
+                    crate::adjustment::apply_tables_premul(&mut mapped, &adjustment.tables());
+                    if child.blend != Blend::SourceOver {
+                        mapped = Self::blend_opaque(&current, &mapped, width, height, child.blend)?;
+                    }
+                    let coverage = if child.mask.as_ref().is_some_and(|m| m.enabled) {
+                        Self::adjustment_mask_coverage(
+                            child.mask.as_ref().unwrap(),
+                            child,
+                            width,
+                            height,
+                        )?
+                    } else {
+                        vec![255u8; width as usize * height as usize]
+                    };
+                    let amount = (child_opacity * 255.).round().clamp(0., 255.) as u32;
+                    for ((out, src), &cov) in current
+                        .chunks_exact_mut(4)
+                        .zip(mapped.chunks_exact(4))
+                        .zip(coverage.iter())
+                    {
+                        let k = (amount * cov as u32 + 127) / 255;
+                        for c in 0..3 {
+                            out[c] =
+                                ((src[c] as u32 * k + out[c] as u32 * (255 - k) + 127) / 255) as u8;
+                        }
+                    }
+                    write_surface_pixels(&mut group, &current, width, height)?;
+                }
+            } else {
+                self.draw_own_with_opacity(
+                    child,
+                    group.canvas(),
+                    child.blend,
+                    index.effective(child).1,
+                )?;
+            }
+        }
+        let mut pixels = read_surface_pixels(&mut group, &info, width, height)?;
+        crate::adjustment::restore_alpha(&mut pixels, &alpha);
+        let image = premul_image(width, height, &pixels)?;
+        canvas.save();
+        self.clip_folders(index, base, canvas)?;
+        let mut paint = Paint::default();
+        paint.set_blend_mode(blend(base.blend));
+        blends::apply(&mut paint, base.blend)?;
+        canvas.draw_image(&image, (0., 0.), Some(&paint));
+        canvas.restore();
         Ok(())
     }
 }

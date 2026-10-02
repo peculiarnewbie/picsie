@@ -154,10 +154,14 @@ impl<'a> LayerIndex<'a> {
             siblings.push(i);
             if let Some(source) = layer.mask_source_id.as_deref() {
                 sources[i] = ids.get(source).copied();
+                // LiveMaskGraph.validate (609dbeae): sources are concrete pixel
+                // layers, never folders or adjustments; targets may be adjustments
+                // (clipped adjustment layers) but never folders.
                 graph_valid &= document.version >= 2
                     && !matches!(layer.content.as_ref(), Content::Group)
                     && sources[i].is_some_and(|j| {
                         !matches!(document.layers[j].content.as_ref(), Content::Group)
+                            && document.layers[j].adjustment.is_none()
                     });
                 if let Some(j) = sources[i] {
                     incoming[j] += 1;
@@ -251,6 +255,7 @@ impl<'a> LayerIndex<'a> {
         if source == target
             || layers[target].locked
             || matches!(layers[source].content.as_ref(), Content::Group)
+            || layers[source].adjustment.is_some()
             || matches!(layers[target].content.as_ref(), Content::Group)
         {
             return false;
@@ -295,7 +300,8 @@ impl<'a> LayerIndex<'a> {
                 };
                 if let Some(j) = current
                     && (matches!(layer.content.as_ref(), Content::Group)
-                        || matches!(self.document.layers[j].content.as_ref(), Content::Group))
+                        || matches!(self.document.layers[j].content.as_ref(), Content::Group)
+                        || self.document.layers[j].adjustment.is_some())
                 {
                     return false;
                 }

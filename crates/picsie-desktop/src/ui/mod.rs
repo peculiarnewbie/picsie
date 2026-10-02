@@ -1,4 +1,5 @@
 //! Compositor UI adapted to GPUI Kit. Editing semantics remain in picsie-core.
+mod adjustments;
 mod clipboard;
 mod controls;
 mod dialogs;
@@ -149,6 +150,15 @@ pub struct Desktop {
     frame_metrics: Value,
     probes: Arc<Mutex<HashMap<String, [f32; 4]>>>,
     trace: Option<PathBuf>,
+    curves_drag: Option<usize>,
+    curves_selected: Option<usize>,
+    curves_working: Option<Vec<picsie_core::adjustment::CurvePoint>>,
+    levels_drag: Option<adjustments::LevelsHandle>,
+    adjustment_position: [f32; 2],
+    adjustment_panel_drag: Option<(Point<Pixels>, [f32; 2])>,
+    adjustment_charts: HashMap<&'static str, Arc<RenderImage>>,
+    adjustment_chart_key: Option<u64>,
+    adjustment_panel: Option<(String, String)>,
     _subscriptions: Vec<Subscription>,
     _pump: Task<()>,
 }
@@ -201,6 +211,24 @@ impl Desktop {
             ("image-sampling", SAMPLING),
             ("transform-sampling", SAMPLING),
             ("wand-sample", WAND_SAMPLES),
+            (
+                "levels-channel",
+                &[
+                    ("rgb", "RGB"),
+                    ("red", "Red"),
+                    ("green", "Green"),
+                    ("blue", "Blue"),
+                ][..],
+            ),
+            (
+                "curves-channel",
+                &[
+                    ("rgb", "RGB"),
+                    ("red", "Red"),
+                    ("green", "Green"),
+                    ("blue", "Blue"),
+                ][..],
+            ),
             (
                 "crop-ratio",
                 &[
@@ -350,6 +378,15 @@ impl Desktop {
             frame_metrics: Value::Null,
             probes: Arc::new(Mutex::new(HashMap::new())),
             trace,
+            curves_drag: None,
+            curves_selected: None,
+            curves_working: None,
+            levels_drag: None,
+            adjustment_position: [90., 125.],
+            adjustment_panel_drag: None,
+            adjustment_charts: HashMap::new(),
+            adjustment_chart_key: None,
+            adjustment_panel: None,
             _subscriptions: vec![],
             _pump: pump,
         };
@@ -591,6 +628,7 @@ impl Desktop {
                         json!(accepted.elapsed().as_secs_f64() * 1000.);
                 }
             }
+            self.sync_adjustment_charts(window, cx);
             cx.notify();
         }
     }

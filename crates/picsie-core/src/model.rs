@@ -379,6 +379,9 @@ pub struct Layer {
     pub brightness: f64,
     pub saturation: f64,
     pub blur: f64,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    #[ts(optional)]
+    pub adjustment: Option<crate::adjustment::LayerAdjustment>,
     pub content: Arc<Content>,
     #[serde(default, skip_serializing_if = "Option::is_none")]
     #[ts(optional)]
@@ -463,6 +466,7 @@ impl Layer {
             brightness,
             saturation,
             blur,
+            adjustment,
             content,
             text_layout,
             strokes,
@@ -489,6 +493,7 @@ impl Layer {
             && brightness == &other.brightness
             && saturation == &other.saturation
             && blur == &other.blur
+            && adjustment == &other.adjustment
             && text_layout == &other.text_layout
             && Arc::ptr_eq(content, &other.content)
             && strokes.len() == other.strokes.len()
@@ -525,6 +530,7 @@ impl Layer {
             brightness: 1.,
             saturation: 1.,
             blur: 0.,
+            adjustment: None,
             content: Arc::new(content),
             text_layout: None,
             strokes: vec![],
@@ -556,6 +562,33 @@ impl Layer {
                 && range(self.blur, 0., 100.),
             "Invalid layer appearance"
         );
+        if let Some(adjustment) = &self.adjustment {
+            // Levels/Curves adjustment layers, Compositor 609dbeae LayerAdjustment.
+            // They carry no pixels of their own and always cover the document.
+            ensure!(adjustment.is_valid(), "Invalid adjustment settings");
+            ensure!(
+                matches!(self.content.as_ref(), Content::Paint),
+                "Adjustment layers hold no pixels"
+            );
+            ensure!(
+                self.strokes.is_empty() && self.text_layout.is_none(),
+                "Adjustment layers hold no pixels"
+            );
+            ensure!(
+                self.brightness == 1. && self.saturation == 1. && self.blur == 0.,
+                "Adjustment layers keep default appearance"
+            );
+            ensure!(
+                self.x == 0.
+                    && self.y == 0.
+                    && self.scale_x == 1.
+                    && self.scale_y == 1.
+                    && self.rotation == 0.
+                    && !self.flip_x
+                    && !self.flip_y,
+                "Adjustment layers cover the document"
+            );
+        }
         match self.content.as_ref() {
             Content::Paint => (),
             Content::Group => ensure!(

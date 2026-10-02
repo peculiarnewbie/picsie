@@ -440,8 +440,37 @@ pub fn open(path: &Path) -> Result<Document> {
             item.name.chars().count() <= 200,
             "Compositor layer name exceeds Picsie's limit"
         );
+        // Levels/Curves adjustment layers round-trip; every other live
+        // adjustment, shape or effect record is still rejected explicitly.
+        let adjustment = item
+            .adjustment
+            .as_ref()
+            .map(|value| {
+                ensure!(
+                    manifest.version >= 7,
+                    "Adjustments require Compositor version 7"
+                );
+                ensure!(
+                    !item.is_group.unwrap_or(false)
+                        && item.image_file.is_none()
+                        && item.shape.is_none()
+                        && item.effects.is_none()
+                        && item.text.is_none(),
+                    "This Compositor project uses live features Picsie cannot edit yet"
+                );
+                let parsed: crate::adjustment::LayerAdjustment =
+                    serde_json::from_value(value.clone())
+                        .context("Unsupported Compositor adjustment")?;
+                ensure!(parsed.is_valid(), "Invalid Compositor adjustment");
+                Ok(parsed)
+            })
+            .transpose()?;
         ensure!(
-            item.adjustment.is_none() && item.shape.is_none() && item.effects.is_none(),
+            item.adjustment.is_none() || adjustment.is_some(),
+            "This Compositor project uses live features Picsie cannot edit yet"
+        );
+        ensure!(
+            item.shape.is_none() && item.effects.is_none(),
             "This Compositor project uses live features Picsie cannot edit yet"
         );
         ensure!(
@@ -460,10 +489,16 @@ pub fn open(path: &Path) -> Result<Document> {
         } else {
             None
         };
-        let (width, height) = image.as_ref().map(|v| (v.1, v.2)).unwrap_or((
-            item.transform.size.width.round().max(1.) as u32,
-            item.transform.size.height.round().max(1.) as u32,
-        ));
+        let (width, height) = if adjustment.is_some() {
+            // Adjustment layers always cover the document; the stored transform
+            // is presentation placement from Compositor, not layer geometry.
+            (manifest.width, manifest.height)
+        } else {
+            image.as_ref().map(|v| (v.1, v.2)).unwrap_or((
+                item.transform.size.width.round().max(1.) as u32,
+                item.transform.size.height.round().max(1.) as u32,
+            ))
+        };
         let content = if item.is_group.unwrap_or(false) {
             Content::Group
         } else if let Some((bytes, _, _)) = &image {
@@ -493,13 +528,24 @@ pub fn open(path: &Path) -> Result<Document> {
             "Live masks require Compositor version 5"
         );
         layer.visible = item.is_visible;
-        layer.x = item.transform.origin.x;
-        layer.y = item.transform.origin.y;
-        layer.scale_x = item.transform.size.width / width as f64;
-        layer.scale_y = item.transform.size.height / height as f64;
-        layer.rotation = item.transform.rotation;
-        layer.flip_x = item.transform.flip_x;
-        layer.flip_y = item.transform.flip_y;
+        if adjustment.is_some() {
+            layer.x = 0.;
+            layer.y = 0.;
+            layer.scale_x = 1.;
+            layer.scale_y = 1.;
+            layer.rotation = 0.;
+            layer.flip_x = false;
+            layer.flip_y = false;
+            layer.adjustment = adjustment;
+        } else {
+            layer.x = item.transform.origin.x;
+            layer.y = item.transform.origin.y;
+            layer.scale_x = item.transform.size.width / width as f64;
+            layer.scale_y = item.transform.size.height / height as f64;
+            layer.rotation = item.transform.rotation;
+            layer.flip_x = item.transform.flip_x;
+            layer.flip_y = item.transform.flip_y;
+        }
         layer.sampling = match item.transform.sampling.as_str() {
             "Nearest" => Sampling::Nearest,
             "Smooth" => Sampling::Smooth,
@@ -633,7 +679,11 @@ pub fn save(path: &Path, doc: &Document) -> Result<()> {
                 .as_deref()
                 .map(|v| uuid::Uuid::parse_str(v).map(|id| id.to_string().to_uppercase()))
                 .transpose()?,
-            adjustment: None,
+            adjustment: layer
+                .adjustment
+                .as_ref()
+                .map(serde_json::to_value)
+                .transpose()?,
             shape: None,
             effects: None,
             text: TextRecord::from_layer(layer),

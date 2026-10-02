@@ -381,12 +381,18 @@ impl Desktop {
             // for a box) stays off. The engine publishes the authoritative
             // capability: an empty folder or a selection without transformable
             // members yields no box and keeps everything disabled.
+            // Sourceless adjustments have no placeable pixels: numeric geometry,
+            // flips and sampling stay disabled, while an independently placed
+            // mask on the same layer remains transformable.
             let group = state.group_box.is_some();
+            let mask_targeted =
+                state.paint_target == "mask" && layer.is_some_and(|l| l.mask.is_some());
             let locked = (state.mask_distortion.is_some() || state.image_distortion.is_some())
                 || layer.is_none_or(|l| {
                     l.locked
+                        || (l.adjustment.is_some() && !mask_targeted)
                         || (l.kind() == "group"
-                            && !(state.paint_target == "mask"
+                            && !(mask_targeted
                                 && l.mask.as_ref().is_some_and(|m| m["linked"] == false)))
                 })
                 || state.selection.ids.len() != 1;

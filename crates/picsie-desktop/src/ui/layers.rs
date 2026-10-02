@@ -3,6 +3,7 @@
 use super::*;
 use gpui_kit::component::menu::ContextMenuExt;
 use picsie_core::{
+    adjustment::AdjustmentKind,
     editor::{PaintTarget, SelectionMode},
     model::MaskMode,
 };
@@ -340,7 +341,17 @@ impl Desktop {
                             let id = id.clone();
                             move |this, event: &MouseDownEvent, window, cx| {
                                 if event.click_count == 2 {
-                                    this.begin_rename(id.clone(), window, cx);
+                                    let adjustment = this
+                                        .state
+                                        .as_ref()
+                                        .and_then(|s| s.layer(&id))
+                                        .and_then(|l| l.adjustment);
+                                    if adjustment.is_some() {
+                                        this.commit_active_fields(window, cx);
+                                        this.send(Command::BeginAdjustmentEdit { id: id.clone() });
+                                    } else {
+                                        this.begin_rename(id.clone(), window, cx);
+                                    }
                                     cx.stop_propagation();
                                 }
                             }
@@ -350,6 +361,25 @@ impl Desktop {
                 })
                 .child(label(format!("{} × {} px", layer.width, layer.height))),
         );
+        if let Some(kind) = &layer.adjustment {
+            entry = entry.child(
+                self.probe(
+                    format!("adjustment-tag-{id}"),
+                    div()
+                        .flex_shrink_0()
+                        .px(px(6.))
+                        .py(px(1.))
+                        .rounded(px(6.))
+                        .bg(rgb(ACCENT))
+                        .text_size(px(10.))
+                        .text_color(rgb(0x101010))
+                        .child(match kind {
+                            AdjustmentKind::Levels => "Levels",
+                            AdjustmentKind::Curves => "Curves",
+                        }),
+                ),
+            );
+        }
         if layer.locked {
             entry = entry.child(icon("lock", 14.).text_color(rgb(MUTED)));
         }
@@ -562,7 +592,15 @@ impl Desktop {
             cx.stop_propagation();
             cx.notify();
         } else if event.click_count == 2 {
-            if self
+            let adjustment = self
+                .state
+                .as_ref()
+                .and_then(|s| s.layer(&id))
+                .and_then(|l| l.adjustment);
+            if adjustment.is_some() {
+                self.commit_active_fields(window, cx);
+                self.send(Command::BeginAdjustmentEdit { id: id.clone() });
+            } else if self
                 .state
                 .as_ref()
                 .and_then(|s| s.layer(&id))

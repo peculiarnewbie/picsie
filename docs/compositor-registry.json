@@ -3104,8 +3104,12 @@
         "Compositor/UI/CurvesControls.swift"
       ],
       "local": [
-        "crates/picsie-core/src/render.rs",
-        "crates/picsie-desktop/src/ui/layers.rs"
+        "crates/picsie-core/src/adjustment.rs",
+        "crates/picsie-core/src/editor/adjustments.rs",
+        "crates/picsie-core/src/render/projection.rs",
+        "crates/picsie-core/src/comp.rs",
+        "crates/picsie-desktop/src/ui/adjustments.rs",
+        "crates/picsie-core/tests/adjustments.rs"
       ],
       "items": [
         {
@@ -3125,12 +3129,14 @@
         },
         {
           "id": "adjustments.levels",
-          "implementation": "missing",
-          "polish": "missing",
-          "verification": "unverified",
-          "behavior": "RGB/channel histogram, input/output levels, gamma, samples, auto/reset/preview",
-          "gap": "Not implemented.",
-          "evidence": []
+          "implementation": "implemented",
+          "polish": "partial",
+          "verification": "tests",
+          "behavior": "RGB/channel histogram, input/output levels, gamma, sampling, auto/reset/preview/cancel/apply through Levels adjustment layers",
+          "gap": "Floating panel replaces the source 440pt sheet; numeric fields and drag handles ported, slider-track drag not ported. Destructive image-menu Levels (beginLevels/commitLevels) not ported. Edit histogram uses the alpha-weighted below-composite with a nil selection, like AdjustmentEditing; the kernel stays selection-capable for other consumers. Downscaled-preview shortcut not needed (full-size LUT). Other adjustment kinds remain missing.",
+          "evidence": [
+            "crates/picsie-core/tests/adjustments.rs"
+          ]
         },
         {
           "id": "adjustments.hsv",
@@ -3143,12 +3149,14 @@
         },
         {
           "id": "adjustments.curves",
-          "implementation": "missing",
-          "polish": "missing",
-          "verification": "unverified",
-          "behavior": "RGB/channel control points, add/remove/reset and live preview",
-          "gap": "Not implemented.",
-          "evidence": []
+          "implementation": "implemented",
+          "polish": "partial",
+          "verification": "tests",
+          "behavior": "RGB/channel control points, add/remove/reset, channel switching and live preview through Curves adjustment layers",
+          "gap": "260pt graph and CurvesControls gestures ported to a floating panel; interior-only removal and fixed endpoint x retained. Destructive filter-panel Curves not ported. Other adjustment kinds remain missing.",
+          "evidence": [
+            "crates/picsie-core/tests/adjustments.rs"
+          ]
         },
         {
           "id": "adjustments.exposure",
@@ -3206,12 +3214,14 @@
         },
         {
           "id": "adjustments.layer-adjustments",
-          "implementation": "missing",
-          "polish": "missing",
-          "verification": "unverified",
-          "behavior": "Create/reopen nondestructive adjustment layers of each supported kind",
-          "gap": "No adjustment layer model.",
-          "evidence": []
+          "implementation": "partial",
+          "polish": "partial",
+          "verification": "tests",
+          "behavior": "Create/reopen Levels and Curves nondestructive adjustment layers with mask/clipping/opacity/blend semantics, undo, .picsie/.comp persistence and export",
+          "gap": "Only Levels and Curves kinds exist; HSV/exposure/gradient-map/grain/black-white/color-balance/invert layers are rejected on import. No destructive pixel editing of adjustments; adjustment layers cannot be paint/transform targets.",
+          "evidence": [
+            "crates/picsie-core/tests/adjustments.rs"
+          ]
         }
       ]
     },

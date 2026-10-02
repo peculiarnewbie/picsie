@@ -102,6 +102,20 @@ impl Desktop {
                     cx.notify();
                     return;
                 }
+                // Levels eyedropper: calibrate from the layers below the edit.
+                if let Some(mode) = this
+                    .state
+                    .as_ref()
+                    .and_then(|s| s.adjustment_edit.as_ref())
+                    .and_then(|e| e.sample_mode)
+                {
+                    this.commit_active_fields(window, cx);
+                    let point = this.local(event.position, window.scale_factor());
+                    this.send(Command::SampleLevels { point, mode });
+                    window.focus(&this.focus, cx);
+                    cx.stop_propagation();
+                    return;
+                }
                 this.commit_active_fields(window, cx);
                 if this.state.as_ref().is_some_and(|s| s.text_editing) {
                     this.text.update(cx, |input, cx| input.focus(window, cx));
@@ -259,6 +273,27 @@ impl Desktop {
                                         this.sample_canvas(event.position, window.scale_factor());
                                         cx.notify();
                                     }
+                                    if this.curves_drag.is_some() {
+                                        this.curves_move(event.position, window, cx);
+                                    }
+                                    if this.levels_drag.is_some() {
+                                        this.levels_move(event.position, window, cx);
+                                    }
+                                    if let Some((origin, position)) = this.adjustment_panel_drag {
+                                        let viewport = window.viewport_size();
+                                        this.adjustment_position = [
+                                            (position[0] + f32::from(event.position.x - origin.x))
+                                                .clamp(
+                                                0.,
+                                                (f32::from(viewport.width)
+                                                    - super::adjustments::ADJUSTMENT_PANEL_WIDTH)
+                                                    .max(0.),
+                                            ),
+                                            (position[1] + f32::from(event.position.y - origin.y))
+                                                .clamp(28., f32::from(viewport.height).max(28.)),
+                                        ];
+                                        cx.notify();
+                                    }
                                     if let Some((origin, position)) = this.color_panel_drag {
                                         let viewport = window.viewport_size();
                                         this.color_position = [
@@ -332,6 +367,14 @@ impl Desktop {
                                             p.color_picker_position = Some(this.color_position)
                                         });
                                     }
+                                    if this.curves_drag.take().is_some() {
+                                        this.curves_working = None;
+                                        cx.notify();
+                                    }
+                                    if this.levels_drag.take().is_some() {
+                                        cx.notify();
+                                    }
+                                    this.adjustment_panel_drag = None;
                                     this.finish_layer_drag(cx);
                                     if this.visibility_swiping {
                                         this.visibility_swiping = false;
@@ -428,6 +471,17 @@ impl Desktop {
         let m = event.keystroke.modifiers;
         if key == "escape" && self.state.as_ref().is_some_and(|s| s.text_editing) {
             self.send(Command::CancelText);
+            window.focus(&self.focus, cx);
+            cx.stop_propagation();
+            return;
+        }
+        if key == "escape"
+            && self
+                .state
+                .as_ref()
+                .is_some_and(|s| s.adjustment_edit.is_some())
+        {
+            self.send(Command::CancelAdjustmentEdit);
             window.focus(&self.focus, cx);
             cx.stop_propagation();
             return;

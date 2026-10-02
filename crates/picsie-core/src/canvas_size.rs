@@ -37,8 +37,15 @@ pub fn resize_canvas(doc: &Document, opt: &CanvasSizeOptions) -> Result<Document
         guide.offset(dx, dy);
     }
     for l in &mut next.layers {
-        l.x += dx;
-        l.y += dy;
+        // Adjustment layers always cover the document: they track its size and
+        // never translate with an anchor.
+        if l.adjustment.is_some() {
+            l.width = opt.width;
+            l.height = opt.height;
+        } else {
+            l.x += dx;
+            l.y += dy;
+        }
     }
     next.validate()?;
     if let Some(fill) = &opt.fill
@@ -80,8 +87,13 @@ pub fn crop_canvas(doc: &Document, rect: CropRect) -> Result<Document> {
         guide.offset(-rect.x, -rect.y);
     }
     for layer in &mut next.layers {
-        layer.x -= rect.x;
-        layer.y -= rect.y;
+        if layer.adjustment.is_some() {
+            layer.width = rect.width as u32;
+            layer.height = rect.height as u32;
+        } else {
+            layer.x -= rect.x;
+            layer.y -= rect.y;
+        }
     }
     next.validate()?;
     Ok(next)
