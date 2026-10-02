@@ -1,0 +1,875 @@
+{
+  "schemaVersion": 1,
+  "profiles": {
+    "quick": ["correctness.all"],
+    "native": ["native.baseline", "native.groups", "native.adjustments", "native.combined"]
+  },
+  "scenarios": [
+    {
+      "id": "correctness.all",
+      "kind": "correctness",
+      "command": ["npm", "test"],
+      "sources": [
+        "crates/picsie-core/tests/adjustments.rs",
+        "crates/picsie-core/tests/behavior.rs",
+        "crates/picsie-core/tests/cross_features.rs",
+        "crates/picsie-core/tests/group_transform.rs",
+        "crates/picsie-core/tests/interaction_polish.rs",
+        "crates/picsie-core/tests/layers_masks_colors.rs",
+        "crates/picsie-core/tests/placement_text.rs",
+        "crates/picsie-core/tests/polish.rs",
+        "crates/picsie-core/tests/publication.rs",
+        "crates/picsie-core/tests/raster_snapshot.rs",
+        "crates/picsie-core/tests/reference_features.rs",
+        "crates/picsie-core/tests/render_equivalence.rs",
+        "crates/picsie-core/tests/selection_history.rs",
+        "crates/picsie-core/tests/shapes_gradients.rs",
+        "crates/picsie-core/tests/workflow_features.rs",
+        "tests/native.test.ts",
+        "crates/picsie-desktop/src/engine.rs",
+        "scripts/check-architecture.test.mjs"
+      ],
+      "fixture": "Test-local deterministic fixtures; fresh editors/resources per test.",
+      "steps": [
+        "Build native addon from current sources.",
+        "Run architecture, Rust core, real Node addon, and desktop worker suites."
+      ],
+      "assertions": [
+        "Existing assertion failures fail the run.",
+        "Real native bridge executes; no mocks or JS engine."
+      ],
+      "features": [],
+      "umbrella": true
+    },
+    {
+      "id": "core.adjustments",
+      "kind": "correctness",
+      "command": ["cargo", "test", "--locked", "-p", "picsie-core", "--test", "adjustments"],
+      "sources": ["crates/picsie-core/tests/adjustments.rs"],
+      "fixture": "Fixtures constructed by this tracked Rust test module.",
+      "steps": [
+        "Create a fresh document/editor per test.",
+        "Dispatch the existing Rust commands and render/serialize through the engine."
+      ],
+      "assertions": [
+        "Named Rust test assertions; upstream-adapted and local fixtures remain distinguished in source."
+      ],
+      "features": []
+    },
+    {
+      "id": "core.behavior",
+      "kind": "correctness",
+      "command": ["cargo", "test", "--locked", "-p", "picsie-core", "--test", "behavior"],
+      "sources": ["crates/picsie-core/tests/behavior.rs"],
+      "fixture": "Fixtures constructed by this tracked Rust test module.",
+      "steps": [
+        "Create a fresh document/editor per test.",
+        "Dispatch the existing Rust commands and render/serialize through the engine."
+      ],
+      "assertions": [
+        "Named Rust test assertions; upstream-adapted and local fixtures remain distinguished in source."
+      ],
+      "features": []
+    },
+    {
+      "id": "core.cross_features",
+      "kind": "correctness",
+      "command": ["cargo", "test", "--locked", "-p", "picsie-core", "--test", "cross_features"],
+      "sources": ["crates/picsie-core/tests/cross_features.rs"],
+      "fixture": "Fixtures constructed by this tracked Rust test module.",
+      "steps": [
+        "Create a fresh document/editor per test.",
+        "Dispatch the existing Rust commands and render/serialize through the engine."
+      ],
+      "assertions": [
+        "Named Rust test assertions; upstream-adapted and local fixtures remain distinguished in source."
+      ],
+      "features": []
+    },
+    {
+      "id": "core.group_transform",
+      "kind": "correctness",
+      "command": ["cargo", "test", "--locked", "-p", "picsie-core", "--test", "group_transform"],
+      "sources": ["crates/picsie-core/tests/group_transform.rs"],
+      "fixture": "Fixtures constructed by this tracked Rust test module.",
+      "steps": [
+        "Create a fresh document/editor per test.",
+        "Dispatch the existing Rust commands and render/serialize through the engine."
+      ],
+      "assertions": [
+        "Named Rust test assertions; upstream-adapted and local fixtures remain distinguished in source."
+      ],
+      "features": []
+    },
+    {
+      "id": "core.interaction_polish",
+      "kind": "correctness",
+      "command": ["cargo", "test", "--locked", "-p", "picsie-core", "--test", "interaction_polish"],
+      "sources": ["crates/picsie-core/tests/interaction_polish.rs"],
+      "fixture": "Fixtures constructed by this tracked Rust test module.",
+      "steps": [
+        "Create a fresh document/editor per test.",
+        "Dispatch the existing Rust commands and render/serialize through the engine."
+      ],
+      "assertions": [
+        "Named Rust test assertions; upstream-adapted and local fixtures remain distinguished in source."
+      ],
+      "features": []
+    },
+    {
+      "id": "core.layers_masks_colors",
+      "kind": "correctness",
+      "command": [
+        "cargo",
+        "test",
+        "--locked",
+        "-p",
+        "picsie-core",
+        "--test",
+        "layers_masks_colors"
+      ],
+      "sources": ["crates/picsie-core/tests/layers_masks_colors.rs"],
+      "fixture": "Fixtures constructed by this tracked Rust test module.",
+      "steps": [
+        "Create a fresh document/editor per test.",
+        "Dispatch the existing Rust commands and render/serialize through the engine."
+      ],
+      "assertions": [
+        "Named Rust test assertions; upstream-adapted and local fixtures remain distinguished in source."
+      ],
+      "features": []
+    },
+    {
+      "id": "core.placement_text",
+      "kind": "correctness",
+      "command": ["cargo", "test", "--locked", "-p", "picsie-core", "--test", "placement_text"],
+      "sources": ["crates/picsie-core/tests/placement_text.rs"],
+      "fixture": "Fixtures constructed by this tracked Rust test module.",
+      "steps": [
+        "Create a fresh document/editor per test.",
+        "Dispatch the existing Rust commands and render/serialize through the engine."
+      ],
+      "assertions": [
+        "Named Rust test assertions; upstream-adapted and local fixtures remain distinguished in source."
+      ],
+      "features": []
+    },
+    {
+      "id": "core.polish",
+      "kind": "correctness",
+      "command": ["cargo", "test", "--locked", "-p", "picsie-core", "--test", "polish"],
+      "sources": ["crates/picsie-core/tests/polish.rs"],
+      "fixture": "Fixtures constructed by this tracked Rust test module.",
+      "steps": [
+        "Create a fresh document/editor per test.",
+        "Dispatch the existing Rust commands and render/serialize through the engine."
+      ],
+      "assertions": [
+        "Named Rust test assertions; upstream-adapted and local fixtures remain distinguished in source."
+      ],
+      "features": []
+    },
+    {
+      "id": "core.publication",
+      "kind": "correctness",
+      "command": ["cargo", "test", "--locked", "-p", "picsie-core", "--test", "publication"],
+      "sources": ["crates/picsie-core/tests/publication.rs"],
+      "fixture": "Fixtures constructed by this tracked Rust test module.",
+      "steps": [
+        "Create a fresh document/editor per test.",
+        "Dispatch the existing Rust commands and render/serialize through the engine."
+      ],
+      "assertions": [
+        "Named Rust test assertions; upstream-adapted and local fixtures remain distinguished in source."
+      ],
+      "features": []
+    },
+    {
+      "id": "core.raster_snapshot",
+      "kind": "correctness",
+      "command": ["cargo", "test", "--locked", "-p", "picsie-core", "--test", "raster_snapshot"],
+      "sources": ["crates/picsie-core/tests/raster_snapshot.rs"],
+      "fixture": "Fixtures constructed by this tracked Rust test module.",
+      "steps": [
+        "Create a fresh document/editor per test.",
+        "Dispatch the existing Rust commands and render/serialize through the engine."
+      ],
+      "assertions": [
+        "Named Rust test assertions; upstream-adapted and local fixtures remain distinguished in source."
+      ],
+      "features": []
+    },
+    {
+      "id": "core.reference_features",
+      "kind": "correctness",
+      "command": ["cargo", "test", "--locked", "-p", "picsie-core", "--test", "reference_features"],
+      "sources": ["crates/picsie-core/tests/reference_features.rs"],
+      "fixture": "Fixtures constructed by this tracked Rust test module.",
+      "steps": [
+        "Create a fresh document/editor per test.",
+        "Dispatch the existing Rust commands and render/serialize through the engine."
+      ],
+      "assertions": [
+        "Named Rust test assertions; upstream-adapted and local fixtures remain distinguished in source."
+      ],
+      "features": []
+    },
+    {
+      "id": "core.render_equivalence",
+      "kind": "correctness",
+      "command": ["cargo", "test", "--locked", "-p", "picsie-core", "--test", "render_equivalence"],
+      "sources": ["crates/picsie-core/tests/render_equivalence.rs"],
+      "fixture": "Fixtures constructed by this tracked Rust test module.",
+      "steps": [
+        "Create a fresh document/editor per test.",
+        "Dispatch the existing Rust commands and render/serialize through the engine."
+      ],
+      "assertions": [
+        "Named Rust test assertions; upstream-adapted and local fixtures remain distinguished in source."
+      ],
+      "features": []
+    },
+    {
+      "id": "core.selection_history",
+      "kind": "correctness",
+      "command": ["cargo", "test", "--locked", "-p", "picsie-core", "--test", "selection_history"],
+      "sources": ["crates/picsie-core/tests/selection_history.rs"],
+      "fixture": "Fixtures constructed by this tracked Rust test module.",
+      "steps": [
+        "Create a fresh document/editor per test.",
+        "Dispatch the existing Rust commands and render/serialize through the engine."
+      ],
+      "assertions": [
+        "Named Rust test assertions; upstream-adapted and local fixtures remain distinguished in source."
+      ],
+      "features": []
+    },
+    {
+      "id": "core.shapes_gradients",
+      "kind": "correctness",
+      "command": ["cargo", "test", "--locked", "-p", "picsie-core", "--test", "shapes_gradients"],
+      "sources": ["crates/picsie-core/tests/shapes_gradients.rs"],
+      "fixture": "Fixtures constructed by this tracked Rust test module.",
+      "steps": [
+        "Create a fresh document/editor per test.",
+        "Dispatch the existing Rust commands and render/serialize through the engine."
+      ],
+      "assertions": [
+        "Named Rust test assertions; upstream-adapted and local fixtures remain distinguished in source."
+      ],
+      "features": []
+    },
+    {
+      "id": "core.workflow_features",
+      "kind": "correctness",
+      "command": ["cargo", "test", "--locked", "-p", "picsie-core", "--test", "workflow_features"],
+      "sources": ["crates/picsie-core/tests/workflow_features.rs"],
+      "fixture": "Fixtures constructed by this tracked Rust test module.",
+      "steps": [
+        "Create a fresh document/editor per test.",
+        "Dispatch the existing Rust commands and render/serialize through the engine."
+      ],
+      "assertions": [
+        "Named Rust test assertions; upstream-adapted and local fixtures remain distinguished in source."
+      ],
+      "features": []
+    },
+    {
+      "id": "bridge.native",
+      "kind": "correctness",
+      "command": ["{tsx}", "--test", "tests/native.test.ts"],
+      "sources": ["tests/native.test.ts"],
+      "fixture": "Tracked test-local fixtures and temporary projects.",
+      "steps": [
+        "Create real addon sessions.",
+        "Dispatch commands, export pixels, save and reopen, close resources."
+      ],
+      "assertions": ["Pixel/state/history/persistence assertions through actual Node-API workers."],
+      "features": [],
+      "requires": ["addon"]
+    },
+    {
+      "id": "native.baseline",
+      "kind": "native",
+      "command": [
+        "{python}",
+        "crates/picsie-desktop/verify.py",
+        "--binary",
+        "{desktop}",
+        "--output",
+        "{case_output}",
+        "--display",
+        "{display}"
+      ],
+      "sources": ["crates/picsie-desktop/verify.py"],
+      "fixture": "Color studies demo and fixed 400x300 test documents.",
+      "steps": [
+        "Replay chrome, tools, layers/masks/colors, selections/crop/transforms, text, native file portals, and shapes/gradients.",
+        "Close owned documents and verify cancellation/discard/quit."
+      ],
+      "assertions": [
+        "Named driver assertions in report.json must pass.",
+        "Screenshots and traces retained for visual review; an exit code alone does not establish polish."
+      ],
+      "features": [],
+      "requires": ["desktop", "x11"],
+      "native_driver": "crates/picsie-desktop/verify.py"
+    },
+    {
+      "id": "native.groups",
+      "kind": "native",
+      "command": [
+        "{python}",
+        "scripts/verification/group_transforms.py",
+        "--binary",
+        "{desktop}",
+        "--output",
+        "{case_output}",
+        "--display",
+        "{display}"
+      ],
+      "sources": ["scripts/verification/group_transforms.py"],
+      "fixture": "Six-layer Color studies demo, selected blue/coral layers and folder.",
+      "steps": [
+        "Multi-select; numeric resize and Escape cancel; pointer resize/rotate with Shift.",
+        "Flip, lock exclusion, folder rotation, .comp save/reopen."
+      ],
+      "assertions": [
+        "Named driver assertions in report.json must pass.",
+        "Screenshots and traces retained for visual review; an exit code alone does not establish polish."
+      ],
+      "features": ["transform.group-box"],
+      "requires": ["desktop", "x11"],
+      "native_driver": "scripts/verification/group_transforms.py"
+    },
+    {
+      "id": "native.adjustments",
+      "kind": "native",
+      "command": [
+        "{python}",
+        "scripts/verification/levels_curves.py",
+        "--binary",
+        "{desktop}",
+        "--output",
+        "{case_output}",
+        "--display",
+        "{display}"
+      ],
+      "sources": ["scripts/verification/levels_curves.py"],
+      "fixture": "400x300 document with a 300x200 gray rectangle.",
+      "steps": [
+        "Open Levels; edit fields, drag histogram handles, auto contrast and gray sampling.",
+        "Cancel/reopen/toggle preview/apply/undo; add, drag, remove, reset and apply Curves points."
+      ],
+      "assertions": [
+        "Named driver assertions in report.json must pass.",
+        "Screenshots and traces retained for visual review; an exit code alone does not establish polish."
+      ],
+      "features": ["adjustments.levels", "adjustments.curves", "adjustments.layer-adjustments"],
+      "requires": ["desktop", "x11"],
+      "native_driver": "scripts/verification/levels_curves.py"
+    },
+    {
+      "id": "native.combined",
+      "kind": "native",
+      "command": [
+        "{python}",
+        "scripts/verification/combined.py",
+        "--binary",
+        "{desktop}",
+        "--output",
+        "{case_output}",
+        "--display",
+        "{display}"
+      ],
+      "sources": ["scripts/verification/combined.py"],
+      "fixture": "800x600 document with red radius-16 rectangle and ellipse.",
+      "steps": [
+        "Set radius before drawing; group resize/Apply/Undo.",
+        "Select a single layer; paint a red-to-blue gradient across its footprint.",
+        "Add Levels above active art, edit/apply; add and apply a Curves point."
+      ],
+      "assertions": [
+        "Named driver assertions in report.json must pass.",
+        "Screenshots and traces retained for visual review; an exit code alone does not establish polish."
+      ],
+      "features": [
+        "transform.group-box",
+        "shapes.shape-style",
+        "shapes.corner-radius",
+        "shapes.gradient-tool",
+        "adjustments.levels",
+        "adjustments.curves"
+      ],
+      "requires": ["desktop", "x11"],
+      "native_driver": "scripts/verification/combined.py"
+    },
+    {
+      "id": "performance.layer-move",
+      "kind": "visible-performance",
+      "command": [
+        "{python}",
+        "scripts/compare-gimp-performance.py",
+        "--prepare-fixture",
+        "--fixture",
+        "{fixtures}",
+        "--runtime",
+        "{runtime}",
+        "--picsie",
+        "{desktop}",
+        "--tools",
+        "{tools}",
+        "--output",
+        "{case_output}",
+        "--display",
+        "{display}",
+        "--trials",
+        "{trials}",
+        "--picsie-layout",
+        "compositor",
+        "--gpu-icd",
+        "{gpu_icd}",
+        "--software-wsi"
+      ],
+      "sources": ["scripts/compare-gimp-performance.py", "scripts/compare-desktop-performance.py"],
+      "fixture": "Rust-generated 1200x800 demo, editable/raster Picsie controls and GIMP ORA.",
+      "steps": [
+        "One discarded whole launch per app; rotating measured launches.",
+        "24 measured alternating nudges, two fixed four-second 120Hz out-and-back drags per launch."
+      ],
+      "assertions": [
+        "Displacement, return-to-start and within-application output checks.",
+        "Retain all measured inputs/polls/transitions and slow samples."
+      ],
+      "features": ["transform.move"],
+      "requires": ["desktop", "addon", "x11", "gimp"],
+      "build_examples": [],
+      "metrics": [
+        "input-to-framebuffer latency",
+        "distinct visible update intervals",
+        "CPU one-core percent",
+        "RSS/PSS"
+      ],
+      "limits": "Xvfb observation includes polling quantization; excludes physical compositor/scanout. GIMP shortcut displacement differs. No universal FPS claim."
+    },
+    {
+      "id": "performance.behaviors",
+      "kind": "engine-performance",
+      "command": [
+        "{python}",
+        "scripts/compare-gimp-behaviors.py",
+        "--output",
+        "{case_output}",
+        "--fixtures",
+        "{fixtures}",
+        "--runtime",
+        "{runtime}",
+        "--picsie",
+        "{behavior_binary}",
+        "--trials",
+        "{trials}",
+        "--samples",
+        "{samples}",
+        "--warmups",
+        "{warmups}"
+      ],
+      "sources": [
+        "scripts/compare-gimp-behaviors.py",
+        "scripts/perf/gimp-behavior-workload.py",
+        "crates/picsie-core/examples/performance_behaviors.rs"
+      ],
+      "fixture": "Deterministic 1200x800 and 3600x2400 raster/checker fixtures generated by Rust.",
+      "steps": [
+        "Fresh editors for selected-pixel fill/clear, feather20, retained crop, linear/nearest half resize, brush and eraser.",
+        "Alternate applications across launches; warmups and samples are explicit."
+      ],
+      "assertions": [
+        "Output-quality and geometry assertions in each driver.",
+        "Keep command, render and complete-RGBA timings distinct."
+      ],
+      "features": [
+        "clipboard.fill-clear",
+        "selection.feather",
+        "crop.commit",
+        "resize.image",
+        "brush.paint-erase"
+      ],
+      "requires": ["gimp"],
+      "build_examples": ["performance_behaviors"],
+      "metrics": ["command_ms", "render_ms", "total_ms"],
+      "limits": "CPU workload, not UI latency. GIMP sampling/selection semantics can differ; quality-limited comparisons remain labeled.",
+      "cases": [
+        "selection-fill",
+        "selection-clear",
+        "selection-fill-feather20",
+        "selection-clear-feather20",
+        "crop-retained",
+        "image-resize-half-linear",
+        "image-resize-half-nearest",
+        "brush-hard100",
+        "eraser-hard100"
+      ]
+    },
+    {
+      "id": "performance.features",
+      "kind": "engine-performance",
+      "command": [
+        "{python}",
+        "scripts/compare-feature-performance.py",
+        "--suite",
+        "layers-masks",
+        "--output",
+        "{case_output}",
+        "--fixtures",
+        "{fixtures}",
+        "--runtime",
+        "{runtime}",
+        "--picsie",
+        "{feature_binary}",
+        "--trials",
+        "{trials}",
+        "--samples",
+        "{samples}",
+        "--warmups",
+        "{warmups}"
+      ],
+      "sources": [
+        "scripts/compare-feature-performance.py",
+        "scripts/perf/gimp-feature-workload.py",
+        "crates/picsie-core/examples/performance_features.rs"
+      ],
+      "fixture": "Deterministic matched 3-layer 1200x800 and 3600x2400 fixtures built procedurally on both sides plus Rust baseline composites.",
+      "steps": [
+        "Fresh editors/images for opacity preview/commit, visibility toggle, multiply/screen blend, mask disable and mask paint.",
+        "Alternate applications across launches; warmups and samples are explicit."
+      ],
+      "assertions": [
+        "Output-quality, geometry, history-count and meaningful-pixel assertions in each driver.",
+        "Keep command, render and complete-RGBA timings distinct; opacity-preview is Picsie-only."
+      ],
+      "features": [
+        "layers.opacity",
+        "layers.visibility-swipe",
+        "layers.blend",
+        "masks.raster",
+        "masks.paint"
+      ],
+      "requires": ["gimp"],
+      "build_examples": ["performance_features"],
+      "metrics": ["command_ms", "total_ms"],
+      "limits": "CPU workload, not UI latency. GIMP total includes a destructive visible-layer merge; opacity compositing differs (linear vs sRGB) and is labeled, not a parity claim. Suite-locked: running this scenario never executes the performance.selections workloads.",
+      "cases": [
+        "opacity-preview",
+        "opacity-commit",
+        "visibility-toggle",
+        "blend-multiply",
+        "blend-screen",
+        "mask-disabled",
+        "mask-paint"
+      ]
+    },
+    {
+      "id": "performance.selections",
+      "kind": "engine-performance",
+      "command": [
+        "{python}",
+        "scripts/compare-feature-performance.py",
+        "--suite",
+        "selections",
+        "--output",
+        "{case_output}",
+        "--fixtures",
+        "{fixtures}",
+        "--runtime",
+        "{runtime}",
+        "--picsie",
+        "{feature_binary}",
+        "--trials",
+        "{trials}",
+        "--samples",
+        "{samples}",
+        "--warmups",
+        "{warmups}"
+      ],
+      "sources": [
+        "scripts/compare-feature-performance.py",
+        "scripts/perf/gimp-feature-workload.py",
+        "crates/picsie-core/examples/performance_features.rs"
+      ],
+      "fixture": "Deterministic matched segmented 1200x800 and 3600x2400 fixtures (opaque base, transparent selected layer with two separated red squares) built procedurally on both sides plus Rust baseline composites.",
+      "steps": [
+        "Fresh editors/images for selection inverse, 5px expand/contract from a center-half rectangle, zero-tolerance contiguous/noncontiguous wand clicks and layer-alpha silhouette selection.",
+        "Alternate applications across launches; warmups and samples are explicit."
+      ],
+      "assertions": [
+        "Selection dimensions/bounds, changed interior/exterior coverage probes and undo restoration in each driver; trial-1 paired .selcov channel dumps compared at both sizes (coverage materialized and asserted every sample; only the first measured sample per trial is dumped).",
+        "Keep command, materialized-coverage, render and complete-RGBA timings distinct; unchanged document RGBA is never the selection check."
+      ],
+      "features": [
+        "selection.all-inverse",
+        "selection.expand-contract",
+        "selection.wand",
+        "selection.layer-pixels"
+      ],
+      "requires": ["gimp"],
+      "build_examples": ["performance_features"],
+      "metrics": ["command_ms", "coverage_ms", "total_ms"],
+      "limits": "CPU workload, not UI latency. GIMP total includes a destructive visible-layer merge; materialized selection coverage is timed and dumped separately. Picsie expand edges are antialiased while GIMP grow edges are hard (quantified edge ring, not parity); GIMP shrink/grow opening is not reversible (contract restoration recreates the input). Suite-locked: running this scenario never executes the performance.features layer/mask workloads.",
+      "cases": [
+        "select-inverse",
+        "select-expand5",
+        "select-contract5",
+        "wand-contiguous",
+        "wand-noncontiguous",
+        "select-layer-alpha"
+      ]
+    },
+    {
+      "id": "performance.recent-features",
+      "kind": "engine-performance",
+      "command": [
+        "{python}",
+        "scripts/compare-feature-performance.py",
+        "--suite",
+        "recent-features",
+        "--output",
+        "{case_output}",
+        "--fixtures",
+        "{fixtures}",
+        "--runtime",
+        "{runtime}",
+        "--picsie",
+        "{feature_binary}",
+        "--trials",
+        "{trials}",
+        "--samples",
+        "{samples}",
+        "--warmups",
+        "{warmups}"
+      ],
+      "sources": [
+        "scripts/compare-feature-performance.py",
+        "scripts/perf/gimp-feature-workload.py",
+        "crates/picsie-core/examples/performance_features.rs"
+      ],
+      "fixture": "Deterministic matched group/gradient/adjustment 1200x800 and 3600x2400 fixtures (folder with two raster children; mid-gray layers; gray plus white-square layer) built procedurally on both sides plus Rust baseline composites.",
+      "steps": [
+        "Fresh editors/images for folder group 200% resize and 30-degree rotate, full-width linear black-to-white image and mask gradients, and one live Levels/Curves filter/adjustment update inside the open transaction.",
+        "Alternate applications across launches; warmups and samples are explicit."
+      ],
+      "assertions": [
+        "Hierarchy/member-geometry, gradient-endpoint, mask-coverage-channel, tone-probe and undo/cancel restoration in each driver; trial-1 paired .rgba dumps compared at both sizes plus the trial-1 .maskcov channel for the mask gradient.",
+        "Keep command, materialized-coverage, render and complete-RGBA timings distinct; GIMP group transforms bake resampling (labeled, not equal-quality parity) and masks paint in linear light (quantified mid-band difference, not parity)."
+      ],
+      "features": [
+        "transform.group-box",
+        "shapes.gradient-tool",
+        "adjustments.levels",
+        "adjustments.curves",
+        "adjustments.layer-adjustments"
+      ],
+      "requires": ["gimp"],
+      "build_examples": ["performance_features"],
+      "metrics": ["command_ms", "coverage_ms", "total_ms"],
+      "limits": "CPU workload, not UI latency. GIMP total includes a destructive visible-layer merge; Picsie group transforms stay live while GIMP bakes resampling into children (labeled representation difference, never an equal-quality speed claim). Mask-gradient mids differ systematically (GIMP linear-light masks vs Picsie encoded coverage). Levels/Curves use matched perceptual mapping (byte-identical probes in pilots). GIMP rotate has no sound inverse (padding re-bbox); only hierarchy preservation is controlled. Suite-locked: running this scenario never executes the layer/mask or selection workloads.",
+      "cases": [
+        "group-resize",
+        "group-rotate",
+        "gradient-image-linear",
+        "gradient-mask-linear",
+        "levels-update",
+        "curves-update"
+      ]
+    },
+    {
+      "id": "performance.strokes",
+      "kind": "visible-performance",
+      "command": [
+        "{python}",
+        "scripts/compare-gimp-strokes.py",
+        "--output",
+        "{case_output}",
+        "--fixtures",
+        "{fixtures}",
+        "--runtime",
+        "{runtime}",
+        "--picsie",
+        "{desktop}",
+        "--tools",
+        "{tools}",
+        "--gpu-icd",
+        "{gpu_icd}",
+        "--display",
+        "{display}",
+        "--trials",
+        "{trials}"
+      ],
+      "sources": [
+        "scripts/compare-gimp-strokes.py",
+        "scripts/compare-gimp-performance.py",
+        "scripts/compare-desktop-performance.py"
+      ],
+      "fixture": "Prepared behavior raster fixtures, 100px hard tip, fixed 60Hz one-second trajectory.",
+      "steps": [
+        "Calibrate endpoints untimed; measured app launches untraced.",
+        "Discard a whole warmup launch and first stroke per tool; keep measured brush/eraser strokes."
+      ],
+      "assertions": [
+        "Starting geometry, first changed solid pixels, final endpoint and Undo checks."
+      ],
+      "features": ["brush.paint-erase"],
+      "requires": ["desktop", "x11", "gimp", "behavior-fixtures"],
+      "metrics": [
+        "first visible ms",
+        "endpoint after release ms",
+        "CPU one-core percent",
+        "memory"
+      ],
+      "limits": "Framebuffer observation, not physical display latency; fixed trajectory/tip only."
+    },
+    {
+      "id": "performance.stress-stacks",
+      "kind": "engine-performance",
+      "command": [
+        "{python}",
+        "scripts/compare-stress-performance.py",
+        "--prepare",
+        "--output",
+        "{case_output}",
+        "--fixtures",
+        "{fixtures}",
+        "--runtime",
+        "{runtime}",
+        "--binary",
+        "{stress_binary}",
+        "--mode",
+        "stacks",
+        "--trials",
+        "{trials}",
+        "--samples",
+        "{samples}",
+        "--warmups",
+        "{warmups}"
+      ],
+      "sources": [
+        "scripts/compare-stress-performance.py",
+        "scripts/perf/gimp-stress-workload.py",
+        "crates/picsie-core/examples/performance_stress.rs"
+      ],
+      "fixture": "36 deterministic simple/complex overlap/scattered stacks plus resize/mask/distortion controls.",
+      "steps": [
+        "Generate fixtures in this run only.",
+        "Repeat existing command/render workloads with fresh editor/image per sample; alternate applications."
+      ],
+      "assertions": [
+        "Existing size/placement/pixel checks; failures retained.",
+        "Setup previews excluded; rendering stages separate."
+      ],
+      "features": ["layers.reorder", "navigation.fit", "navigation.hand"],
+      "requires": ["gimp"],
+      "build_examples": ["performance_stress"],
+      "metrics": ["command_ms", "preview_ms", "total_ms", "peak RSS"],
+      "limits": "Explicit large campaign. GIMP complex controls bake affine/masks/adjustments and omit live clipping; results are not complete quality parity."
+    },
+    {
+      "id": "performance.stress-resize",
+      "kind": "engine-performance",
+      "command": [
+        "{python}",
+        "scripts/compare-stress-performance.py",
+        "--prepare",
+        "--output",
+        "{case_output}",
+        "--fixtures",
+        "{fixtures}",
+        "--runtime",
+        "{runtime}",
+        "--binary",
+        "{stress_binary}",
+        "--mode",
+        "resize",
+        "--trials",
+        "{trials}",
+        "--samples",
+        "{samples}",
+        "--warmups",
+        "{warmups}"
+      ],
+      "sources": [
+        "scripts/compare-stress-performance.py",
+        "scripts/perf/gimp-stress-workload.py",
+        "crates/picsie-core/examples/performance_stress.rs"
+      ],
+      "fixture": "36 deterministic simple/complex overlap/scattered stacks plus resize/mask/distortion controls.",
+      "steps": [
+        "Generate fixtures in this run only.",
+        "Repeat existing command/render workloads with fresh editor/image per sample; alternate applications."
+      ],
+      "assertions": [
+        "Existing size/placement/pixel checks; failures retained.",
+        "Setup previews excluded; rendering stages separate."
+      ],
+      "features": [
+        "resize.image",
+        "resize.canvas",
+        "resize.resolution-only",
+        "transform.resize",
+        "transform.mask-transform"
+      ],
+      "requires": ["gimp"],
+      "build_examples": ["performance_stress"],
+      "metrics": ["command_ms", "preview_ms", "total_ms", "peak RSS"],
+      "limits": "Explicit large campaign. GIMP complex controls bake affine/masks/adjustments and omit live clipping; results are not complete quality parity."
+    },
+    {
+      "id": "performance.stress-navigation",
+      "kind": "visible-performance",
+      "command": [
+        "{python}",
+        "scripts/compare-stress-navigation.py",
+        "--output",
+        "{case_output}",
+        "--fixtures",
+        "{fixtures}",
+        "--runtime",
+        "{runtime}",
+        "--binary",
+        "{desktop}",
+        "--matcher",
+        "{matcher}",
+        "--tools",
+        "{tools}",
+        "--gpu-icd",
+        "{gpu_icd}",
+        "--display",
+        "{display}",
+        "--trials",
+        "{trials}",
+        "--samples",
+        "{samples}",
+        "--pan-focus",
+        "scene",
+        "--row-drop-view",
+        "fit"
+      ],
+      "sources": [
+        "scripts/compare-stress-navigation.py",
+        "scripts/perf/screen-match.c",
+        "scripts/perf/gimp-stress-prepare.py"
+      ],
+      "fixture": "Prepared stress fixtures with deterministic overlapping assets, exact fixture keys in child manifest.",
+      "steps": [
+        "Untimed endpoint/reference-frame calibration.",
+        "Native adjacent reorder, zoom/resize, first-visit and revisited pan; matched foreground scene."
+      ],
+      "assertions": [
+        "Expected complete frame matching (Picsie exact; GIMP one channel step tolerance).",
+        "Failed/incomplete launches retained separately; no silent exclusions."
+      ],
+      "features": ["layers.reorder", "navigation.fit", "navigation.hand"],
+      "requires": ["desktop", "x11", "gimp", "stress-fixtures", "matcher"],
+      "metrics": ["input-to-final-framebuffer ms", "host contention", "memory"],
+      "limits": "Prepared ORA baseline; XCF can be run through the underlying driver with separately validated preparation. No physical display timing."
+    }
+  ]
+}

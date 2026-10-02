@@ -76,7 +76,7 @@ def main():
     paths=[Path(__file__),workload,ROOT/'scripts/prepare-stress-gimp.py',ROOT/'scripts/perf/gimp-stress-prepare.py',ROOT/'crates/picsie-core/examples/performance_stress.rs',ROOT/'scripts/compare-gimp-performance.py',ROOT/'scripts/compare-desktop-performance.py',a.binary,a.runtime/'usr/bin/gimp-console']
     manifest=dict(head=subprocess.check_output(['git','rev-parse','HEAD'],text=True).strip(),
         mode=a.mode,apps=a.apps,trials=a.trials,samples=a.samples,warmups=a.warmups,filter=a.filter,cases=a.cases,bounded=a.bounded,gimp_format=a.gimp_format,
-        source_sha256={str(path.relative_to(ROOT)):hashlib.sha256(path.read_bytes()).hexdigest() for path in paths},
+        source_sha256={(str(path.relative_to(ROOT)) if path.is_relative_to(ROOT) else str(path)):hashlib.sha256(path.read_bytes()).hexdigest() for path in paths},
         fixture_sha256={path.name:hashlib.sha256(path.read_bytes()).hexdigest() for path in a.fixtures.iterdir() if path.is_file() and path.suffix in ['.picsie','.ora','.xcf','.json']},
         methods='Sequential alternating apps; fresh editor/image each sample. Setup/assertions excluded. No live input or UI/GPU timing. GIMP complex controls bake masks/affine/adjustments and omit live clipping. Preserve all measured samples.')
     (a.output/'manifest.json').write_text(json.dumps(manifest,indent=2)+'\n')

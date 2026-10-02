@@ -426,6 +426,8 @@ def main():
     p.add_argument('--gimp-format',choices=['ora','xcf'],default='ora')
     p.add_argument('--gimp-pan',choices=['space','middle'],default='space',
                    help='Untimed pan activation; middle enters GIMP scrolling directly')
+    p.add_argument('--tools',type=Path,default=Path('/usr'))
+    p.add_argument('--gpu-icd',type=Path,help='Override the historical RADV driver explicitly')
     p.add_argument('--matcher',type=Path,default=Path('artifacts/perf-stress-2026-10-01/screen-match.so'))
     p.add_argument('--apps',nargs='+',choices=['picsie','gimp'],default=['picsie','gimp'])
     p.add_argument('--pan-focus',choices=['centre','scene'],default='centre')
@@ -436,8 +438,8 @@ def main():
     for key in ['output','fixtures','binary','runtime','matcher']:setattr(a,key,getattr(a,key).resolve())
     if a.output.exists() and not a.resume:p.error('Choose a fresh output directory or --resume')
     a.output.mkdir(parents=True,exist_ok=True)
-    tools=ROOT/'artifacts/selection-history/tools/usr'
-    env={**os.environ,'DISPLAY':a.display,'WINIT_UNIX_BACKEND':'x11','VK_DRIVER_FILES':'/usr/share/vulkan/icd.d/radeon_icd.json','MESA_VK_WSI_DEBUG':'sw','PICSIE_GPU_DIAGNOSTICS':'1','GEGL_USE_OPENCL':'no','PATH':str(tools/'bin')+os.pathsep+os.environ.get('PATH',''),'LD_LIBRARY_PATH':str(tools/'lib')}
+    tools=a.tools.resolve()
+    env={**os.environ,'DISPLAY':a.display,'WINIT_UNIX_BACKEND':'x11','VK_DRIVER_FILES':str(a.gpu_icd.resolve() if a.gpu_icd else '/usr/share/vulkan/icd.d/radeon_icd.json'),'MESA_VK_WSI_DEBUG':'sw','PICSIE_GPU_DIAGNOSTICS':'1','GEGL_USE_OPENCL':'no','PATH':str(tools/'bin')+os.pathsep+os.environ.get('PATH',''),'LD_LIBRARY_PATH':str(tools/'lib')}
     env.pop('WAYLAND_DISPLAY',None)
     manifest=dict(keys=a.keys,trials=a.trials,apps=a.apps,pan_focus=a.pan_focus,row_drop_view=a.row_drop_view,navigation_only=a.navigation_only,fixture_index_sha256=hashlib.sha256((a.fixtures/'fixtures.json').read_bytes()).hexdigest(),pixel_tolerance={'picsie':0,'gimp':1},matcher_source_sha256=hashlib.sha256((ROOT/'scripts/perf/screen-match.c').read_bytes()).hexdigest(),matcher_binary_sha256=hashlib.sha256(a.matcher.read_bytes()).hexdigest(),gimp_format=a.gimp_format,gimp_pan=a.gimp_pan,prepare_source_sha256=hashlib.sha256((ROOT/'scripts/perf/gimp-stress-prepare.py').read_bytes()).hexdigest(),measured_samples_per_zoom_resize_case=a.samples,warmup=f'{a.warmup_launches} whole launch(es) and two zoom/resize cycles. Two reorder warmups normally; complex 300+ layers: zero reorder warmups, one measured reorder/Undo per launch. Each launch calibrates reference frames untimed; first-visit and revisited pans separate, with quiet starting/ending frames and latency from the first posted motion',source_sha256=hashlib.sha256(Path(__file__).read_bytes()).hexdigest(),binary_sha256=hashlib.sha256(a.binary.read_bytes()).hexdigest(),gimp_binary_sha256=hashlib.sha256((a.runtime/'usr/bin/gimp').read_bytes()).hexdigest(),helper_sha256={name:hashlib.sha256((ROOT/'scripts'/name).read_bytes()).hexdigest() for name in ['compare-gimp-performance.py','compare-desktop-performance.py']},fixture_sha256={key:{suffix:hashlib.sha256((a.fixtures/(key+suffix)).read_bytes()).hexdigest() for suffix in ['.picsie','.'+a.gimp_format]+(['.xcf.json'] if a.gimp_format=='xcf' else [])} for key in a.keys},head=subprocess.check_output(['git','rev-parse','HEAD'],text=True).strip(),scope=__doc__)
     if a.resume:

@@ -1,0 +1,140 @@
+[
+  {
+    "name": "babl",
+    "url": "https://mirror5.krfoss.org/cachyos/repo/x86_64_v3/cachyos-extra-v3/babl-0.1.128-1.1-x86_64_v3.pkg.tar.zst",
+    "sha256": "820e13dbb56c2ad9465954e50cb1c818c7d17ab615cfa489554b63b3888fde6f",
+    "filename": "babl-0.1.128-1.1-x86_64_v3.pkg.tar.zst"
+  },
+  {
+    "name": "jasper",
+    "url": "https://mirror5.krfoss.org/cachyos/repo/x86_64_v3/cachyos-extra-v3/jasper-4.2.9-1.1-x86_64_v3.pkg.tar.zst",
+    "sha256": "3791a80a3dd5c81678b6e1dde8e047b87b8e7c8423425c49bb72c5898f5d1752",
+    "filename": "jasper-4.2.9-1.1-x86_64_v3.pkg.tar.zst"
+  },
+  {
+    "name": "lensfun",
+    "url": "https://mirror5.krfoss.org/cachyos/repo/x86_64_v3/cachyos-extra-v3/lensfun-1:0.3.4-6.1-x86_64_v3.pkg.tar.zst",
+    "sha256": "7f9f5045f77cb458ce028047e8f3c5db335284da3d652849c6d9825b6a6c6584",
+    "filename": "lensfun-1:0.3.4-6.1-x86_64_v3.pkg.tar.zst"
+  },
+  {
+    "name": "libspiro",
+    "url": "https://mirror5.krfoss.org/cachyos/repo/x86_64_v3/cachyos-extra-v3/libspiro-1:20240903-1.2-x86_64_v3.pkg.tar.zst",
+    "sha256": "07e24760e7219e05cb6f44a6bdbc0ad00ce4fa8b8d1f79a6702b6677992c0373",
+    "filename": "libspiro-1:20240903-1.2-x86_64_v3.pkg.tar.zst"
+  },
+  {
+    "name": "blas",
+    "url": "https://mirror5.krfoss.org/cachyos/repo/x86_64_v3/cachyos-extra-v3/blas-3.12.1-2.1-x86_64_v3.pkg.tar.zst",
+    "sha256": "669afaf33feee30738c7b49bd9f2dabd5cfc63989d3d0aa66b7ee99706fd1f34",
+    "filename": "blas-3.12.1-2.1-x86_64_v3.pkg.tar.zst"
+  },
+  {
+    "name": "lapack",
+    "url": "https://mirror5.krfoss.org/cachyos/repo/x86_64_v3/cachyos-extra-v3/lapack-3.12.1-2.1-x86_64_v3.pkg.tar.zst",
+    "sha256": "38679283797b1eed852435d1f9d66c37f725cb57bc000f8a39417743ab1b8be1",
+    "filename": "lapack-3.12.1-2.1-x86_64_v3.pkg.tar.zst"
+  },
+  {
+    "name": "suitesparse",
+    "url": "https://mirror5.krfoss.org/cachyos/repo/x86_64_v3/cachyos-extra-v3/suitesparse-7.14.1-1.1-x86_64_v3.pkg.tar.zst",
+    "sha256": "bd7e624aa9163ed40e8c771d5bdac1b6eee411c163dec8227e40b0afc1c9201b",
+    "filename": "suitesparse-7.14.1-1.1-x86_64_v3.pkg.tar.zst"
+  },
+  {
+    "name": "gegl",
+    "url": "https://mirror5.krfoss.org/cachyos/repo/x86_64_v3/cachyos-extra-v3/gegl-0.4.72-3.1-x86_64_v3.pkg.tar.zst",
+    "sha256": "5120e85d0a9f0be35c5f95f646bedd0e84dd9ce5842e22e9b751a02403304ed9",
+    "filename": "gegl-0.4.72-3.1-x86_64_v3.pkg.tar.zst"
+  },
+  {
+    "name": "libgexiv2",
+    "url": "https://mirror5.krfoss.org/cachyos/repo/x86_64_v3/cachyos-extra-v3/libgexiv2-0.14.7-1.1-x86_64_v3.pkg.tar.zst",
+    "sha256": "78ae6ec3f8a7e960ba9fa6205e33ed0148400a144ab45d0fe2aac845f3c048e8",
+    "filename": "libgexiv2-0.14.7-1.1-x86_64_v3.pkg.tar.zst"
+  },
+  {
+    "name": "libmypaint",
+    "url": "https://mirror5.krfoss.org/cachyos/repo/x86_64_v3/cachyos-extra-v3/libmypaint-1.6.1-2.1-x86_64.pkg.tar.zst",
+    "sha256": "1df70f20f3ed75c17a2facd3162fdad8b981083527503a35d2bf095d1b479df0",
+    "filename": "libmypaint-1.6.1-2.1-x86_64.pkg.tar.zst"
+  },
+  {
+    "name": "mypaint-brushes",
+    "url": "https://archlinux.cachyos.org/repo/extra/os/x86_64/mypaint-brushes-2.0.2-2-any.pkg.tar.zst",
+    "sha256": "fa7cb13d120bb2aad07467f0d3de44ebcdd22c222062bd8089f1b5724cce4127",
+    "filename": "mypaint-brushes-2.0.2-2-any.pkg.tar.zst"
+  },
+  {
+    "name": "libmng",
+    "url": "https://mirror5.krfoss.org/cachyos/repo/x86_64_v3/cachyos-extra-v3/libmng-2.0.3-4.1-x86_64.pkg.tar.zst",
+    "sha256": "c65ee15296c6b6115e727806a1311de9b479984208f90f789e192cbf625864df",
+    "filename": "libmng-2.0.3-4.1-x86_64.pkg.tar.zst"
+  },
+  {
+    "name": "libwmf",
+    "url": "https://mirror5.krfoss.org/cachyos/repo/x86_64_v3/cachyos-extra-v3/libwmf-0.2.16-1.1-x86_64_v3.pkg.tar.zst",
+    "sha256": "bb3f5df27fe1929889312fcb9db2a991a594ce40812ada43dcb7fbf61a86bfc7",
+    "filename": "libwmf-0.2.16-1.1-x86_64_v3.pkg.tar.zst"
+  },
+  {
+    "name": "libxpm",
+    "url": "https://mirror5.krfoss.org/cachyos/repo/x86_64_v3/cachyos-extra-v3/libxpm-3.5.19-1.1-x86_64_v3.pkg.tar.zst",
+    "sha256": "08521faf8651c960d8b57b116b0c8bff92b14542fdd3847380395d8910633994",
+    "filename": "libxpm-3.5.19-1.1-x86_64_v3.pkg.tar.zst"
+  },
+  {
+    "name": "poppler-data",
+    "url": "https://archlinux.cachyos.org/repo/extra/os/x86_64/poppler-data-0.4.12-2-any.pkg.tar.zst",
+    "sha256": "46d69cf3aca08e7f4edf6fa0ea7003aab50b740898bafb4e76ceb72da705aaf2",
+    "filename": "poppler-data-0.4.12-2-any.pkg.tar.zst"
+  },
+  {
+    "name": "gimp",
+    "url": "https://archlinux.cachyos.org/repo/extra/os/x86_64/gimp-3.2.6-2-x86_64.pkg.tar.zst",
+    "sha256": "21b31e91cc16b8504972b5882b8d75bbcf18fe83dbe11d0614cff4456cef7328",
+    "filename": "gimp-3.2.6-2-x86_64.pkg.tar.zst"
+  },
+  {
+    "name": "openexr",
+    "url": "https://archive.archlinux.org/packages/o/openexr/openexr-3.5.0-2-x86_64.pkg.tar.zst",
+    "sha256": "58c321c3074954ce7cde23a407ba41d63bfbae16ed2a716de2d94611d5767d8c",
+    "filename": "openexr-3.5.0-2-x86_64.pkg.tar.zst"
+  },
+  {
+    "name": "jbig2dec",
+    "url": "https://mirror5.krfoss.org/cachyos/repo/x86_64_v3/cachyos-extra-v3/jbig2dec-0.20-2.1-x86_64_v3.pkg.tar.zst",
+    "sha256": "04365f8c3b7181a8080d9d5c3e8aa2896f072018c745a10d2a0cc1f59bc10271",
+    "filename": "jbig2dec-0.20-2.1-x86_64_v3.pkg.tar.zst"
+  },
+  {
+    "name": "libpaper",
+    "url": "https://mirror5.krfoss.org/cachyos/repo/x86_64_v3/cachyos-extra-v3/libpaper-2.2.8-1.1-x86_64_v3.pkg.tar.zst",
+    "sha256": "cc9527a3dfd77bd7c29d30b07fb74f8fee3fd6e12ec3b8f432abbcc46cfc17d5",
+    "filename": "libpaper-2.2.8-1.1-x86_64_v3.pkg.tar.zst"
+  },
+  {
+    "name": "ijs",
+    "url": "https://mirror5.krfoss.org/cachyos/repo/x86_64_v3/cachyos-extra-v3/ijs-0.35-7.1-x86_64_v3.pkg.tar.zst",
+    "sha256": "72d03ca4a71b288e80425457ced55bae964b1daf303d9acea9d3b61e25bd4fa2",
+    "filename": "ijs-0.35-7.1-x86_64_v3.pkg.tar.zst"
+  },
+  {
+    "name": "libidn",
+    "url": "https://mirror5.krfoss.org/cachyos/repo/x86_64_v3/cachyos-extra-v3/libidn-1.44-1.1-x86_64_v3.pkg.tar.zst",
+    "sha256": "c0e39ffda6056b99de10d901f03987375e68f1be0572e97a83d7856b877e68d6",
+    "filename": "libidn-1.44-1.1-x86_64_v3.pkg.tar.zst"
+  },
+  {
+    "name": "ghostscript",
+    "url": "https://mirror5.krfoss.org/cachyos/repo/x86_64_v3/cachyos-extra-v3/ghostscript-10.08.0-1.1-x86_64_v3.pkg.tar.zst",
+    "sha256": "ec2069e6ef2fc9a54c2bc627383befef80afc9119499b23842d0a342073efbae",
+    "filename": "ghostscript-10.08.0-1.1-x86_64_v3.pkg.tar.zst"
+  },
+  {
+    "name": "openjph",
+    "url": "https://mirror5.krfoss.org/cachyos/repo/x86_64_v3/cachyos-extra-v3/openjph-0.32.0-1.1-x86_64_v3.pkg.tar.zst",
+    "sha256": "88483abf5f45c188ff633b6480c61e5a5c173a42a79d8745c9b41a09fd63925e",
+    "filename": "openjph-0.32.0-1.1-x86_64_v3.pkg.tar.zst"
+  }
+]

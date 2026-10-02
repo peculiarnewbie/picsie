@@ -1,0 +1,2768 @@
+{
+  "schemaVersion": 1,
+  "features": [
+    {
+      "feature": "shell.metrics",
+      "implementation": "implemented",
+      "correctness": [],
+      "native": [
+        "native.baseline"
+      ],
+      "performance": [],
+      "gaps": [
+        "No tracked correctness scenario mapped.",
+        "No tracked performance scenario mapped."
+      ],
+      "scope": "Suite/check association only; not proof of every sub-behavior or full polish."
+    },
+    {
+      "feature": "shell.header-scroll",
+      "implementation": "implemented",
+      "correctness": [],
+      "native": [],
+      "performance": [],
+      "gaps": [
+        "No tracked correctness scenario mapped.",
+        "No tracked native scenario mapped.",
+        "No tracked performance scenario mapped."
+      ],
+      "scope": "Suite/check association only; not proof of every sub-behavior or full polish."
+    },
+    {
+      "feature": "shell.rail-scroll",
+      "implementation": "implemented",
+      "correctness": [],
+      "native": [
+        "native.baseline"
+      ],
+      "performance": [],
+      "gaps": [
+        "No tracked correctness scenario mapped.",
+        "No tracked performance scenario mapped."
+      ],
+      "scope": "Suite/check association only; not proof of every sub-behavior or full polish."
+    },
+    {
+      "feature": "shell.selected-state",
+      "implementation": "partial",
+      "correctness": [],
+      "native": [],
+      "performance": [],
+      "gaps": [
+        "No tracked correctness scenario mapped.",
+        "No tracked native scenario mapped.",
+        "No tracked performance scenario mapped."
+      ],
+      "scope": "Suite/check association only; not proof of every sub-behavior or full polish."
+    },
+    {
+      "feature": "shell.numeric-step",
+      "implementation": "implemented",
+      "correctness": [],
+      "native": [
+        "native.baseline"
+      ],
+      "performance": [],
+      "gaps": [
+        "No tracked correctness scenario mapped.",
+        "No tracked performance scenario mapped."
+      ],
+      "scope": "Suite/check association only; not proof of every sub-behavior or full polish."
+    },
+    {
+      "feature": "shell.field-focus",
+      "implementation": "implemented",
+      "correctness": [],
+      "native": [
+        "native.baseline"
+      ],
+      "performance": [],
+      "gaps": [
+        "No tracked correctness scenario mapped.",
+        "No tracked performance scenario mapped."
+      ],
+      "scope": "Suite/check association only; not proof of every sub-behavior or full polish."
+    },
+    {
+      "feature": "shell.slider-snap",
+      "implementation": "implemented",
+      "correctness": [],
+      "native": [
+        "native.baseline"
+      ],
+      "performance": [],
+      "gaps": [
+        "No tracked correctness scenario mapped.",
+        "No tracked performance scenario mapped."
+      ],
+      "scope": "Suite/check association only; not proof of every sub-behavior or full polish."
+    },
+    {
+      "feature": "shell.tooltips",
+      "implementation": "partial",
+      "correctness": [],
+      "native": [],
+      "performance": [],
+      "gaps": [
+        "No tracked correctness scenario mapped.",
+        "No tracked native scenario mapped.",
+        "No tracked performance scenario mapped."
+      ],
+      "scope": "Suite/check association only; not proof of every sub-behavior or full polish."
+    },
+    {
+      "feature": "shell.busy",
+      "implementation": "implemented",
+      "correctness": [],
+      "native": [],
+      "performance": [],
+      "gaps": [
+        "No tracked correctness scenario mapped.",
+        "No tracked native scenario mapped.",
+        "No tracked performance scenario mapped."
+      ],
+      "scope": "Suite/check association only; not proof of every sub-behavior or full polish."
+    },
+    {
+      "feature": "shell.menus",
+      "implementation": "adapted",
+      "correctness": [],
+      "native": [
+        "native.baseline"
+      ],
+      "performance": [],
+      "gaps": [
+        "No tracked correctness scenario mapped.",
+        "No tracked performance scenario mapped."
+      ],
+      "scope": "Suite/check association only; not proof of every sub-behavior or full polish."
+    },
+    {
+      "feature": "shell.undo-label",
+      "implementation": "implemented",
+      "correctness": [],
+      "native": [],
+      "performance": [],
+      "gaps": [
+        "No tracked correctness scenario mapped.",
+        "No tracked native scenario mapped.",
+        "No tracked performance scenario mapped."
+      ],
+      "scope": "Suite/check association only; not proof of every sub-behavior or full polish."
+    },
+    {
+      "feature": "shell.shortcut-editor",
+      "implementation": "missing",
+      "correctness": [],
+      "native": [],
+      "performance": [],
+      "gaps": [
+        "Feature missing; no executable behavior claim."
+      ],
+      "scope": "Suite/check association only; not proof of every sub-behavior or full polish."
+    },
+    {
+      "feature": "shell.floating-panels",
+      "implementation": "missing",
+      "correctness": [],
+      "native": [],
+      "performance": [],
+      "gaps": [
+        "Feature missing; no executable behavior claim."
+      ],
+      "scope": "Suite/check association only; not proof of every sub-behavior or full polish."
+    },
+    {
+      "feature": "shell.preferences",
+      "implementation": "partial",
+      "correctness": [],
+      "native": [
+        "native.baseline"
+      ],
+      "performance": [],
+      "gaps": [
+        "No tracked correctness scenario mapped.",
+        "No tracked performance scenario mapped."
+      ],
+      "scope": "Suite/check association only; not proof of every sub-behavior or full polish."
+    },
+    {
+      "feature": "shell.platform",
+      "implementation": "adapted",
+      "correctness": [],
+      "native": [],
+      "performance": [],
+      "gaps": [
+        "No tracked correctness scenario mapped.",
+        "No tracked native scenario mapped.",
+        "No tracked performance scenario mapped."
+      ],
+      "scope": "Suite/check association only; not proof of every sub-behavior or full polish."
+    },
+    {
+      "feature": "projects.new",
+      "implementation": "partial",
+      "correctness": [],
+      "native": [
+        "native.baseline"
+      ],
+      "performance": [],
+      "gaps": [
+        "No tracked correctness scenario mapped.",
+        "No tracked performance scenario mapped."
+      ],
+      "scope": "Suite/check association only; not proof of every sub-behavior or full polish."
+    },
+    {
+      "feature": "projects.open",
+      "implementation": "implemented",
+      "correctness": [],
+      "native": [
+        "native.baseline"
+      ],
+      "performance": [],
+      "gaps": [
+        "No tracked correctness scenario mapped.",
+        "No tracked performance scenario mapped."
+      ],
+      "scope": "Suite/check association only; not proof of every sub-behavior or full polish."
+    },
+    {
+      "feature": "projects.save",
+      "implementation": "implemented",
+      "correctness": [],
+      "native": [
+        "native.baseline"
+      ],
+      "performance": [],
+      "gaps": [
+        "No tracked correctness scenario mapped.",
+        "No tracked performance scenario mapped."
+      ],
+      "scope": "Suite/check association only; not proof of every sub-behavior or full polish."
+    },
+    {
+      "feature": "projects.close",
+      "implementation": "implemented",
+      "correctness": [],
+      "native": [
+        "native.baseline"
+      ],
+      "performance": [],
+      "gaps": [
+        "No tracked correctness scenario mapped.",
+        "No tracked performance scenario mapped."
+      ],
+      "scope": "Suite/check association only; not proof of every sub-behavior or full polish."
+    },
+    {
+      "feature": "projects.tabs",
+      "implementation": "missing",
+      "correctness": [],
+      "native": [],
+      "performance": [],
+      "gaps": [
+        "Feature missing; no executable behavior claim."
+      ],
+      "scope": "Suite/check association only; not proof of every sub-behavior or full polish."
+    },
+    {
+      "feature": "projects.tab-transfer",
+      "implementation": "missing",
+      "correctness": [],
+      "native": [],
+      "performance": [],
+      "gaps": [
+        "Feature missing; no executable behavior claim."
+      ],
+      "scope": "Suite/check association only; not proof of every sub-behavior or full polish."
+    },
+    {
+      "feature": "projects.tab-drop",
+      "implementation": "missing",
+      "correctness": [],
+      "native": [],
+      "performance": [],
+      "gaps": [
+        "Feature missing; no executable behavior claim."
+      ],
+      "scope": "Suite/check association only; not proof of every sub-behavior or full polish."
+    },
+    {
+      "feature": "projects.comp",
+      "implementation": "partial",
+      "correctness": [],
+      "native": [
+        "native.baseline"
+      ],
+      "performance": [],
+      "gaps": [
+        "No tracked correctness scenario mapped.",
+        "No tracked performance scenario mapped."
+      ],
+      "scope": "Suite/check association only; not proof of every sub-behavior or full polish."
+    },
+    {
+      "feature": "projects.legacy",
+      "implementation": "implemented",
+      "correctness": [
+        "core.behavior"
+      ],
+      "native": [],
+      "performance": [],
+      "gaps": [
+        "No tracked native scenario mapped.",
+        "No tracked performance scenario mapped."
+      ],
+      "scope": "Suite/check association only; not proof of every sub-behavior or full polish."
+    },
+    {
+      "feature": "projects.validation",
+      "implementation": "implemented",
+      "correctness": [
+        "bridge.native"
+      ],
+      "native": [],
+      "performance": [],
+      "gaps": [
+        "No tracked native scenario mapped.",
+        "No tracked performance scenario mapped."
+      ],
+      "scope": "Suite/check association only; not proof of every sub-behavior or full polish."
+    },
+    {
+      "feature": "projects.initial-canvas",
+      "implementation": "missing",
+      "correctness": [],
+      "native": [],
+      "performance": [],
+      "gaps": [
+        "Feature missing; no executable behavior claim."
+      ],
+      "scope": "Suite/check association only; not proof of every sub-behavior or full polish."
+    },
+    {
+      "feature": "projects.open-existing",
+      "implementation": "missing",
+      "correctness": [],
+      "native": [],
+      "performance": [],
+      "gaps": [
+        "Feature missing; no executable behavior claim."
+      ],
+      "scope": "Suite/check association only; not proof of every sub-behavior or full polish."
+    },
+    {
+      "feature": "navigation.background",
+      "implementation": "implemented",
+      "correctness": [],
+      "native": [
+        "native.baseline"
+      ],
+      "performance": [],
+      "gaps": [
+        "No tracked correctness scenario mapped.",
+        "No tracked performance scenario mapped."
+      ],
+      "scope": "Suite/check association only; not proof of every sub-behavior or full polish."
+    },
+    {
+      "feature": "navigation.shadow",
+      "implementation": "adapted",
+      "correctness": [],
+      "native": [
+        "native.baseline"
+      ],
+      "performance": [],
+      "gaps": [
+        "No tracked correctness scenario mapped.",
+        "No tracked performance scenario mapped."
+      ],
+      "scope": "Suite/check association only; not proof of every sub-behavior or full polish."
+    },
+    {
+      "feature": "navigation.fit",
+      "implementation": "implemented",
+      "correctness": [
+        "core.publication"
+      ],
+      "native": [],
+      "performance": [
+        "performance.stress-stacks",
+        "performance.stress-navigation"
+      ],
+      "gaps": [
+        "No tracked native scenario mapped."
+      ],
+      "scope": "Suite/check association only; not proof of every sub-behavior or full polish."
+    },
+    {
+      "feature": "navigation.zoom-anchor",
+      "implementation": "implemented",
+      "correctness": [
+        "core.behavior"
+      ],
+      "native": [],
+      "performance": [],
+      "gaps": [
+        "No tracked native scenario mapped.",
+        "No tracked performance scenario mapped."
+      ],
+      "scope": "Suite/check association only; not proof of every sub-behavior or full polish."
+    },
+    {
+      "feature": "navigation.hand",
+      "implementation": "implemented",
+      "correctness": [
+        "core.publication"
+      ],
+      "native": [],
+      "performance": [
+        "performance.stress-stacks",
+        "performance.stress-navigation"
+      ],
+      "gaps": [
+        "No tracked native scenario mapped."
+      ],
+      "scope": "Suite/check association only; not proof of every sub-behavior or full polish."
+    },
+    {
+      "feature": "navigation.zoom-tool",
+      "implementation": "missing",
+      "correctness": [],
+      "native": [],
+      "performance": [],
+      "gaps": [
+        "Feature missing; no executable behavior claim."
+      ],
+      "scope": "Suite/check association only; not proof of every sub-behavior or full polish."
+    },
+    {
+      "feature": "navigation.pixel-grid",
+      "implementation": "missing",
+      "correctness": [],
+      "native": [],
+      "performance": [],
+      "gaps": [
+        "Feature missing; no executable behavior claim."
+      ],
+      "scope": "Suite/check association only; not proof of every sub-behavior or full polish."
+    },
+    {
+      "feature": "navigation.idle",
+      "implementation": "missing",
+      "correctness": [],
+      "native": [],
+      "performance": [],
+      "gaps": [
+        "Feature missing; no executable behavior claim."
+      ],
+      "scope": "Suite/check association only; not proof of every sub-behavior or full polish."
+    },
+    {
+      "feature": "navigation.brush-outline",
+      "implementation": "partial",
+      "correctness": [],
+      "native": [
+        "native.baseline"
+      ],
+      "performance": [],
+      "gaps": [
+        "No tracked correctness scenario mapped.",
+        "No tracked performance scenario mapped."
+      ],
+      "scope": "Suite/check association only; not proof of every sub-behavior or full polish."
+    },
+    {
+      "feature": "navigation.selection-animation",
+      "implementation": "adapted",
+      "correctness": [
+        "core.interaction_polish"
+      ],
+      "native": [
+        "native.baseline"
+      ],
+      "performance": [],
+      "gaps": [
+        "No tracked performance scenario mapped."
+      ],
+      "scope": "Suite/check association only; not proof of every sub-behavior or full polish."
+    },
+    {
+      "feature": "navigation.retained-render",
+      "implementation": "adapted",
+      "correctness": [
+        "core.render_equivalence"
+      ],
+      "native": [],
+      "performance": [],
+      "gaps": [
+        "No tracked native scenario mapped.",
+        "No tracked performance scenario mapped."
+      ],
+      "scope": "Suite/check association only; not proof of every sub-behavior or full polish."
+    },
+    {
+      "feature": "navigation.zoom-percent",
+      "implementation": "missing",
+      "correctness": [],
+      "native": [],
+      "performance": [],
+      "gaps": [
+        "Feature missing; no executable behavior claim."
+      ],
+      "scope": "Suite/check association only; not proof of every sub-behavior or full polish."
+    },
+    {
+      "feature": "placement.rulers",
+      "implementation": "implemented",
+      "correctness": [],
+      "native": [
+        "native.baseline"
+      ],
+      "performance": [],
+      "gaps": [
+        "No tracked correctness scenario mapped.",
+        "No tracked performance scenario mapped."
+      ],
+      "scope": "Suite/check association only; not proof of every sub-behavior or full polish."
+    },
+    {
+      "feature": "placement.guide-create",
+      "implementation": "implemented",
+      "correctness": [],
+      "native": [
+        "native.baseline"
+      ],
+      "performance": [],
+      "gaps": [
+        "No tracked correctness scenario mapped.",
+        "No tracked performance scenario mapped."
+      ],
+      "scope": "Suite/check association only; not proof of every sub-behavior or full polish."
+    },
+    {
+      "feature": "placement.guide-edit",
+      "implementation": "implemented",
+      "correctness": [],
+      "native": [
+        "native.baseline"
+      ],
+      "performance": [],
+      "gaps": [
+        "No tracked correctness scenario mapped.",
+        "No tracked performance scenario mapped."
+      ],
+      "scope": "Suite/check association only; not proof of every sub-behavior or full polish."
+    },
+    {
+      "feature": "placement.guide-lock",
+      "implementation": "implemented",
+      "correctness": [],
+      "native": [
+        "native.baseline"
+      ],
+      "performance": [],
+      "gaps": [
+        "No tracked correctness scenario mapped.",
+        "No tracked performance scenario mapped."
+      ],
+      "scope": "Suite/check association only; not proof of every sub-behavior or full polish."
+    },
+    {
+      "feature": "placement.grid",
+      "implementation": "implemented",
+      "correctness": [
+        "core.placement_text"
+      ],
+      "native": [],
+      "performance": [],
+      "gaps": [
+        "No tracked native scenario mapped.",
+        "No tracked performance scenario mapped."
+      ],
+      "scope": "Suite/check association only; not proof of every sub-behavior or full polish."
+    },
+    {
+      "feature": "placement.snap",
+      "implementation": "implemented",
+      "correctness": [],
+      "native": [
+        "native.baseline"
+      ],
+      "performance": [],
+      "gaps": [
+        "No tracked correctness scenario mapped.",
+        "No tracked performance scenario mapped."
+      ],
+      "scope": "Suite/check association only; not proof of every sub-behavior or full polish."
+    },
+    {
+      "feature": "placement.snap-free",
+      "implementation": "implemented",
+      "correctness": [],
+      "native": [
+        "native.baseline"
+      ],
+      "performance": [],
+      "gaps": [
+        "No tracked correctness scenario mapped.",
+        "No tracked performance scenario mapped."
+      ],
+      "scope": "Suite/check association only; not proof of every sub-behavior or full polish."
+    },
+    {
+      "feature": "placement.guide-resize",
+      "implementation": "implemented",
+      "correctness": [
+        "core.placement_text"
+      ],
+      "native": [],
+      "performance": [],
+      "gaps": [
+        "No tracked native scenario mapped.",
+        "No tracked performance scenario mapped."
+      ],
+      "scope": "Suite/check association only; not proof of every sub-behavior or full polish."
+    },
+    {
+      "feature": "transform.auto-select",
+      "implementation": "implemented",
+      "correctness": [],
+      "native": [
+        "native.baseline"
+      ],
+      "performance": [],
+      "gaps": [
+        "No tracked correctness scenario mapped.",
+        "No tracked performance scenario mapped."
+      ],
+      "scope": "Suite/check association only; not proof of every sub-behavior or full polish."
+    },
+    {
+      "feature": "transform.controls",
+      "implementation": "implemented",
+      "correctness": [],
+      "native": [
+        "native.baseline"
+      ],
+      "performance": [],
+      "gaps": [
+        "No tracked correctness scenario mapped.",
+        "No tracked performance scenario mapped."
+      ],
+      "scope": "Suite/check association only; not proof of every sub-behavior or full polish."
+    },
+    {
+      "feature": "transform.move",
+      "implementation": "implemented",
+      "correctness": [],
+      "native": [
+        "native.baseline"
+      ],
+      "performance": [
+        "performance.layer-move"
+      ],
+      "gaps": [
+        "No tracked correctness scenario mapped."
+      ],
+      "scope": "Suite/check association only; not proof of every sub-behavior or full polish."
+    },
+    {
+      "feature": "transform.resize",
+      "implementation": "implemented",
+      "correctness": [],
+      "native": [
+        "native.baseline"
+      ],
+      "performance": [
+        "performance.stress-resize"
+      ],
+      "gaps": [
+        "No tracked correctness scenario mapped."
+      ],
+      "scope": "Suite/check association only; not proof of every sub-behavior or full polish."
+    },
+    {
+      "feature": "transform.rotate",
+      "implementation": "implemented",
+      "correctness": [
+        "core.polish"
+      ],
+      "native": [],
+      "performance": [],
+      "gaps": [
+        "No tracked native scenario mapped.",
+        "No tracked performance scenario mapped."
+      ],
+      "scope": "Suite/check association only; not proof of every sub-behavior or full polish."
+    },
+    {
+      "feature": "transform.shift-ratio",
+      "implementation": "adapted",
+      "correctness": [],
+      "native": [
+        "native.baseline"
+      ],
+      "performance": [],
+      "gaps": [
+        "No tracked correctness scenario mapped.",
+        "No tracked performance scenario mapped."
+      ],
+      "scope": "Suite/check association only; not proof of every sub-behavior or full polish."
+    },
+    {
+      "feature": "transform.center-resize",
+      "implementation": "implemented",
+      "correctness": [
+        "core.behavior"
+      ],
+      "native": [],
+      "performance": [],
+      "gaps": [
+        "No tracked native scenario mapped.",
+        "No tracked performance scenario mapped."
+      ],
+      "scope": "Suite/check association only; not proof of every sub-behavior or full polish."
+    },
+    {
+      "feature": "transform.persistent",
+      "implementation": "implemented",
+      "correctness": [
+        "core.interaction_polish"
+      ],
+      "native": [
+        "native.baseline"
+      ],
+      "performance": [],
+      "gaps": [
+        "No tracked performance scenario mapped."
+      ],
+      "scope": "Suite/check association only; not proof of every sub-behavior or full polish."
+    },
+    {
+      "feature": "transform.fields",
+      "implementation": "implemented",
+      "correctness": [
+        "core.interaction_polish"
+      ],
+      "native": [
+        "native.baseline"
+      ],
+      "performance": [],
+      "gaps": [
+        "No tracked performance scenario mapped."
+      ],
+      "scope": "Suite/check association only; not proof of every sub-behavior or full polish."
+    },
+    {
+      "feature": "transform.ratio-lock",
+      "implementation": "adapted",
+      "correctness": [
+        "core.interaction_polish"
+      ],
+      "native": [
+        "native.baseline"
+      ],
+      "performance": [],
+      "gaps": [
+        "No tracked performance scenario mapped."
+      ],
+      "scope": "Suite/check association only; not proof of every sub-behavior or full polish."
+    },
+    {
+      "feature": "transform.scale-percent",
+      "implementation": "implemented",
+      "correctness": [
+        "core.interaction_polish"
+      ],
+      "native": [
+        "native.baseline"
+      ],
+      "performance": [],
+      "gaps": [
+        "No tracked performance scenario mapped."
+      ],
+      "scope": "Suite/check association only; not proof of every sub-behavior or full polish."
+    },
+    {
+      "feature": "transform.sampling",
+      "implementation": "adapted",
+      "correctness": [
+        "core.interaction_polish"
+      ],
+      "native": [
+        "native.baseline"
+      ],
+      "performance": [],
+      "gaps": [
+        "No tracked performance scenario mapped."
+      ],
+      "scope": "Suite/check association only; not proof of every sub-behavior or full polish."
+    },
+    {
+      "feature": "transform.distort",
+      "implementation": "partial",
+      "correctness": [
+        "core.interaction_polish"
+      ],
+      "native": [
+        "native.baseline"
+      ],
+      "performance": [],
+      "gaps": [
+        "No tracked performance scenario mapped."
+      ],
+      "scope": "Suite/check association only; not proof of every sub-behavior or full polish."
+    },
+    {
+      "feature": "transform.mask-transform",
+      "implementation": "implemented",
+      "correctness": [
+        "core.layers_masks_colors"
+      ],
+      "native": [
+        "native.baseline"
+      ],
+      "performance": [
+        "performance.stress-resize"
+      ],
+      "gaps": [],
+      "scope": "Suite/check association only; not proof of every sub-behavior or full polish."
+    },
+    {
+      "feature": "transform.group-box",
+      "implementation": "implemented",
+      "correctness": [
+        "core.cross_features",
+        "core.group_transform"
+      ],
+      "native": [
+        "native.groups",
+        "native.combined"
+      ],
+      "performance": [
+        "performance.recent-features"
+      ],
+      "gaps": [],
+      "scope": "Suite/check association only; not proof of every sub-behavior or full polish."
+    },
+    {
+      "feature": "brush.paint-erase",
+      "implementation": "implemented",
+      "correctness": [
+        "core.raster_snapshot"
+      ],
+      "native": [
+        "native.baseline"
+      ],
+      "performance": [
+        "performance.behaviors",
+        "performance.strokes"
+      ],
+      "gaps": [],
+      "scope": "Suite/check association only; not proof of every sub-behavior or full polish."
+    },
+    {
+      "feature": "brush.defaults",
+      "implementation": "implemented",
+      "correctness": [],
+      "native": [],
+      "performance": [],
+      "gaps": [
+        "No tracked correctness scenario mapped.",
+        "No tracked native scenario mapped.",
+        "No tracked performance scenario mapped."
+      ],
+      "scope": "Suite/check association only; not proof of every sub-behavior or full polish."
+    },
+    {
+      "feature": "brush.coverage",
+      "implementation": "partial",
+      "correctness": [
+        "core.raster_snapshot",
+        "core.reference_features"
+      ],
+      "native": [],
+      "performance": [],
+      "gaps": [
+        "No tracked native scenario mapped.",
+        "No tracked performance scenario mapped."
+      ],
+      "scope": "Suite/check association only; not proof of every sub-behavior or full polish."
+    },
+    {
+      "feature": "brush.shift-line",
+      "implementation": "implemented",
+      "correctness": [
+        "core.reference_features"
+      ],
+      "native": [],
+      "performance": [],
+      "gaps": [
+        "No tracked native scenario mapped.",
+        "No tracked performance scenario mapped."
+      ],
+      "scope": "Suite/check association only; not proof of every sub-behavior or full polish."
+    },
+    {
+      "feature": "brush.smoothing",
+      "implementation": "implemented",
+      "correctness": [
+        "core.raster_snapshot",
+        "core.reference_features"
+      ],
+      "native": [],
+      "performance": [],
+      "gaps": [
+        "No tracked native scenario mapped.",
+        "No tracked performance scenario mapped."
+      ],
+      "scope": "Suite/check association only; not proof of every sub-behavior or full polish."
+    },
+    {
+      "feature": "brush.mask",
+      "implementation": "implemented",
+      "correctness": [],
+      "native": [
+        "native.baseline"
+      ],
+      "performance": [],
+      "gaps": [
+        "No tracked correctness scenario mapped.",
+        "No tracked performance scenario mapped."
+      ],
+      "scope": "Suite/check association only; not proof of every sub-behavior or full polish."
+    },
+    {
+      "feature": "brush.shortcuts",
+      "implementation": "partial",
+      "correctness": [],
+      "native": [
+        "native.baseline"
+      ],
+      "performance": [],
+      "gaps": [
+        "No tracked correctness scenario mapped.",
+        "No tracked performance scenario mapped."
+      ],
+      "scope": "Suite/check association only; not proof of every sub-behavior or full polish."
+    },
+    {
+      "feature": "brush.selection-clip",
+      "implementation": "implemented",
+      "correctness": [
+        "core.reference_features"
+      ],
+      "native": [],
+      "performance": [],
+      "gaps": [
+        "No tracked native scenario mapped.",
+        "No tracked performance scenario mapped."
+      ],
+      "scope": "Suite/check association only; not proof of every sub-behavior or full polish."
+    },
+    {
+      "feature": "brush.history",
+      "implementation": "implemented",
+      "correctness": [
+        "core.raster_snapshot"
+      ],
+      "native": [
+        "native.baseline"
+      ],
+      "performance": [],
+      "gaps": [
+        "No tracked performance scenario mapped."
+      ],
+      "scope": "Suite/check association only; not proof of every sub-behavior or full polish."
+    },
+    {
+      "feature": "retouch.healing",
+      "implementation": "missing",
+      "correctness": [],
+      "native": [],
+      "performance": [],
+      "gaps": [
+        "Feature missing; no executable behavior claim."
+      ],
+      "scope": "Suite/check association only; not proof of every sub-behavior or full polish."
+    },
+    {
+      "feature": "retouch.clone",
+      "implementation": "missing",
+      "correctness": [],
+      "native": [],
+      "performance": [],
+      "gaps": [
+        "Feature missing; no executable behavior claim."
+      ],
+      "scope": "Suite/check association only; not proof of every sub-behavior or full polish."
+    },
+    {
+      "feature": "retouch.blur",
+      "implementation": "missing",
+      "correctness": [],
+      "native": [],
+      "performance": [],
+      "gaps": [
+        "Feature missing; no executable behavior claim."
+      ],
+      "scope": "Suite/check association only; not proof of every sub-behavior or full polish."
+    },
+    {
+      "feature": "retouch.smudge",
+      "implementation": "missing",
+      "correctness": [],
+      "native": [],
+      "performance": [],
+      "gaps": [
+        "Feature missing; no executable behavior claim."
+      ],
+      "scope": "Suite/check association only; not proof of every sub-behavior or full polish."
+    },
+    {
+      "feature": "retouch.liquify",
+      "implementation": "missing",
+      "correctness": [],
+      "native": [],
+      "performance": [],
+      "gaps": [
+        "Feature missing; no executable behavior claim."
+      ],
+      "scope": "Suite/check association only; not proof of every sub-behavior or full polish."
+    },
+    {
+      "feature": "selection.marquee",
+      "implementation": "implemented",
+      "correctness": [
+        "core.interaction_polish"
+      ],
+      "native": [
+        "native.baseline"
+      ],
+      "performance": [],
+      "gaps": [
+        "No tracked performance scenario mapped."
+      ],
+      "scope": "Suite/check association only; not proof of every sub-behavior or full polish."
+    },
+    {
+      "feature": "selection.lasso",
+      "implementation": "implemented",
+      "correctness": [
+        "core.interaction_polish"
+      ],
+      "native": [
+        "native.baseline"
+      ],
+      "performance": [],
+      "gaps": [
+        "No tracked performance scenario mapped."
+      ],
+      "scope": "Suite/check association only; not proof of every sub-behavior or full polish."
+    },
+    {
+      "feature": "selection.polygon-finish",
+      "implementation": "implemented",
+      "correctness": [],
+      "native": [
+        "native.baseline"
+      ],
+      "performance": [],
+      "gaps": [
+        "No tracked correctness scenario mapped.",
+        "No tracked performance scenario mapped."
+      ],
+      "scope": "Suite/check association only; not proof of every sub-behavior or full polish."
+    },
+    {
+      "feature": "selection.wand",
+      "implementation": "implemented",
+      "correctness": [],
+      "native": [
+        "native.baseline"
+      ],
+      "performance": [
+        "performance.selections"
+      ],
+      "gaps": [
+        "No tracked correctness scenario mapped."
+      ],
+      "scope": "Suite/check association only; not proof of every sub-behavior or full polish."
+    },
+    {
+      "feature": "selection.object",
+      "implementation": "missing",
+      "correctness": [],
+      "native": [],
+      "performance": [],
+      "gaps": [
+        "Feature missing; no executable behavior claim."
+      ],
+      "scope": "Suite/check association only; not proof of every sub-behavior or full polish."
+    },
+    {
+      "feature": "selection.subject",
+      "implementation": "missing",
+      "correctness": [],
+      "native": [],
+      "performance": [],
+      "gaps": [
+        "Feature missing; no executable behavior claim."
+      ],
+      "scope": "Suite/check association only; not proof of every sub-behavior or full polish."
+    },
+    {
+      "feature": "selection.all-inverse",
+      "implementation": "implemented",
+      "correctness": [],
+      "native": [
+        "native.baseline"
+      ],
+      "performance": [
+        "performance.selections"
+      ],
+      "gaps": [
+        "No tracked correctness scenario mapped."
+      ],
+      "scope": "Suite/check association only; not proof of every sub-behavior or full polish."
+    },
+    {
+      "feature": "selection.layer-pixels",
+      "implementation": "implemented",
+      "correctness": [
+        "core.interaction_polish"
+      ],
+      "native": [
+        "native.baseline"
+      ],
+      "performance": [
+        "performance.selections"
+      ],
+      "gaps": [],
+      "scope": "Suite/check association only; not proof of every sub-behavior or full polish."
+    },
+    {
+      "feature": "selection.mask-black",
+      "implementation": "implemented",
+      "correctness": [
+        "core.layers_masks_colors"
+      ],
+      "native": [
+        "native.baseline"
+      ],
+      "performance": [],
+      "gaps": [
+        "No tracked performance scenario mapped."
+      ],
+      "scope": "Suite/check association only; not proof of every sub-behavior or full polish."
+    },
+    {
+      "feature": "selection.outline-move",
+      "implementation": "implemented",
+      "correctness": [
+        "core.interaction_polish"
+      ],
+      "native": [
+        "native.baseline"
+      ],
+      "performance": [],
+      "gaps": [
+        "No tracked performance scenario mapped."
+      ],
+      "scope": "Suite/check association only; not proof of every sub-behavior or full polish."
+    },
+    {
+      "feature": "selection.expand-contract",
+      "implementation": "implemented",
+      "correctness": [
+        "core.interaction_polish"
+      ],
+      "native": [
+        "native.baseline"
+      ],
+      "performance": [
+        "performance.selections"
+      ],
+      "gaps": [],
+      "scope": "Suite/check association only; not proof of every sub-behavior or full polish."
+    },
+    {
+      "feature": "selection.feather",
+      "implementation": "implemented",
+      "correctness": [
+        "core.interaction_polish",
+        "core.raster_snapshot"
+      ],
+      "native": [
+        "native.baseline"
+      ],
+      "performance": [
+        "performance.behaviors"
+      ],
+      "gaps": [],
+      "scope": "Suite/check association only; not proof of every sub-behavior or full polish."
+    },
+    {
+      "feature": "selection.anti-alias",
+      "implementation": "implemented",
+      "correctness": [
+        "core.interaction_polish"
+      ],
+      "native": [
+        "native.baseline"
+      ],
+      "performance": [],
+      "gaps": [
+        "No tracked performance scenario mapped."
+      ],
+      "scope": "Suite/check association only; not proof of every sub-behavior or full polish."
+    },
+    {
+      "feature": "selection.modifier-state",
+      "implementation": "adapted",
+      "correctness": [
+        "core.interaction_polish"
+      ],
+      "native": [
+        "native.baseline"
+      ],
+      "performance": [],
+      "gaps": [
+        "No tracked performance scenario mapped."
+      ],
+      "scope": "Suite/check association only; not proof of every sub-behavior or full polish."
+    },
+    {
+      "feature": "clipboard.copy-cut",
+      "implementation": "implemented",
+      "correctness": [],
+      "native": [
+        "native.baseline"
+      ],
+      "performance": [],
+      "gaps": [
+        "No tracked correctness scenario mapped.",
+        "No tracked performance scenario mapped."
+      ],
+      "scope": "Suite/check association only; not proof of every sub-behavior or full polish."
+    },
+    {
+      "feature": "clipboard.copy-merged",
+      "implementation": "implemented",
+      "correctness": [],
+      "native": [
+        "native.baseline"
+      ],
+      "performance": [],
+      "gaps": [
+        "No tracked correctness scenario mapped.",
+        "No tracked performance scenario mapped."
+      ],
+      "scope": "Suite/check association only; not proof of every sub-behavior or full polish."
+    },
+    {
+      "feature": "clipboard.paste",
+      "implementation": "implemented",
+      "correctness": [],
+      "native": [
+        "native.baseline"
+      ],
+      "performance": [],
+      "gaps": [
+        "No tracked correctness scenario mapped.",
+        "No tracked performance scenario mapped."
+      ],
+      "scope": "Suite/check association only; not proof of every sub-behavior or full polish."
+    },
+    {
+      "feature": "clipboard.layer-via-copy",
+      "implementation": "implemented",
+      "correctness": [],
+      "native": [
+        "native.baseline"
+      ],
+      "performance": [],
+      "gaps": [
+        "No tracked correctness scenario mapped.",
+        "No tracked performance scenario mapped."
+      ],
+      "scope": "Suite/check association only; not proof of every sub-behavior or full polish."
+    },
+    {
+      "feature": "clipboard.pixel-move",
+      "implementation": "implemented",
+      "correctness": [],
+      "native": [
+        "native.baseline"
+      ],
+      "performance": [],
+      "gaps": [
+        "No tracked correctness scenario mapped.",
+        "No tracked performance scenario mapped."
+      ],
+      "scope": "Suite/check association only; not proof of every sub-behavior or full polish."
+    },
+    {
+      "feature": "clipboard.fill-clear",
+      "implementation": "implemented",
+      "correctness": [
+        "core.layers_masks_colors",
+        "core.raster_snapshot"
+      ],
+      "native": [
+        "native.baseline"
+      ],
+      "performance": [
+        "performance.behaviors"
+      ],
+      "gaps": [],
+      "scope": "Suite/check association only; not proof of every sub-behavior or full polish."
+    },
+    {
+      "feature": "clipboard.content-fill",
+      "implementation": "missing",
+      "correctness": [],
+      "native": [],
+      "performance": [],
+      "gaps": [
+        "Feature missing; no executable behavior claim."
+      ],
+      "scope": "Suite/check association only; not proof of every sub-behavior or full polish."
+    },
+    {
+      "feature": "crop.create",
+      "implementation": "implemented",
+      "correctness": [
+        "core.interaction_polish"
+      ],
+      "native": [
+        "native.baseline"
+      ],
+      "performance": [],
+      "gaps": [
+        "No tracked performance scenario mapped."
+      ],
+      "scope": "Suite/check association only; not proof of every sub-behavior or full polish."
+    },
+    {
+      "feature": "crop.ratios",
+      "implementation": "implemented",
+      "correctness": [],
+      "native": [
+        "native.baseline"
+      ],
+      "performance": [],
+      "gaps": [
+        "No tracked correctness scenario mapped.",
+        "No tracked performance scenario mapped."
+      ],
+      "scope": "Suite/check association only; not proof of every sub-behavior or full polish."
+    },
+    {
+      "feature": "crop.snap",
+      "implementation": "implemented",
+      "correctness": [
+        "core.interaction_polish",
+        "core.placement_text"
+      ],
+      "native": [],
+      "performance": [],
+      "gaps": [
+        "No tracked native scenario mapped.",
+        "No tracked performance scenario mapped."
+      ],
+      "scope": "Suite/check association only; not proof of every sub-behavior or full polish."
+    },
+    {
+      "feature": "crop.commit",
+      "implementation": "implemented",
+      "correctness": [
+        "core.interaction_polish"
+      ],
+      "native": [
+        "native.baseline"
+      ],
+      "performance": [
+        "performance.behaviors"
+      ],
+      "gaps": [],
+      "scope": "Suite/check association only; not proof of every sub-behavior or full polish."
+    },
+    {
+      "feature": "crop.overlay",
+      "implementation": "implemented",
+      "correctness": [],
+      "native": [
+        "native.baseline"
+      ],
+      "performance": [],
+      "gaps": [
+        "No tracked correctness scenario mapped.",
+        "No tracked performance scenario mapped."
+      ],
+      "scope": "Suite/check association only; not proof of every sub-behavior or full polish."
+    },
+    {
+      "feature": "crop.header-state",
+      "implementation": "implemented",
+      "correctness": [],
+      "native": [
+        "native.baseline"
+      ],
+      "performance": [],
+      "gaps": [
+        "No tracked correctness scenario mapped.",
+        "No tracked performance scenario mapped."
+      ],
+      "scope": "Suite/check association only; not proof of every sub-behavior or full polish."
+    },
+    {
+      "feature": "crop.expand-preview",
+      "implementation": "implemented",
+      "correctness": [
+        "core.interaction_polish"
+      ],
+      "native": [
+        "native.baseline"
+      ],
+      "performance": [],
+      "gaps": [
+        "No tracked performance scenario mapped."
+      ],
+      "scope": "Suite/check association only; not proof of every sub-behavior or full polish."
+    },
+    {
+      "feature": "shapes.rectangle-ellipse",
+      "implementation": "implemented",
+      "correctness": [
+        "core.shapes_gradients"
+      ],
+      "native": [
+        "native.baseline"
+      ],
+      "performance": [],
+      "gaps": [
+        "No tracked performance scenario mapped."
+      ],
+      "scope": "Suite/check association only; not proof of every sub-behavior or full polish."
+    },
+    {
+      "feature": "shapes.line",
+      "implementation": "implemented",
+      "correctness": [
+        "core.cross_features",
+        "core.shapes_gradients",
+        "bridge.native"
+      ],
+      "native": [
+        "native.baseline"
+      ],
+      "performance": [],
+      "gaps": [
+        "No tracked performance scenario mapped."
+      ],
+      "scope": "Suite/check association only; not proof of every sub-behavior or full polish."
+    },
+    {
+      "feature": "shapes.shape-style",
+      "implementation": "implemented",
+      "correctness": [
+        "core.cross_features",
+        "core.shapes_gradients",
+        "bridge.native"
+      ],
+      "native": [
+        "native.baseline",
+        "native.combined"
+      ],
+      "performance": [],
+      "gaps": [
+        "No tracked performance scenario mapped."
+      ],
+      "scope": "Suite/check association only; not proof of every sub-behavior or full polish."
+    },
+    {
+      "feature": "shapes.shape-cycle",
+      "implementation": "implemented",
+      "correctness": [
+        "core.shapes_gradients",
+        "bridge.native"
+      ],
+      "native": [
+        "native.baseline"
+      ],
+      "performance": [],
+      "gaps": [
+        "No tracked performance scenario mapped."
+      ],
+      "scope": "Suite/check association only; not proof of every sub-behavior or full polish."
+    },
+    {
+      "feature": "shapes.gradient-layer",
+      "implementation": "adapted",
+      "correctness": [],
+      "native": [],
+      "performance": [],
+      "gaps": [
+        "No tracked correctness scenario mapped.",
+        "No tracked native scenario mapped.",
+        "No tracked performance scenario mapped."
+      ],
+      "scope": "Suite/check association only; not proof of every sub-behavior or full polish."
+    },
+    {
+      "feature": "shapes.gradient-tool",
+      "implementation": "implemented",
+      "correctness": [
+        "core.cross_features",
+        "core.shapes_gradients",
+        "bridge.native"
+      ],
+      "native": [
+        "native.baseline",
+        "native.combined"
+      ],
+      "performance": [
+        "performance.recent-features"
+      ],
+      "gaps": [],
+      "scope": "Suite/check association only; not proof of every sub-behavior or full polish."
+    },
+    {
+      "feature": "shapes.gradient-mask",
+      "implementation": "implemented",
+      "correctness": [
+        "core.shapes_gradients",
+        "bridge.native"
+      ],
+      "native": [
+        "native.baseline"
+      ],
+      "performance": [],
+      "gaps": [
+        "No tracked performance scenario mapped."
+      ],
+      "scope": "Suite/check association only; not proof of every sub-behavior or full polish."
+    },
+    {
+      "feature": "shapes.corner-radius",
+      "implementation": "implemented",
+      "correctness": [
+        "core.cross_features",
+        "core.shapes_gradients",
+        "bridge.native"
+      ],
+      "native": [
+        "native.baseline",
+        "native.combined"
+      ],
+      "performance": [],
+      "gaps": [
+        "No tracked performance scenario mapped."
+      ],
+      "scope": "Suite/check association only; not proof of every sub-behavior or full polish."
+    },
+    {
+      "feature": "text.point-box",
+      "implementation": "implemented",
+      "correctness": [],
+      "native": [
+        "native.baseline"
+      ],
+      "performance": [],
+      "gaps": [
+        "No tracked correctness scenario mapped.",
+        "No tracked performance scenario mapped."
+      ],
+      "scope": "Suite/check association only; not proof of every sub-behavior or full polish."
+    },
+    {
+      "feature": "text.font-picker",
+      "implementation": "adapted",
+      "correctness": [],
+      "native": [
+        "native.baseline"
+      ],
+      "performance": [],
+      "gaps": [
+        "No tracked correctness scenario mapped.",
+        "No tracked performance scenario mapped."
+      ],
+      "scope": "Suite/check association only; not proof of every sub-behavior or full polish."
+    },
+    {
+      "feature": "text.size-color",
+      "implementation": "implemented",
+      "correctness": [],
+      "native": [
+        "native.baseline"
+      ],
+      "performance": [],
+      "gaps": [
+        "No tracked correctness scenario mapped.",
+        "No tracked performance scenario mapped."
+      ],
+      "scope": "Suite/check association only; not proof of every sub-behavior or full polish."
+    },
+    {
+      "feature": "text.alignment",
+      "implementation": "implemented",
+      "correctness": [],
+      "native": [
+        "native.baseline"
+      ],
+      "performance": [],
+      "gaps": [
+        "No tracked correctness scenario mapped.",
+        "No tracked performance scenario mapped."
+      ],
+      "scope": "Suite/check association only; not proof of every sub-behavior or full polish."
+    },
+    {
+      "feature": "text.tracking-leading",
+      "implementation": "implemented",
+      "correctness": [],
+      "native": [
+        "native.baseline"
+      ],
+      "performance": [],
+      "gaps": [
+        "No tracked correctness scenario mapped.",
+        "No tracked performance scenario mapped."
+      ],
+      "scope": "Suite/check association only; not proof of every sub-behavior or full polish."
+    },
+    {
+      "feature": "text.text-input",
+      "implementation": "implemented",
+      "correctness": [],
+      "native": [
+        "native.baseline"
+      ],
+      "performance": [],
+      "gaps": [
+        "No tracked correctness scenario mapped.",
+        "No tracked performance scenario mapped."
+      ],
+      "scope": "Suite/check association only; not proof of every sub-behavior or full polish."
+    },
+    {
+      "feature": "text.wrapped-nav",
+      "implementation": "implemented",
+      "correctness": [],
+      "native": [
+        "native.baseline"
+      ],
+      "performance": [],
+      "gaps": [
+        "No tracked correctness scenario mapped.",
+        "No tracked performance scenario mapped."
+      ],
+      "scope": "Suite/check association only; not proof of every sub-behavior or full polish."
+    },
+    {
+      "feature": "text.mouse-select",
+      "implementation": "implemented",
+      "correctness": [],
+      "native": [
+        "native.baseline"
+      ],
+      "performance": [],
+      "gaps": [
+        "No tracked correctness scenario mapped.",
+        "No tracked performance scenario mapped."
+      ],
+      "scope": "Suite/check association only; not proof of every sub-behavior or full polish."
+    },
+    {
+      "feature": "text.caret",
+      "implementation": "implemented",
+      "correctness": [],
+      "native": [
+        "native.baseline"
+      ],
+      "performance": [],
+      "gaps": [
+        "No tracked correctness scenario mapped.",
+        "No tracked performance scenario mapped."
+      ],
+      "scope": "Suite/check association only; not proof of every sub-behavior or full polish."
+    },
+    {
+      "feature": "text.resize",
+      "implementation": "implemented",
+      "correctness": [],
+      "native": [
+        "native.baseline"
+      ],
+      "performance": [],
+      "gaps": [
+        "No tracked correctness scenario mapped.",
+        "No tracked performance scenario mapped."
+      ],
+      "scope": "Suite/check association only; not proof of every sub-behavior or full polish."
+    },
+    {
+      "feature": "text.transformed",
+      "implementation": "implemented",
+      "correctness": [
+        "core.placement_text"
+      ],
+      "native": [],
+      "performance": [],
+      "gaps": [
+        "No tracked native scenario mapped.",
+        "No tracked performance scenario mapped."
+      ],
+      "scope": "Suite/check association only; not proof of every sub-behavior or full polish."
+    },
+    {
+      "feature": "text.overset",
+      "implementation": "implemented",
+      "correctness": [
+        "core.placement_text"
+      ],
+      "native": [],
+      "performance": [],
+      "gaps": [
+        "No tracked native scenario mapped.",
+        "No tracked performance scenario mapped."
+      ],
+      "scope": "Suite/check association only; not proof of every sub-behavior or full polish."
+    },
+    {
+      "feature": "text.commit-cancel",
+      "implementation": "adapted",
+      "correctness": [],
+      "native": [
+        "native.baseline"
+      ],
+      "performance": [],
+      "gaps": [
+        "No tracked correctness scenario mapped.",
+        "No tracked performance scenario mapped."
+      ],
+      "scope": "Suite/check association only; not proof of every sub-behavior or full polish."
+    },
+    {
+      "feature": "text.ime",
+      "implementation": "partial",
+      "correctness": [],
+      "native": [],
+      "performance": [],
+      "gaps": [
+        "No tracked correctness scenario mapped.",
+        "No tracked native scenario mapped.",
+        "No tracked performance scenario mapped."
+      ],
+      "scope": "Suite/check association only; not proof of every sub-behavior or full polish."
+    },
+    {
+      "feature": "text.bidi",
+      "implementation": "partial",
+      "correctness": [],
+      "native": [],
+      "performance": [],
+      "gaps": [
+        "No tracked correctness scenario mapped.",
+        "No tracked native scenario mapped.",
+        "No tracked performance scenario mapped."
+      ],
+      "scope": "Suite/check association only; not proof of every sub-behavior or full polish."
+    },
+    {
+      "feature": "layers.panel",
+      "implementation": "implemented",
+      "correctness": [],
+      "native": [
+        "native.baseline"
+      ],
+      "performance": [],
+      "gaps": [
+        "No tracked correctness scenario mapped.",
+        "No tracked performance scenario mapped."
+      ],
+      "scope": "Suite/check association only; not proof of every sub-behavior or full polish."
+    },
+    {
+      "feature": "layers.rows",
+      "implementation": "implemented",
+      "correctness": [
+        "core.layers_masks_colors",
+        "core.publication"
+      ],
+      "native": [
+        "native.baseline"
+      ],
+      "performance": [],
+      "gaps": [
+        "No tracked performance scenario mapped."
+      ],
+      "scope": "Suite/check association only; not proof of every sub-behavior or full polish."
+    },
+    {
+      "feature": "layers.select",
+      "implementation": "implemented",
+      "correctness": [
+        "core.layers_masks_colors"
+      ],
+      "native": [
+        "native.baseline"
+      ],
+      "performance": [],
+      "gaps": [
+        "No tracked performance scenario mapped."
+      ],
+      "scope": "Suite/check association only; not proof of every sub-behavior or full polish."
+    },
+    {
+      "feature": "layers.reorder",
+      "implementation": "implemented",
+      "correctness": [
+        "core.layers_masks_colors"
+      ],
+      "native": [
+        "native.baseline"
+      ],
+      "performance": [
+        "performance.stress-stacks",
+        "performance.stress-navigation"
+      ],
+      "gaps": [],
+      "scope": "Suite/check association only; not proof of every sub-behavior or full polish."
+    },
+    {
+      "feature": "layers.rename-lock",
+      "implementation": "implemented",
+      "correctness": [
+        "core.layers_masks_colors"
+      ],
+      "native": [
+        "native.baseline"
+      ],
+      "performance": [],
+      "gaps": [
+        "No tracked performance scenario mapped."
+      ],
+      "scope": "Suite/check association only; not proof of every sub-behavior or full polish."
+    },
+    {
+      "feature": "layers.groups",
+      "implementation": "implemented",
+      "correctness": [
+        "core.layers_masks_colors"
+      ],
+      "native": [
+        "native.baseline"
+      ],
+      "performance": [],
+      "gaps": [
+        "No tracked performance scenario mapped."
+      ],
+      "scope": "Suite/check association only; not proof of every sub-behavior or full polish."
+    },
+    {
+      "feature": "layers.merge",
+      "implementation": "implemented",
+      "correctness": [
+        "core.layers_masks_colors"
+      ],
+      "native": [
+        "native.baseline"
+      ],
+      "performance": [],
+      "gaps": [
+        "No tracked performance scenario mapped."
+      ],
+      "scope": "Suite/check association only; not proof of every sub-behavior or full polish."
+    },
+    {
+      "feature": "layers.blend",
+      "implementation": "implemented",
+      "correctness": [
+        "core.layers_masks_colors"
+      ],
+      "native": [
+        "native.baseline"
+      ],
+      "performance": [
+        "performance.features"
+      ],
+      "gaps": [],
+      "scope": "Suite/check association only; not proof of every sub-behavior or full polish."
+    },
+    {
+      "feature": "layers.opacity",
+      "implementation": "implemented",
+      "correctness": [
+        "core.layers_masks_colors"
+      ],
+      "native": [
+        "native.baseline"
+      ],
+      "performance": [
+        "performance.features"
+      ],
+      "gaps": [],
+      "scope": "Suite/check association only; not proof of every sub-behavior or full polish."
+    },
+    {
+      "feature": "layers.row-context",
+      "implementation": "implemented",
+      "correctness": [
+        "core.layers_masks_colors"
+      ],
+      "native": [
+        "native.baseline"
+      ],
+      "performance": [],
+      "gaps": [
+        "No tracked performance scenario mapped."
+      ],
+      "scope": "Suite/check association only; not proof of every sub-behavior or full polish."
+    },
+    {
+      "feature": "layers.visibility-swipe",
+      "implementation": "implemented",
+      "correctness": [
+        "core.layers_masks_colors"
+      ],
+      "native": [
+        "native.baseline"
+      ],
+      "performance": [
+        "performance.features"
+      ],
+      "gaps": [],
+      "scope": "Suite/check association only; not proof of every sub-behavior or full polish."
+    },
+    {
+      "feature": "layers.blend-shortcut",
+      "implementation": "implemented",
+      "correctness": [
+        "core.layers_masks_colors"
+      ],
+      "native": [
+        "native.baseline"
+      ],
+      "performance": [],
+      "gaps": [
+        "No tracked performance scenario mapped."
+      ],
+      "scope": "Suite/check association only; not proof of every sub-behavior or full polish."
+    },
+    {
+      "feature": "layers.inline-rename",
+      "implementation": "implemented",
+      "correctness": [
+        "core.layers_masks_colors"
+      ],
+      "native": [
+        "native.baseline"
+      ],
+      "performance": [],
+      "gaps": [
+        "No tracked performance scenario mapped."
+      ],
+      "scope": "Suite/check association only; not proof of every sub-behavior or full polish."
+    },
+    {
+      "feature": "layers.autoscroll-drag",
+      "implementation": "implemented",
+      "correctness": [
+        "core.layers_masks_colors"
+      ],
+      "native": [
+        "native.baseline"
+      ],
+      "performance": [],
+      "gaps": [
+        "No tracked performance scenario mapped."
+      ],
+      "scope": "Suite/check association only; not proof of every sub-behavior or full polish."
+    },
+    {
+      "feature": "masks.raster",
+      "implementation": "implemented",
+      "correctness": [
+        "core.layers_masks_colors"
+      ],
+      "native": [
+        "native.baseline"
+      ],
+      "performance": [
+        "performance.features"
+      ],
+      "gaps": [],
+      "scope": "Suite/check association only; not proof of every sub-behavior or full polish."
+    },
+    {
+      "feature": "masks.folder",
+      "implementation": "implemented",
+      "correctness": [
+        "core.layers_masks_colors"
+      ],
+      "native": [
+        "native.baseline"
+      ],
+      "performance": [],
+      "gaps": [
+        "No tracked performance scenario mapped."
+      ],
+      "scope": "Suite/check association only; not proof of every sub-behavior or full polish."
+    },
+    {
+      "feature": "masks.paint",
+      "implementation": "implemented",
+      "correctness": [
+        "core.layers_masks_colors"
+      ],
+      "native": [
+        "native.baseline"
+      ],
+      "performance": [
+        "performance.features"
+      ],
+      "gaps": [],
+      "scope": "Suite/check association only; not proof of every sub-behavior or full polish."
+    },
+    {
+      "feature": "masks.live",
+      "implementation": "implemented",
+      "correctness": [
+        "core.layers_masks_colors"
+      ],
+      "native": [
+        "native.baseline"
+      ],
+      "performance": [],
+      "gaps": [
+        "No tracked performance scenario mapped."
+      ],
+      "scope": "Suite/check association only; not proof of every sub-behavior or full polish."
+    },
+    {
+      "feature": "masks.clipping",
+      "implementation": "implemented",
+      "correctness": [
+        "core.layers_masks_colors"
+      ],
+      "native": [
+        "native.baseline"
+      ],
+      "performance": [],
+      "gaps": [
+        "No tracked performance scenario mapped."
+      ],
+      "scope": "Suite/check association only; not proof of every sub-behavior or full polish."
+    },
+    {
+      "feature": "masks.thumbnail",
+      "implementation": "implemented",
+      "correctness": [
+        "core.layers_masks_colors"
+      ],
+      "native": [
+        "native.baseline"
+      ],
+      "performance": [],
+      "gaps": [
+        "No tracked performance scenario mapped."
+      ],
+      "scope": "Suite/check association only; not proof of every sub-behavior or full polish."
+    },
+    {
+      "feature": "masks.selection-add",
+      "implementation": "implemented",
+      "correctness": [
+        "core.layers_masks_colors"
+      ],
+      "native": [
+        "native.baseline"
+      ],
+      "performance": [],
+      "gaps": [
+        "No tracked performance scenario mapped."
+      ],
+      "scope": "Suite/check association only; not proof of every sub-behavior or full polish."
+    },
+    {
+      "feature": "masks.thumbnail-select",
+      "implementation": "implemented",
+      "correctness": [
+        "core.layers_masks_colors"
+      ],
+      "native": [
+        "native.baseline"
+      ],
+      "performance": [],
+      "gaps": [
+        "No tracked performance scenario mapped."
+      ],
+      "scope": "Suite/check association only; not proof of every sub-behavior or full polish."
+    },
+    {
+      "feature": "masks.copy-drag",
+      "implementation": "implemented",
+      "correctness": [
+        "core.layers_masks_colors"
+      ],
+      "native": [
+        "native.baseline"
+      ],
+      "performance": [],
+      "gaps": [
+        "No tracked performance scenario mapped."
+      ],
+      "scope": "Suite/check association only; not proof of every sub-behavior or full polish."
+    },
+    {
+      "feature": "color.picker",
+      "implementation": "implemented",
+      "correctness": [
+        "core.layers_masks_colors"
+      ],
+      "native": [
+        "native.baseline"
+      ],
+      "performance": [],
+      "gaps": [
+        "No tracked performance scenario mapped."
+      ],
+      "scope": "Suite/check association only; not proof of every sub-behavior or full polish."
+    },
+    {
+      "feature": "color.preview-cancel",
+      "implementation": "implemented",
+      "correctness": [
+        "core.layers_masks_colors"
+      ],
+      "native": [
+        "native.baseline"
+      ],
+      "performance": [],
+      "gaps": [
+        "No tracked performance scenario mapped."
+      ],
+      "scope": "Suite/check association only; not proof of every sub-behavior or full polish."
+    },
+    {
+      "feature": "color.rgb-step",
+      "implementation": "implemented",
+      "correctness": [
+        "core.layers_masks_colors"
+      ],
+      "native": [
+        "native.baseline"
+      ],
+      "performance": [],
+      "gaps": [
+        "No tracked performance scenario mapped."
+      ],
+      "scope": "Suite/check association only; not proof of every sub-behavior or full polish."
+    },
+    {
+      "feature": "color.background",
+      "implementation": "implemented",
+      "correctness": [
+        "core.layers_masks_colors"
+      ],
+      "native": [
+        "native.baseline"
+      ],
+      "performance": [],
+      "gaps": [
+        "No tracked performance scenario mapped."
+      ],
+      "scope": "Suite/check association only; not proof of every sub-behavior or full polish."
+    },
+    {
+      "feature": "color.swap-reset",
+      "implementation": "implemented",
+      "correctness": [
+        "core.layers_masks_colors"
+      ],
+      "native": [
+        "native.baseline"
+      ],
+      "performance": [],
+      "gaps": [
+        "No tracked performance scenario mapped."
+      ],
+      "scope": "Suite/check association only; not proof of every sub-behavior or full polish."
+    },
+    {
+      "feature": "color.eyedropper",
+      "implementation": "implemented",
+      "correctness": [
+        "core.layers_masks_colors"
+      ],
+      "native": [
+        "native.baseline"
+      ],
+      "performance": [],
+      "gaps": [
+        "No tracked performance scenario mapped."
+      ],
+      "scope": "Suite/check association only; not proof of every sub-behavior or full polish."
+    },
+    {
+      "feature": "color.sample-ring",
+      "implementation": "implemented",
+      "correctness": [
+        "core.layers_masks_colors"
+      ],
+      "native": [
+        "native.baseline"
+      ],
+      "performance": [],
+      "gaps": [
+        "No tracked performance scenario mapped."
+      ],
+      "scope": "Suite/check association only; not proof of every sub-behavior or full polish."
+    },
+    {
+      "feature": "resize.canvas",
+      "implementation": "implemented",
+      "correctness": [],
+      "native": [
+        "native.baseline"
+      ],
+      "performance": [
+        "performance.stress-resize"
+      ],
+      "gaps": [
+        "No tracked correctness scenario mapped."
+      ],
+      "scope": "Suite/check association only; not proof of every sub-behavior or full polish."
+    },
+    {
+      "feature": "resize.canvas-units",
+      "implementation": "partial",
+      "correctness": [],
+      "native": [],
+      "performance": [],
+      "gaps": [
+        "No tracked correctness scenario mapped.",
+        "No tracked native scenario mapped.",
+        "No tracked performance scenario mapped."
+      ],
+      "scope": "Suite/check association only; not proof of every sub-behavior or full polish."
+    },
+    {
+      "feature": "resize.image",
+      "implementation": "implemented",
+      "correctness": [],
+      "native": [
+        "native.baseline"
+      ],
+      "performance": [
+        "performance.behaviors",
+        "performance.stress-resize"
+      ],
+      "gaps": [
+        "No tracked correctness scenario mapped."
+      ],
+      "scope": "Suite/check association only; not proof of every sub-behavior or full polish."
+    },
+    {
+      "feature": "resize.resolution-only",
+      "implementation": "implemented",
+      "correctness": [],
+      "native": [
+        "native.baseline"
+      ],
+      "performance": [
+        "performance.stress-resize"
+      ],
+      "gaps": [
+        "No tracked correctness scenario mapped."
+      ],
+      "scope": "Suite/check association only; not proof of every sub-behavior or full polish."
+    },
+    {
+      "feature": "resize.size-dialog",
+      "implementation": "implemented",
+      "correctness": [],
+      "native": [
+        "native.baseline"
+      ],
+      "performance": [],
+      "gaps": [
+        "No tracked correctness scenario mapped.",
+        "No tracked performance scenario mapped."
+      ],
+      "scope": "Suite/check association only; not proof of every sub-behavior or full polish."
+    },
+    {
+      "feature": "resize.flip-canvas",
+      "implementation": "missing",
+      "correctness": [],
+      "native": [],
+      "performance": [],
+      "gaps": [
+        "Feature missing; no executable behavior claim."
+      ],
+      "scope": "Suite/check association only; not proof of every sub-behavior or full polish."
+    },
+    {
+      "feature": "import-export.import",
+      "implementation": "partial",
+      "correctness": [],
+      "native": [
+        "native.baseline"
+      ],
+      "performance": [],
+      "gaps": [
+        "No tracked correctness scenario mapped.",
+        "No tracked performance scenario mapped."
+      ],
+      "scope": "Suite/check association only; not proof of every sub-behavior or full polish."
+    },
+    {
+      "feature": "import-export.file-drop",
+      "implementation": "implemented",
+      "correctness": [],
+      "native": [],
+      "performance": [],
+      "gaps": [
+        "No tracked correctness scenario mapped.",
+        "No tracked native scenario mapped.",
+        "No tracked performance scenario mapped."
+      ],
+      "scope": "Suite/check association only; not proof of every sub-behavior or full polish."
+    },
+    {
+      "feature": "import-export.drop-highlight",
+      "implementation": "missing",
+      "correctness": [],
+      "native": [],
+      "performance": [],
+      "gaps": [
+        "Feature missing; no executable behavior claim."
+      ],
+      "scope": "Suite/check association only; not proof of every sub-behavior or full polish."
+    },
+    {
+      "feature": "import-export.raw",
+      "implementation": "missing",
+      "correctness": [],
+      "native": [],
+      "performance": [],
+      "gaps": [
+        "Feature missing; no executable behavior claim."
+      ],
+      "scope": "Suite/check association only; not proof of every sub-behavior or full polish."
+    },
+    {
+      "feature": "import-export.psd",
+      "implementation": "missing",
+      "correctness": [],
+      "native": [],
+      "performance": [],
+      "gaps": [
+        "Feature missing; no executable behavior claim."
+      ],
+      "scope": "Suite/check association only; not proof of every sub-behavior or full polish."
+    },
+    {
+      "feature": "import-export.png",
+      "implementation": "implemented",
+      "correctness": [],
+      "native": [
+        "native.baseline"
+      ],
+      "performance": [],
+      "gaps": [
+        "No tracked correctness scenario mapped.",
+        "No tracked performance scenario mapped."
+      ],
+      "scope": "Suite/check association only; not proof of every sub-behavior or full polish."
+    },
+    {
+      "feature": "import-export.jpeg",
+      "implementation": "partial",
+      "correctness": [],
+      "native": [
+        "native.baseline"
+      ],
+      "performance": [],
+      "gaps": [
+        "No tracked correctness scenario mapped.",
+        "No tracked performance scenario mapped."
+      ],
+      "scope": "Suite/check association only; not proof of every sub-behavior or full polish."
+    },
+    {
+      "feature": "import-export.atomic",
+      "implementation": "implemented",
+      "correctness": [
+        "bridge.native"
+      ],
+      "native": [],
+      "performance": [],
+      "gaps": [
+        "No tracked native scenario mapped.",
+        "No tracked performance scenario mapped."
+      ],
+      "scope": "Suite/check association only; not proof of every sub-behavior or full polish."
+    },
+    {
+      "feature": "history.undo",
+      "implementation": "implemented",
+      "correctness": [],
+      "native": [
+        "native.baseline"
+      ],
+      "performance": [],
+      "gaps": [
+        "No tracked correctness scenario mapped.",
+        "No tracked performance scenario mapped."
+      ],
+      "scope": "Suite/check association only; not proof of every sub-behavior or full polish."
+    },
+    {
+      "feature": "history.selection",
+      "implementation": "implemented",
+      "correctness": [],
+      "native": [
+        "native.baseline"
+      ],
+      "performance": [],
+      "gaps": [
+        "No tracked correctness scenario mapped.",
+        "No tracked performance scenario mapped."
+      ],
+      "scope": "Suite/check association only; not proof of every sub-behavior or full polish."
+    },
+    {
+      "feature": "history.budget",
+      "implementation": "adapted",
+      "correctness": [
+        "core.selection_history"
+      ],
+      "native": [],
+      "performance": [],
+      "gaps": [
+        "No tracked native scenario mapped.",
+        "No tracked performance scenario mapped."
+      ],
+      "scope": "Suite/check association only; not proof of every sub-behavior or full polish."
+    },
+    {
+      "feature": "history.drafts",
+      "implementation": "implemented",
+      "correctness": [],
+      "native": [
+        "native.baseline"
+      ],
+      "performance": [],
+      "gaps": [
+        "No tracked correctness scenario mapped.",
+        "No tracked performance scenario mapped."
+      ],
+      "scope": "Suite/check association only; not proof of every sub-behavior or full polish."
+    },
+    {
+      "feature": "history.async",
+      "implementation": "implemented",
+      "correctness": [],
+      "native": [],
+      "performance": [],
+      "gaps": [
+        "No tracked correctness scenario mapped.",
+        "No tracked native scenario mapped.",
+        "No tracked performance scenario mapped."
+      ],
+      "scope": "Suite/check association only; not proof of every sub-behavior or full polish."
+    },
+    {
+      "feature": "adjustments.legacy-properties",
+      "implementation": "adapted",
+      "correctness": [],
+      "native": [
+        "native.baseline"
+      ],
+      "performance": [],
+      "gaps": [
+        "No tracked correctness scenario mapped.",
+        "No tracked performance scenario mapped."
+      ],
+      "scope": "Suite/check association only; not proof of every sub-behavior or full polish."
+    },
+    {
+      "feature": "adjustments.levels",
+      "implementation": "implemented",
+      "correctness": [
+        "core.adjustments",
+        "core.cross_features"
+      ],
+      "native": [
+        "native.adjustments",
+        "native.combined"
+      ],
+      "performance": [
+        "performance.recent-features"
+      ],
+      "gaps": [],
+      "scope": "Suite/check association only; not proof of every sub-behavior or full polish."
+    },
+    {
+      "feature": "adjustments.hsv",
+      "implementation": "missing",
+      "correctness": [],
+      "native": [],
+      "performance": [],
+      "gaps": [
+        "Feature missing; no executable behavior claim."
+      ],
+      "scope": "Suite/check association only; not proof of every sub-behavior or full polish."
+    },
+    {
+      "feature": "adjustments.curves",
+      "implementation": "implemented",
+      "correctness": [
+        "core.adjustments",
+        "core.cross_features"
+      ],
+      "native": [
+        "native.adjustments",
+        "native.combined"
+      ],
+      "performance": [
+        "performance.recent-features"
+      ],
+      "gaps": [],
+      "scope": "Suite/check association only; not proof of every sub-behavior or full polish."
+    },
+    {
+      "feature": "adjustments.exposure",
+      "implementation": "missing",
+      "correctness": [],
+      "native": [],
+      "performance": [],
+      "gaps": [
+        "Feature missing; no executable behavior claim."
+      ],
+      "scope": "Suite/check association only; not proof of every sub-behavior or full polish."
+    },
+    {
+      "feature": "adjustments.gradient-map",
+      "implementation": "missing",
+      "correctness": [],
+      "native": [],
+      "performance": [],
+      "gaps": [
+        "Feature missing; no executable behavior claim."
+      ],
+      "scope": "Suite/check association only; not proof of every sub-behavior or full polish."
+    },
+    {
+      "feature": "adjustments.grain",
+      "implementation": "missing",
+      "correctness": [],
+      "native": [],
+      "performance": [],
+      "gaps": [
+        "Feature missing; no executable behavior claim."
+      ],
+      "scope": "Suite/check association only; not proof of every sub-behavior or full polish."
+    },
+    {
+      "feature": "adjustments.black-white",
+      "implementation": "missing",
+      "correctness": [],
+      "native": [],
+      "performance": [],
+      "gaps": [
+        "Feature missing; no executable behavior claim."
+      ],
+      "scope": "Suite/check association only; not proof of every sub-behavior or full polish."
+    },
+    {
+      "feature": "adjustments.color-balance",
+      "implementation": "missing",
+      "correctness": [],
+      "native": [],
+      "performance": [],
+      "gaps": [
+        "Feature missing; no executable behavior claim."
+      ],
+      "scope": "Suite/check association only; not proof of every sub-behavior or full polish."
+    },
+    {
+      "feature": "adjustments.invert",
+      "implementation": "missing",
+      "correctness": [],
+      "native": [],
+      "performance": [],
+      "gaps": [
+        "Feature missing; no executable behavior claim."
+      ],
+      "scope": "Suite/check association only; not proof of every sub-behavior or full polish."
+    },
+    {
+      "feature": "adjustments.layer-adjustments",
+      "implementation": "partial",
+      "correctness": [
+        "core.adjustments",
+        "core.cross_features"
+      ],
+      "native": [
+        "native.adjustments"
+      ],
+      "performance": [
+        "performance.recent-features"
+      ],
+      "gaps": [],
+      "scope": "Suite/check association only; not proof of every sub-behavior or full polish."
+    },
+    {
+      "feature": "filters-effects.gaussian",
+      "implementation": "partial",
+      "correctness": [],
+      "native": [],
+      "performance": [],
+      "gaps": [
+        "No tracked correctness scenario mapped.",
+        "No tracked native scenario mapped.",
+        "No tracked performance scenario mapped."
+      ],
+      "scope": "Suite/check association only; not proof of every sub-behavior or full polish."
+    },
+    {
+      "feature": "filters-effects.motion",
+      "implementation": "missing",
+      "correctness": [],
+      "native": [],
+      "performance": [],
+      "gaps": [
+        "Feature missing; no executable behavior claim."
+      ],
+      "scope": "Suite/check association only; not proof of every sub-behavior or full polish."
+    },
+    {
+      "feature": "filters-effects.noise",
+      "implementation": "missing",
+      "correctness": [],
+      "native": [],
+      "performance": [],
+      "gaps": [
+        "Feature missing; no executable behavior claim."
+      ],
+      "scope": "Suite/check association only; not proof of every sub-behavior or full polish."
+    },
+    {
+      "feature": "filters-effects.lens",
+      "implementation": "missing",
+      "correctness": [],
+      "native": [],
+      "performance": [],
+      "gaps": [
+        "Feature missing; no executable behavior claim."
+      ],
+      "scope": "Suite/check association only; not proof of every sub-behavior or full polish."
+    },
+    {
+      "feature": "filters-effects.remove-background",
+      "implementation": "missing",
+      "correctness": [],
+      "native": [],
+      "performance": [],
+      "gaps": [
+        "Feature missing; no executable behavior claim."
+      ],
+      "scope": "Suite/check association only; not proof of every sub-behavior or full polish."
+    },
+    {
+      "feature": "filters-effects.content-aware",
+      "implementation": "missing",
+      "correctness": [],
+      "native": [],
+      "performance": [],
+      "gaps": [
+        "Feature missing; no executable behavior claim."
+      ],
+      "scope": "Suite/check association only; not proof of every sub-behavior or full polish."
+    },
+    {
+      "feature": "filters-effects.effect-stroke",
+      "implementation": "missing",
+      "correctness": [],
+      "native": [],
+      "performance": [],
+      "gaps": [
+        "Feature missing; no executable behavior claim."
+      ],
+      "scope": "Suite/check association only; not proof of every sub-behavior or full polish."
+    },
+    {
+      "feature": "filters-effects.effect-shadow",
+      "implementation": "missing",
+      "correctness": [],
+      "native": [],
+      "performance": [],
+      "gaps": [
+        "Feature missing; no executable behavior claim."
+      ],
+      "scope": "Suite/check association only; not proof of every sub-behavior or full polish."
+    },
+    {
+      "feature": "filters-effects.effect-overlay",
+      "implementation": "missing",
+      "correctness": [],
+      "native": [],
+      "performance": [],
+      "gaps": [
+        "Feature missing; no executable behavior claim."
+      ],
+      "scope": "Suite/check association only; not proof of every sub-behavior or full polish."
+    },
+    {
+      "feature": "filters-effects.effect-inner-shadow",
+      "implementation": "missing",
+      "correctness": [],
+      "native": [],
+      "performance": [],
+      "gaps": [
+        "Feature missing; no executable behavior claim."
+      ],
+      "scope": "Suite/check association only; not proof of every sub-behavior or full polish."
+    },
+    {
+      "feature": "filters-effects.effect-glow",
+      "implementation": "missing",
+      "correctness": [],
+      "native": [],
+      "performance": [],
+      "gaps": [
+        "Feature missing; no executable behavior claim."
+      ],
+      "scope": "Suite/check association only; not proof of every sub-behavior or full polish."
+    },
+    {
+      "feature": "filters-effects.effect-rows",
+      "implementation": "missing",
+      "correctness": [],
+      "native": [],
+      "performance": [],
+      "gaps": [
+        "Feature missing; no executable behavior claim."
+      ],
+      "scope": "Suite/check association only; not proof of every sub-behavior or full polish."
+    },
+    {
+      "feature": "filters-effects.preview-cache",
+      "implementation": "missing",
+      "correctness": [],
+      "native": [],
+      "performance": [],
+      "gaps": [
+        "Feature missing; no executable behavior claim."
+      ],
+      "scope": "Suite/check association only; not proof of every sub-behavior or full polish."
+    }
+  ]
+}

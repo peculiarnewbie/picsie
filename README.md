@@ -83,6 +83,11 @@ See the [UI parity record](docs/gpui-ui-parity.md),
 [performance comparison](docs/desktop-performance.md), and
 [GIMP experiments](docs/desktop-gimp-experiments.md) for measured coverage and limits.
 
+The [reproducibility guide](docs/reproducibility.md) indexes correctness,
+native interaction and performance flows. The latest
+[feature benchmarks](docs/feature-performance.md) cover 19 additional workloads,
+with measured stages, output-quality limits and the next profiling priorities.
+
 ## Working features
 
 - PNG, JPEG, and WebP import, including dropping multiple files onto the canvas.

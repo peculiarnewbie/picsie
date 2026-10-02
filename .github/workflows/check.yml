@@ -23,6 +23,7 @@ jobs:
       - run: npm ci
       - run: npm run build:native
       - run: npm run check:registry
+      - run: npm run check:reproduce
       - run: npm run check:reference
       - run: npm run test:reference
       - run: npm run test:bun
@@ -78,9 +79,9 @@ jobs:
       - name: Verify the installed native application
         if: runner.os == 'Linux'
         run: >-
-          python3 crates/picsie-desktop/verify.py --software
+          python3 scripts/reproduce.py run --profile native --software
           --binary artifacts/desktop-package-verification/linux-x64/deb/usr/bin/picsie
-          --output artifacts/desktop/verification
+          --output artifacts/desktop/reproduction
       - name: Verify X11 frame waking
         if: runner.os == 'Linux'
         run: >-

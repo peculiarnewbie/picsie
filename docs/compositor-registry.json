@@ -1013,12 +1013,10 @@
             "crates/picsie-core/src/editor/group_transform.rs",
             "crates/picsie-core/tests/group_transform.rs",
             "crates/picsie-core/examples/group_transform_shots.rs",
-            "artifacts/group-transforms/verify_group.py",
-            "artifacts/group-transforms/native/report.json",
-            "artifacts/group-transforms/HANDOFF.md",
+            "scripts/verification/group_transforms.py",
+            "docs/feature-verification.md",
             "crates/picsie-core/tests/cross_features.rs",
-            "artifacts/integration/baseline/report.json",
-            "artifacts/integration/combined/report.json"
+            "docs/feature-performance.md"
           ],
           "upstream": [
             "Compositor/Document/LayerTransform.swift",
@@ -1323,7 +1321,8 @@
           "gap": "Source-selected fixtures translated.",
           "evidence": [
             "crates/picsie-desktop/verify.py",
-            "docs/gpui-ui-parity.md"
+            "docs/gpui-ui-parity.md",
+            "docs/feature-performance.md"
           ],
           "nativeChecks": [
             "magic wand selects matching connected pixels",
@@ -1358,7 +1357,8 @@
           "gap": "Local selection coverage representation.",
           "evidence": [
             "crates/picsie-desktop/verify.py",
-            "docs/gpui-ui-parity.md"
+            "docs/gpui-ui-parity.md",
+            "docs/feature-performance.md"
           ],
           "nativeChecks": [
             "deselect pixels"
@@ -1374,7 +1374,8 @@
           "evidence": [
             "crates/picsie-desktop/verify.py",
             "crates/picsie-core/tests/interaction_polish.rs",
-            "docs/gpui-ui-parity.md"
+            "docs/gpui-ui-parity.md",
+            "docs/feature-performance.md"
           ],
           "nativeChecks": [
             "Select Layer Pixels loads source alpha silhouette"
@@ -1426,7 +1427,8 @@
           "evidence": [
             "crates/picsie-desktop/verify.py",
             "crates/picsie-core/tests/interaction_polish.rs",
-            "docs/gpui-ui-parity.md"
+            "docs/gpui-ui-parity.md",
+            "docs/feature-performance.md"
           ],
           "nativeChecks": [
             "Expand menu opens amount panel",
@@ -1809,11 +1811,10 @@
           "evidence": [
             "crates/picsie-core/tests/shapes_gradients.rs",
             "tests/native.test.ts",
-            "artifacts/shapes-gradients/verify_shapes.py",
+            "crates/picsie-desktop/verify.py",
             "docs/gpui-ui-parity.md",
             "crates/picsie-core/tests/cross_features.rs",
-            "artifacts/integration/baseline/report.json",
-            "artifacts/integration/combined/report.json"
+            "docs/feature-verification.md"
           ],
           "upstream": [
             "Compositor/Document/ShapeTool.swift"
@@ -1833,11 +1834,10 @@
           "evidence": [
             "crates/picsie-core/tests/shapes_gradients.rs",
             "tests/native.test.ts",
-            "artifacts/shapes-gradients/verify_shapes.py",
+            "crates/picsie-desktop/verify.py",
             "docs/gpui-ui-parity.md",
             "crates/picsie-core/tests/cross_features.rs",
-            "artifacts/integration/baseline/report.json",
-            "artifacts/integration/combined/report.json"
+            "docs/feature-verification.md"
           ],
           "upstream": [
             "Compositor/Document/ShapeTool.swift"
@@ -1857,7 +1857,7 @@
           "evidence": [
             "crates/picsie-core/tests/shapes_gradients.rs",
             "tests/native.test.ts",
-            "artifacts/shapes-gradients/verify_shapes.py",
+            "crates/picsie-desktop/verify.py",
             "docs/gpui-ui-parity.md"
           ],
           "nativeChecks": [
@@ -1886,12 +1886,11 @@
           "evidence": [
             "crates/picsie-core/tests/shapes_gradients.rs",
             "tests/native.test.ts",
-            "artifacts/shapes-gradients/verify_shapes.py",
+            "crates/picsie-desktop/verify.py",
             "docs/gpui-ui-parity.md",
             "crates/picsie-core/tests/cross_features.rs",
-            "artifacts/integration/baseline/report.json",
-            "artifacts/integration/combined/report.json",
-            "artifacts/integration/combined/04-gradient-color.png"
+            "docs/feature-verification.md",
+            "docs/feature-performance.md"
           ],
           "upstream": [
             "Compositor/Document/Gradient.swift",
@@ -1917,7 +1916,7 @@
           "evidence": [
             "crates/picsie-core/tests/shapes_gradients.rs",
             "tests/native.test.ts",
-            "artifacts/shapes-gradients/verify_shapes.py",
+            "crates/picsie-desktop/verify.py",
             "docs/gpui-ui-parity.md"
           ],
           "upstream": [
@@ -1937,11 +1936,10 @@
           "evidence": [
             "crates/picsie-core/tests/shapes_gradients.rs",
             "tests/native.test.ts",
-            "artifacts/shapes-gradients/verify_shapes.py",
+            "crates/picsie-desktop/verify.py",
             "docs/gpui-ui-parity.md",
             "crates/picsie-core/tests/cross_features.rs",
-            "artifacts/integration/baseline/report.json",
-            "artifacts/integration/combined/report.json"
+            "docs/feature-verification.md"
           ],
           "upstream": [
             "Compositor/UI/ShapeControls.swift"
@@ -2388,7 +2386,8 @@
           "evidence": [
             "crates/picsie-desktop/verify.py",
             "crates/picsie-core/tests/layers_masks_colors.rs",
-            "docs/gpui-ui-parity.md"
+            "docs/gpui-ui-parity.md",
+            "docs/feature-performance.md"
           ],
           "nativeChecks": [
             "all 24 source blend modes are selectable",
@@ -2406,7 +2405,8 @@
           "evidence": [
             "crates/picsie-desktop/verify.py",
             "crates/picsie-core/tests/layers_masks_colors.rs",
-            "docs/gpui-ui-parity.md"
+            "docs/gpui-ui-parity.md",
+            "docs/feature-performance.md"
           ],
           "nativeChecks": [
             "opacity slider transaction",
@@ -2440,7 +2440,8 @@
           "evidence": [
             "crates/picsie-desktop/verify.py",
             "crates/picsie-core/tests/layers_masks_colors.rs",
-            "docs/gpui-ui-parity.md"
+            "docs/gpui-ui-parity.md",
+            "docs/feature-performance.md"
           ],
           "upstream": [
             "Compositor/UI/NativeLayerList.swift"
@@ -2540,7 +2541,8 @@
           "evidence": [
             "crates/picsie-desktop/verify.py",
             "crates/picsie-core/tests/layers_masks_colors.rs",
-            "docs/gpui-ui-parity.md"
+            "docs/gpui-ui-parity.md",
+            "docs/feature-performance.md"
           ],
           "nativeChecks": [
             "mask added and targeted",
@@ -2578,7 +2580,8 @@
           "evidence": [
             "crates/picsie-desktop/verify.py",
             "crates/picsie-core/tests/layers_masks_colors.rs",
-            "docs/gpui-ui-parity.md"
+            "docs/gpui-ui-parity.md",
+            "docs/feature-performance.md"
           ],
           "nativeChecks": [
             "mask reveal control",
@@ -3218,8 +3221,9 @@
           "evidence": [
             "crates/picsie-core/tests/adjustments.rs",
             "crates/picsie-core/tests/cross_features.rs",
-            "artifacts/integration/combined/report.json",
-            "artifacts/integration/levels-curves-native/report.json"
+            "docs/feature-verification.md",
+            "scripts/verification/levels_curves.py",
+            "docs/feature-performance.md"
           ]
         },
         {
@@ -3241,8 +3245,9 @@
           "evidence": [
             "crates/picsie-core/tests/adjustments.rs",
             "crates/picsie-core/tests/cross_features.rs",
-            "artifacts/integration/combined/report.json",
-            "artifacts/integration/levels-curves-native/report.json"
+            "docs/feature-verification.md",
+            "scripts/verification/levels_curves.py",
+            "docs/feature-performance.md"
           ]
         },
         {
@@ -3309,8 +3314,9 @@
           "evidence": [
             "crates/picsie-core/tests/adjustments.rs",
             "crates/picsie-core/tests/cross_features.rs",
-            "artifacts/integration/combined/report.json",
-            "artifacts/integration/levels-curves-native/report.json"
+            "docs/feature-verification.md",
+            "scripts/verification/levels_curves.py",
+            "docs/feature-performance.md"
           ]
         }
       ]

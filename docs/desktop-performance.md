@@ -1,5 +1,9 @@
 # QuickGUI and GPUI Kit performance comparison
 
+Current editor replay and benchmark flows are indexed in
+[the reproducibility guide](reproducibility.md). This report records the original
+QuickGUI comparison, not a current regression threshold.
+
 Measured 2026-09-29 after the GPUI UI parity implementation. These are fresh release
 builds of both complete applications using the same current `picsie-core`, not the
 small initial GPUI experiment. No editor behavior or application scheduling was

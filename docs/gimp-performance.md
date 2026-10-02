@@ -1,5 +1,14 @@
 # GIMP interaction measurements
 
+For current commands, prerequisites, scenario selection and evidence capture, use
+[the reproducibility guide](reproducibility.md). The measurements below remain a
+historical cohort; replaying a scenario produces a new run with its own provenance.
+
+The [2026-10-03 feature benchmark checkpoint](feature-performance.md) adds
+19 layer/mask, selection, transform, gradient and adjustment workloads. Those
+measure CPU command/channel/render/readback availability, separately from the
+visible interaction measurements in this report.
+
 Measured 2026-09-30 using packaged GIMP 3.2.6 and the current Picsie GPUI release
 (`d8a459e`). This is a functionality/performance investigation; GIMP remains
 explicitly excluded as a UX reference. The external source checkout was not built.

@@ -6,7 +6,7 @@
   "scripts": {
     "dev": "node scripts/desktop.mjs dev",
     "build": "node scripts/desktop.mjs package",
-    "check": "npm run check:registry && npm run check:reference && npm run check:desktop",
+    "check": "npm run check:reproduce && npm run check:registry && npm run check:reference && npm run check:desktop",
     "test": "npm run test:reference && npm run test:desktop",
     "test:quickgui": "npm run check:architecture && npm run build:native && quickgui test",
     "smoke": "npm run check:architecture && npm run build:native && tsx scripts/render-demo.ts",
@@ -14,7 +14,7 @@
     "check:architecture": "node scripts/check-architecture.mjs",
     "test:architecture": "node --test scripts/check-architecture.test.mjs",
     "build:native": "npm run check:architecture && napi build --manifest-path crates/picsie-native/Cargo.toml --package picsie-native --output-dir native --dts ../src/engine/native-api.d.ts --release && cargo run --quiet -p picsie-core --bin export_types && oxfmt --write src/engine/types.ts src/engine/native-api.d.ts",
-    "test:bun": "npm run check:architecture && bun test tests/native.test.ts",
+    "test:bun": "npm run check:architecture && bun test ./tests/native.test.ts",
     "dev:desktop": "node scripts/desktop.mjs dev",
     "build:desktop": "node scripts/desktop.mjs build",
     "check:desktop": "npm run check:architecture && cargo fmt --manifest-path crates/picsie-desktop/Cargo.toml --check && cargo check --locked --manifest-path crates/picsie-desktop/Cargo.toml",
@@ -22,10 +22,15 @@
     "dev:quickgui": "npm run check:architecture && npm run build:native && quickgui dev",
     "build:quickgui": "npm run check:architecture && npm run build:native && node scripts/patch-quickgui-nsis.mjs && quickgui build",
     "check:reference": "npm run check:architecture && cargo fmt --all --check && cargo check --workspace && tsc --noEmit",
-    "test:reference": "npm run check:architecture && npm run build:native && npm run test:architecture && cargo test -p picsie-core && tsx --test tests/*.test.ts",
+    "test:reference": "npm run check:architecture && npm run build:native && npm run test:architecture && npm run test:reproduce && cargo test -p picsie-core && tsx --test tests/*.test.ts",
     "setup:packager": "cargo install cargo-packager --version 0.11.8 --locked",
     "registry:update": "node scripts/compositor-registry.mjs",
-    "check:registry": "node scripts/compositor-registry.mjs --check"
+    "check:registry": "node scripts/compositor-registry.mjs --check",
+    "reproduce": "python3 scripts/reproduce.py",
+    "reproduce:quick": "python3 scripts/reproduce.py run",
+    "reproduce:coverage": "python3 scripts/reproduce.py coverage",
+    "check:reproduce": "python3 scripts/reproduce.py check",
+    "test:reproduce": "python3 -m unittest discover -s scripts -p reproduce_test.py"
   },
   "dependencies": {
     "@quickgui/native": "0.1.6",

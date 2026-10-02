@@ -320,6 +320,8 @@ def main():
     parser.add_argument('--runtime', type=Path, default=Path('artifacts/gimp-performance/runtime'))
     parser.add_argument('--picsie', type=Path, default=Path('crates/picsie-desktop/target/release/picsie-desktop'))
     parser.add_argument('--display', default=':97')
+    parser.add_argument('--tools', type=Path, default=Path('/usr'))
+    parser.add_argument('--gpu-icd', type=Path, help='Override the historical RADV driver explicitly')
     parser.add_argument('--trials', type=int, default=3)
     parser.add_argument('--strokes', type=int, default=2)
     parser.add_argument('--apps', nargs='+', choices=['picsie', 'gimp'], default=['picsie', 'gimp'])
@@ -334,9 +336,9 @@ def main():
     if args.output.exists() and not args.resume:
         parser.error('Choose a new output directory to preserve previous cohorts')
     args.output.mkdir(parents=True, exist_ok=args.resume)
-    tools = ROOT/'artifacts/selection-history/tools/usr'
+    tools = args.tools.resolve()
     env = {**os.environ, 'DISPLAY': args.display, 'WINIT_UNIX_BACKEND': 'x11',
-           'VK_DRIVER_FILES': '/usr/share/vulkan/icd.d/radeon_icd.json', 'MESA_VK_WSI_DEBUG': 'sw',
+           'VK_DRIVER_FILES': str(args.gpu_icd.resolve() if args.gpu_icd else '/usr/share/vulkan/icd.d/radeon_icd.json'), 'MESA_VK_WSI_DEBUG': 'sw',
            'PICSIE_GPU_DIAGNOSTICS': '1', 'GEGL_USE_OPENCL': 'no',
            'XDG_CONFIG_HOME': str(args.output/'config'), 'XDG_CACHE_HOME': str(args.output/'cache'),
            'PATH': str(tools/'bin')+os.pathsep+os.environ.get('PATH', ''),

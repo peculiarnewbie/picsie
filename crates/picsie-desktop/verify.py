@@ -75,6 +75,8 @@ def wait(predicate, label='state transition', timeout=20):
     raise AssertionError(f'{label}: {json.dumps(state())[:2500]}')
 
 def settle():
+    # busy covers file/clipboard UI, including a chooser that needs driver input.
+    # Engine rendering completes through the sequence barrier, not this flag.
     wait(lambda s: s['busy'] or s['sequence'] >= s.get('submittedSequence', 0), 'preview catches up')
 
 def window_exists(id):
