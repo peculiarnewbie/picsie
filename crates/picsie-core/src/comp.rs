@@ -489,16 +489,10 @@ pub fn open(path: &Path) -> Result<Document> {
         } else {
             None
         };
-        let (width, height) = if adjustment.is_some() {
-            // Adjustment layers always cover the document; the stored transform
-            // is presentation placement from Compositor, not layer geometry.
-            (manifest.width, manifest.height)
-        } else {
-            image.as_ref().map(|v| (v.1, v.2)).unwrap_or((
-                item.transform.size.width.round().max(1.) as u32,
-                item.transform.size.height.round().max(1.) as u32,
-            ))
-        };
+        let (width, height) = image.as_ref().map(|v| (v.1, v.2)).unwrap_or((
+            item.transform.size.width.round().max(1.) as u32,
+            item.transform.size.height.round().max(1.) as u32,
+        ));
         let content = if item.is_group.unwrap_or(false) {
             Content::Group
         } else if let Some((bytes, _, _)) = &image {
@@ -528,24 +522,17 @@ pub fn open(path: &Path) -> Result<Document> {
             "Live masks require Compositor version 5"
         );
         layer.visible = item.is_visible;
-        if adjustment.is_some() {
-            layer.x = 0.;
-            layer.y = 0.;
-            layer.scale_x = 1.;
-            layer.scale_y = 1.;
-            layer.rotation = 0.;
-            layer.flip_x = false;
-            layer.flip_y = false;
-            layer.adjustment = adjustment;
-        } else {
-            layer.x = item.transform.origin.x;
-            layer.y = item.transform.origin.y;
-            layer.scale_x = item.transform.size.width / width as f64;
-            layer.scale_y = item.transform.size.height / height as f64;
-            layer.rotation = item.transform.rotation;
-            layer.flip_x = item.transform.flip_x;
-            layer.flip_y = item.transform.flip_y;
-        }
+        // ProjectStore places no geometry constraint on adjustments: the
+        // stored transform round-trips like every other layer, so masks keep
+        // their footprint through canvas operations and packages.
+        layer.x = item.transform.origin.x;
+        layer.y = item.transform.origin.y;
+        layer.scale_x = item.transform.size.width / width as f64;
+        layer.scale_y = item.transform.size.height / height as f64;
+        layer.rotation = item.transform.rotation;
+        layer.flip_x = item.transform.flip_x;
+        layer.flip_y = item.transform.flip_y;
+        layer.adjustment = adjustment;
         layer.sampling = match item.transform.sampling.as_str() {
             "Nearest" => Sampling::Nearest,
             "Smooth" => Sampling::Smooth,

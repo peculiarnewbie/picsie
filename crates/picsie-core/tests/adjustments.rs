@@ -880,7 +880,8 @@ fn sourceless_adjustments_refuse_pixel_placement_but_keep_masks() {
             .is_err()
     );
     assert_eq!(editor.history.document.layers[1].x, 0.);
-    // Canvas operations keep the adjustment valid and full-document.
+    // Canvas operations translate adjustments like every other layer
+    // (CanvasResizer moves all transforms); sizes are preserved, not snapped.
     editor
         .command(Command::ResizeCanvas {
             options: picsie_core::canvas_size::CanvasSizeOptions {
@@ -900,8 +901,15 @@ fn sourceless_adjustments_refuse_pixel_placement_but_keep_masks() {
         .unwrap();
     assert_eq!(
         (layer.width, layer.height, layer.x, layer.y),
-        (10, 6, 0., 0.)
+        (8, 8, 1., -1.)
     );
+    let mut sized = Document::new("Sized", 8, 8).unwrap();
+    sized
+        .layers
+        .push(paint_layer("Red", 8, 8, &[255, 0, 0, 255].repeat(64)));
+    let mut editor = Editor::new(sized).unwrap();
+    editor.add_adjustment(AdjustmentKind::Levels).unwrap();
+    editor.commit_adjustment_edit().unwrap();
     editor
         .command(Command::ResizeImage {
             options: picsie_core::image_size::ImageSizeOptions {
@@ -917,7 +925,7 @@ fn sourceless_adjustments_refuse_pixel_placement_but_keep_masks() {
         .document
         .layers
         .iter()
-        .find(|l| l.id == id)
+        .find(|l| l.adjustment.is_some())
         .unwrap();
     assert_eq!(
         (layer.width, layer.height, layer.x, layer.y),
@@ -1056,5 +1064,179 @@ fn adjustment_histogram_ignores_active_selection_and_keeps_groups() {
     assert_eq!(
         editor.adjustment_edit.as_ref().unwrap().working.levels,
         with_selection
+    );
+}
+
+// Local, from CanvasResizer/ProjectStore: canvas operations translate every
+// layer transform (adjustments included) and explicitly placed masks, so an
+// asymmetric mask footprint stays glued to the artwork it was drawn over.
+#[test]
+fn masked_adjustment_footprint_follows_crop_and_anchored_enlarge() {
+    use picsie_core::model::{LayerMask, MaskMode, MaskRaster};
+    use std::sync::Arc;
+    fn half_mask(width: u32, height: u32) -> Arc<LayerMask> {
+        let mut pixels = Vec::new();
+        for _ in 0..height {
+            for x in 0..width {
+                pixels.push(if x < width / 2 { 255 } else { 0 });
+            }
+        }
+        Arc::new(LayerMask {
+            enabled: true,
+            base: MaskMode::Reveal,
+            raster: Some(Arc::new(MaskRaster {
+                width,
+                height,
+                pixels: Arc::new(pixels),
+            })),
+            linked: true,
+            placement: None,
+            strokes: vec![],
+        })
+    }
+    fn blacken(width: u32, height: u32, mask: Arc<LayerMask>) -> Layer {
+        let mut value = LayerAdjustment::new(AdjustmentKind::Levels);
+        value.levels.ranges[0].output_white = 0.;
+        let mut layer = Layer::new("Levels", width, height, Content::Paint);
+        layer.adjustment = Some(value);
+        layer.mask = Some(mask);
+        layer
+    }
+    // Crop: 6px wide artwork cropped to its middle 2px carries the mask along.
+    let mut doc = Document::new("Crop", 6, 2).unwrap();
+    doc.layers
+        .push(paint_layer("Blue", 6, 2, &[0, 0, 255, 255].repeat(12)));
+    doc.layers.push(blacken(6, 2, half_mask(6, 2)));
+    let cropped = picsie_core::canvas_size::crop_canvas(
+        &doc,
+        picsie_core::crop::CropRect {
+            x: 2.,
+            y: 0.,
+            width: 2.,
+            height: 2.,
+        },
+    )
+    .unwrap();
+    let adjustment = cropped
+        .layers
+        .iter()
+        .find(|l| l.adjustment.is_some())
+        .unwrap();
+    assert_eq!((adjustment.x, adjustment.y), (-2., 0.));
+    assert_eq!(
+        rendered(&cropped),
+        vec![0, 0, 0, 255, 0, 0, 255, 255, 0, 0, 0, 255, 0, 0, 255, 255]
+    );
+    // Anchored enlargement: growing right keeps the artwork (and the mask
+    // footprint) at its translated place instead of stretching it.
+    let mut doc = Document::new("Anchor", 4, 2).unwrap();
+    doc.layers
+        .push(paint_layer("White", 4, 2, &[255, 255, 255, 255].repeat(8)));
+    doc.layers.push(blacken(4, 2, half_mask(4, 2)));
+    assert_eq!(
+        rendered(&doc),
+        vec![
+            0, 0, 0, 255, 0, 0, 0, 255, 255, 255, 255, 255, 255, 255, 255, 255, //
+            0, 0, 0, 255, 0, 0, 0, 255, 255, 255, 255, 255, 255, 255, 255, 255,
+        ]
+    );
+    let enlarged = picsie_core::canvas_size::resize_canvas(
+        &doc,
+        &picsie_core::canvas_size::CanvasSizeOptions {
+            width: 6,
+            height: 2,
+            anchor: 5,
+            fill: None,
+        },
+    )
+    .unwrap();
+    let adjustment = enlarged
+        .layers
+        .iter()
+        .find(|l| l.adjustment.is_some())
+        .unwrap();
+    assert_eq!((adjustment.x, adjustment.y), (2., 0.));
+    assert_eq!(
+        rendered(&enlarged),
+        vec![
+            0, 0, 0, 0, 0, 0, 0, 0, //
+            0, 0, 0, 255, 0, 0, 0, 255, //
+            255, 255, 255, 255, 255, 255, 255, 255, //
+            0, 0, 0, 0, 0, 0, 0, 0, //
+            0, 0, 0, 255, 0, 0, 0, 255, //
+            255, 255, 255, 255, 255, 255, 255, 255,
+        ]
+    );
+    // The translated document round-trips through .comp with geometry intact.
+    let directory = tempfile::tempdir().unwrap();
+    let package = directory.path().join("moved.comp");
+    picsie_core::files::save_project(&package, &enlarged).unwrap();
+    let loaded = picsie_core::files::open_project(&package).unwrap();
+    let adjustment = loaded
+        .layers
+        .iter()
+        .find(|l| l.adjustment.is_some())
+        .unwrap();
+    assert_eq!((adjustment.x, adjustment.y), (2., 0.));
+    assert_eq!(rendered(&loaded), rendered(&enlarged));
+}
+
+// Local: upstream packages may store nonzero adjustment transforms (and
+// placed masks); import accepts them verbatim and renders through them.
+#[test]
+fn comp_import_accepts_moved_upstream_adjustment_geometry() {
+    let mut doc = Document::new("Moved", 2, 1).unwrap();
+    doc.layers.push(paint_layer(
+        "White",
+        2,
+        1,
+        &[255, 255, 255, 255, 255, 255, 255, 255],
+    ));
+    let mut value = LayerAdjustment::new(AdjustmentKind::Levels);
+    value.levels.ranges[0].output_white = 0.;
+    let mut layer = Layer::new("Levels", 2, 1, Content::Paint);
+    layer.adjustment = Some(value);
+    use picsie_core::model::{LayerMask, MaskMode, MaskRaster};
+    use std::sync::Arc;
+    layer.mask = Some(Arc::new(LayerMask {
+        enabled: true,
+        base: MaskMode::Reveal,
+        raster: Some(Arc::new(MaskRaster {
+            width: 1,
+            height: 1,
+            pixels: Arc::new(vec![255]),
+        })),
+        linked: true,
+        placement: None,
+        strokes: vec![],
+    }));
+    doc.layers.push(layer);
+    assert_eq!(rendered(&doc), vec![0, 0, 0, 255, 0, 0, 0, 255]);
+    let directory = tempfile::tempdir().unwrap();
+    let package = directory.path().join("moved.comp");
+    picsie_core::files::save_project(&package, &doc).unwrap();
+    // Rewrite the stored adjustment transform the way an upstream-anchored
+    // resize would: translated origin, same size.
+    let manifest_path = package.join("manifest.json");
+    let mut manifest: serde_json::Value =
+        serde_json::from_slice(&std::fs::read(&manifest_path).unwrap()).unwrap();
+    let layers = manifest["layers"].as_array_mut().unwrap();
+    let record = layers
+        .iter_mut()
+        .find(|l| !l["adjustment"].is_null())
+        .unwrap();
+    record["transform"]["origin"] = serde_json::json!({"x": 5.0, "y": -3.0});
+    std::fs::write(&manifest_path, serde_json::to_vec(&manifest).unwrap()).unwrap();
+    let loaded = picsie_core::files::open_project(&package).unwrap();
+    let adjustment = loaded
+        .layers
+        .iter()
+        .find(|l| l.adjustment.is_some())
+        .unwrap();
+    assert_eq!((adjustment.x, adjustment.y), (5., -3.));
+    // The mask footprint moved off-canvas with its layer, so nothing remaps.
+    assert_eq!(
+        rendered(&loaded),
+        vec![255, 255, 255, 255, 255, 255, 255, 255]
     );
 }

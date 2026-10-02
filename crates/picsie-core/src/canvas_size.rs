@@ -2,6 +2,7 @@
 use crate::{crop::CropRect, model::*, render};
 use anyhow::{Result, ensure};
 use serde::{Deserialize, Serialize};
+use std::sync::Arc;
 use ts_rs::TS;
 #[derive(Clone, Serialize, Deserialize, TS)]
 pub struct CanvasSizeOptions {
@@ -37,14 +38,16 @@ pub fn resize_canvas(doc: &Document, opt: &CanvasSizeOptions) -> Result<Document
         guide.offset(dx, dy);
     }
     for l in &mut next.layers {
-        // Adjustment layers always cover the document: they track its size and
-        // never translate with an anchor.
-        if l.adjustment.is_some() {
-            l.width = opt.width;
-            l.height = opt.height;
-        } else {
-            l.x += dx;
-            l.y += dy;
+        // CanvasResizer translates every layer transform by the anchor offset,
+        // adjustments included; explicitly placed masks move along with them.
+        l.x += dx;
+        l.y += dy;
+        if l.mask.as_ref().is_some_and(|m| m.placement.is_some()) {
+            let placed = Arc::make_mut(l.mask.as_mut().unwrap());
+            if let Some(placement) = placed.placement.as_mut() {
+                placement.x += dx;
+                placement.y += dy;
+            }
         }
     }
     next.validate()?;
@@ -87,12 +90,16 @@ pub fn crop_canvas(doc: &Document, rect: CropRect) -> Result<Document> {
         guide.offset(-rect.x, -rect.y);
     }
     for layer in &mut next.layers {
-        if layer.adjustment.is_some() {
-            layer.width = rect.width as u32;
-            layer.height = rect.height as u32;
-        } else {
-            layer.x -= rect.x;
-            layer.y -= rect.y;
+        // Crop commits through the same resizer upstream: every layer moves
+        // with the document, adjustments and placed masks included.
+        layer.x -= rect.x;
+        layer.y -= rect.y;
+        if layer.mask.as_ref().is_some_and(|m| m.placement.is_some()) {
+            let placed = Arc::make_mut(layer.mask.as_mut().unwrap());
+            if let Some(placement) = placed.placement.as_mut() {
+                placement.x -= rect.x;
+                placement.y -= rect.y;
+            }
         }
     }
     next.validate()?;

@@ -150,12 +150,6 @@ pub fn resize(doc: &Document, options: &ImageSizeOptions) -> Result<Document> {
         layer.flip_x = false;
         layer.flip_y = false;
         layer.sampling = options.sampling;
-        if layer.adjustment.is_some() {
-            layer.x = 0.;
-            layer.y = 0.;
-            layer.width = options.width;
-            layer.height = options.height;
-        }
     }
     for guide in &mut next.guides {
         guide.scale(sx, sy);

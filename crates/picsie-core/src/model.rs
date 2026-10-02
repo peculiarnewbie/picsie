@@ -564,7 +564,10 @@ impl Layer {
         );
         if let Some(adjustment) = &self.adjustment {
             // Levels/Curves adjustment layers, Compositor 609dbeae LayerAdjustment.
-            // They carry no pixels of their own and always cover the document.
+            // They carry no pixels of their own; ProjectStore validates the
+            // settings but places no geometry constraint, and canvas
+            // operations translate them like every other layer. Pixel
+            // placement interaction stays forbidden at the command level.
             ensure!(adjustment.is_valid(), "Invalid adjustment settings");
             ensure!(
                 matches!(self.content.as_ref(), Content::Paint),
@@ -577,16 +580,6 @@ impl Layer {
             ensure!(
                 self.brightness == 1. && self.saturation == 1. && self.blur == 0.,
                 "Adjustment layers keep default appearance"
-            );
-            ensure!(
-                self.x == 0.
-                    && self.y == 0.
-                    && self.scale_x == 1.
-                    && self.scale_y == 1.
-                    && self.rotation == 0.
-                    && !self.flip_x
-                    && !self.flip_y,
-                "Adjustment layers cover the document"
             );
         }
         match self.content.as_ref() {

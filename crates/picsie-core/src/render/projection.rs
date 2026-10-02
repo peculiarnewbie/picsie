@@ -598,33 +598,63 @@ impl Renderer {
             .draw_image(&top_image, (0., 0.), Some(&paint));
         premul_pixels(&blend_surface.image_snapshot())
     }
-    /// Grayscale coverage of an adjustment layer's own mask in document pixels.
-    /// Adjustment layers always span the document, so the mask image maps 1:1.
+    /// Own-mask image of an adjustment layer placed into document space.
+    /// Upstream draws the mask image through the layer transform
+    /// (FolderMaskClip); the adjustment effect itself stays global while its
+    /// mask footprint follows canvas operations like every other layer.
+    fn placed_adjustment_mask(
+        mask: &LayerMask,
+        layer: &Layer,
+        width: u32,
+        height: u32,
+    ) -> Result<Image> {
+        let coverage = mask_image(mask, layer)?;
+        let info = sk::ImageInfo::new(
+            (layer.width as i32, layer.height as i32),
+            sk::ColorType::Alpha8,
+            sk::AlphaType::Premul,
+            None,
+        );
+        let mut gray = vec![0u8; layer.width as usize * layer.height as usize];
+        ensure!(
+            coverage.read_pixels(
+                &info,
+                &mut gray,
+                layer.width as usize,
+                (0, 0),
+                sk::image::CachingHint::Disallow
+            ),
+            "Cannot read adjustment mask"
+        );
+        let mut white = Vec::with_capacity(gray.len() * 4);
+        for c in gray {
+            white.extend_from_slice(&[255, 255, 255, c]);
+        }
+        let grid = rgba_image(layer.width, layer.height, &white)?;
+        let mut placed = surface(width, height)?;
+        placed.canvas().clear(Color::TRANSPARENT);
+        placed.canvas().save();
+        transform(placed.canvas(), layer);
+        placed.canvas().draw_image_with_sampling_options(
+            &grid,
+            (0., 0.),
+            sampling_options(layer.sampling),
+            None,
+        );
+        placed.canvas().restore();
+        Ok(placed.image_snapshot())
+    }
+    /// Grayscale coverage of an adjustment layer's own mask in document pixels,
+    /// following the layer transform like every other placed mask.
     fn adjustment_mask_coverage(
         mask: &LayerMask,
         layer: &Layer,
         width: u32,
         height: u32,
     ) -> Result<Vec<u8>> {
-        let coverage = mask_image(mask, layer)?;
-        let info = sk::ImageInfo::new(
-            (width as i32, height as i32),
-            sk::ColorType::Alpha8,
-            sk::AlphaType::Premul,
-            None,
-        );
-        let mut bytes = vec![0u8; width as usize * height as usize];
-        ensure!(
-            coverage.read_pixels(
-                &info,
-                &mut bytes,
-                width as usize,
-                (0, 0),
-                sk::image::CachingHint::Disallow
-            ),
-            "Cannot read adjustment mask"
-        );
-        Ok(bytes)
+        let placed = Self::placed_adjustment_mask(mask, layer, width, height)?;
+        let pixels = premul_pixels(&placed)?;
+        Ok(pixels.chunks_exact(4).map(|p| p[3]).collect())
     }
     /// LiveMaskRenderer.adjust (609dbeae) for a sourceless adjustment layer:
     /// remap the accumulated composite through the Levels/Curves tables, then
@@ -694,7 +724,7 @@ impl Renderer {
         if let Some(mask) = &layer.mask
             && mask.enabled
         {
-            let coverage = mask_image(mask, layer)?;
+            let coverage = Self::placed_adjustment_mask(mask, layer, width, height)?;
             let shader = coverage
                 .to_shader(
                     (sk::TileMode::Decal, sk::TileMode::Decal),
