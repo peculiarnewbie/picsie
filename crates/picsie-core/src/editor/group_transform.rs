@@ -235,10 +235,10 @@ impl GroupCache {
         &self.selection == selection && self.document.as_ref().is_some_and(|d| d.retained_eq(doc))
     }
     /// The cached box alone: no member clone, only one shallow layer copy.
-    fn box_for(&self, selection: &Selection, doc: &Document) -> Option<Layer> {
-        self.valid(selection, doc)
-            .then(|| self.box_layer.clone())
-            .flatten()
+    /// `None` inside `Some` is a cached empty box (not a miss), so all-locked
+    /// or memberless selections never rebuild on repeated queries.
+    fn box_for(&self, selection: &Selection, doc: &Document) -> Option<Option<Layer>> {
+        self.valid(selection, doc).then(|| self.box_layer.clone())
     }
     /// The shared member list: an `Arc` clone, never an element copy.
     fn members_for(&self, selection: &Selection, doc: &Document) -> Option<Arc<Vec<Layer>>> {
@@ -443,7 +443,7 @@ impl Editor {
             .borrow()
             .box_for(&self.selection, &self.history.document)
         {
-            return Some(hit);
+            return hit;
         }
         self.group_cache
             .borrow_mut()

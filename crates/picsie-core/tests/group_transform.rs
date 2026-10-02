@@ -825,3 +825,35 @@ fn local_group_cache_shares_members_until_change() {
     assert!(e.group_members().is_empty());
     assert!(e.edited_group_box().is_none());
 }
+
+// Local: an empty (all-locked or memberless) selection caches its emptiness too.
+// Repeated box queries must not rebuild members or re-clone the document:
+// successive calls keep sharing the same cached member `Arc`.
+#[test]
+fn local_empty_group_cache_reuses_shared_members() {
+    use std::sync::Arc;
+    let (mut a, mut b) = two_layers();
+    a.locked = true;
+    b.locked = true;
+    let mut e = editor_with(vec![a.clone(), b.clone()]);
+    select_all(&mut e, &[a.id.clone(), b.id.clone()]);
+    assert!(e.edited_group_box().is_none());
+    let first = e.group_members();
+    assert!(first.is_empty());
+    let _ = e.edited_group_box();
+    let _ = e.edited_group_box();
+    assert!(Arc::ptr_eq(&first, &e.group_members()));
+    // An empty folder behaves the same way.
+    let doc = Document::new("Group", 400, 300).unwrap();
+    let empty = folder("Empty", &doc);
+    let mut with_empty = e.history.document.clone();
+    with_empty.layers.push(empty.clone());
+    e.edit("test setup", with_empty, None).unwrap();
+    e.select(Some(empty.id.clone()), SelectionMode::Replace)
+        .unwrap();
+    assert!(e.edited_group_box().is_none());
+    let folder_first = e.group_members();
+    let _ = e.edited_group_box();
+    let _ = e.edited_group_box();
+    assert!(Arc::ptr_eq(&folder_first, &e.group_members()));
+}
