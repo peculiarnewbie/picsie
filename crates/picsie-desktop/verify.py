@@ -567,6 +567,7 @@ def shapes_gradients(number):
     click('gradient-apply')
     check('mask gradient applies as one undo',lambda: (not state()['state']['gradientPending'] and state()['state']['history']['undoCount']==count+1))
     shot('30-gradient-mask.png')
+    key('ctrl+w');wait(lambda s:s['modal']=='close');click('modal-discard');wait(lambda s:not window_exists(window_id),'close shapes window')
     window_number=previous_window;focus(re.escape(previous_name)+'.*Picsie')
 
 def interaction_polish(number):
@@ -679,7 +680,11 @@ try:
     ox,oy=canvas_point(332+original['x'],315+original['y'])
     ow,oh=original['width']*original['scaleX'],original['height']*original['scaleY']
     drag(ox+ow,oy+oh,ox+ow+55,oy+oh+12,'Shift_L')
-    check('Shift resize preserves proportions', lambda: (abs((selected()['width']*selected()['scaleX'])/(selected()['height']*selected()['scaleY'])-ow/oh)<.001))
+    # Editable shapes commit integer-pixel assets at scale 1: upstream
+    # ShapeTool.redrawShape rounds the transformed size, so a uniform Shift
+    # resize lands within half a pixel per dimension, i.e.
+    # |w*oh - ow*h| <= (ow+oh)/2. A non-uniform resize misses this bound by far.
+    check('Shift resize preserves proportions', lambda: (abs(selected()['width']*selected()['scaleX']*oh-ow*selected()['height']*selected()['scaleY'])<=0.5*(ow+oh)))
     key('ctrl+z')
     click('duplicate'); check('duplicate selects new layer', lambda: (len(layers()) == 2 and selected()['id'] != rectangle))
     click('layer-'+rectangle, 'Control_L')

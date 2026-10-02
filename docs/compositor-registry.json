@@ -1006,7 +1006,7 @@
           "polish": "partial",
           "verification": "tests",
           "behavior": "Combined transform box for a folder or multiple layers; resize/rotate/numeric edits carry every child from its original placement",
-          "gap": "Group resize/rotate/numeric/flip carry every member from original placement in one undo, with Escape cancel, save/reopen, Shift ratio and locked/hidden/blank exclusion. 16 focused Linux X11 checks pass with screenshots (see native evidence); the shared-harness label promotion is left for combination. Remaining: group distortion (Ctrl/Cmd-drag does plain resize), group sampling stays disabled, locked layers excluded per local move semantics (upstream has no locked field).",
+          "gap": "Group resize/rotate/numeric/flip carry every member from original placement in one undo, with Escape cancel, save/reopen, Shift ratio and locked/hidden/blank exclusion. 16 focused Linux X11 checks pass with screenshots (see native evidence); the shared-harness label promotion is left for combination. Remaining: group distortion (Ctrl/Cmd-drag does plain resize), group sampling stays disabled, locked layers excluded per local move semantics (upstream has no locked field). Source-less adjustment layers are excluded like blank paint.",
           "evidence": [
             "Compositor/Document/LayerTransform.swift",
             "Compositor/UI/TransformInspector.swift",
@@ -1015,7 +1015,10 @@
             "crates/picsie-core/examples/group_transform_shots.rs",
             "artifacts/group-transforms/verify_group.py",
             "artifacts/group-transforms/native/report.json",
-            "artifacts/group-transforms/HANDOFF.md"
+            "artifacts/group-transforms/HANDOFF.md",
+            "crates/picsie-core/tests/cross_features.rs",
+            "artifacts/integration/baseline/report.json",
+            "artifacts/integration/combined/report.json"
           ],
           "upstream": [
             "Compositor/Document/LayerTransform.swift",
@@ -1807,7 +1810,10 @@
             "crates/picsie-core/tests/shapes_gradients.rs",
             "tests/native.test.ts",
             "artifacts/shapes-gradients/verify_shapes.py",
-            "docs/gpui-ui-parity.md"
+            "docs/gpui-ui-parity.md",
+            "crates/picsie-core/tests/cross_features.rs",
+            "artifacts/integration/baseline/report.json",
+            "artifacts/integration/combined/report.json"
           ],
           "upstream": [
             "Compositor/Document/ShapeTool.swift"
@@ -1828,7 +1834,10 @@
             "crates/picsie-core/tests/shapes_gradients.rs",
             "tests/native.test.ts",
             "artifacts/shapes-gradients/verify_shapes.py",
-            "docs/gpui-ui-parity.md"
+            "docs/gpui-ui-parity.md",
+            "crates/picsie-core/tests/cross_features.rs",
+            "artifacts/integration/baseline/report.json",
+            "artifacts/integration/combined/report.json"
           ],
           "upstream": [
             "Compositor/Document/ShapeTool.swift"
@@ -1878,7 +1887,11 @@
             "crates/picsie-core/tests/shapes_gradients.rs",
             "tests/native.test.ts",
             "artifacts/shapes-gradients/verify_shapes.py",
-            "docs/gpui-ui-parity.md"
+            "docs/gpui-ui-parity.md",
+            "crates/picsie-core/tests/cross_features.rs",
+            "artifacts/integration/baseline/report.json",
+            "artifacts/integration/combined/report.json",
+            "artifacts/integration/combined/04-gradient-color.png"
           ],
           "upstream": [
             "Compositor/Document/Gradient.swift",
@@ -1925,7 +1938,10 @@
             "crates/picsie-core/tests/shapes_gradients.rs",
             "tests/native.test.ts",
             "artifacts/shapes-gradients/verify_shapes.py",
-            "docs/gpui-ui-parity.md"
+            "docs/gpui-ui-parity.md",
+            "crates/picsie-core/tests/cross_features.rs",
+            "artifacts/integration/baseline/report.json",
+            "artifacts/integration/combined/report.json"
           ],
           "upstream": [
             "Compositor/UI/ShapeControls.swift"
@@ -3200,7 +3216,9 @@
           "behavior": "RGB/channel histogram, input/output levels, gamma, sampling, auto/reset/preview/cancel/apply through Levels adjustment layers",
           "gap": "Floating panel replaces the source 440pt sheet; numeric fields and drag handles ported, slider-track drag not ported. Destructive image-menu Levels (beginLevels/commitLevels) not ported. Edit histogram uses the alpha-weighted below-composite with a nil selection, like AdjustmentEditing; the kernel stays selection-capable for other consumers. Downscaled-preview shortcut not needed (full-size LUT). Other adjustment kinds remain missing.",
           "evidence": [
-            "crates/picsie-core/tests/adjustments.rs"
+            "crates/picsie-core/tests/adjustments.rs",
+            "crates/picsie-core/tests/cross_features.rs",
+            "artifacts/integration/combined/report.json"
           ]
         },
         {
@@ -3220,7 +3238,9 @@
           "behavior": "RGB/channel control points, add/remove/reset, channel switching and live preview through Curves adjustment layers",
           "gap": "260pt graph and CurvesControls gestures ported to a floating panel; interior-only removal and fixed endpoint x retained. Destructive filter-panel Curves not ported. Other adjustment kinds remain missing.",
           "evidence": [
-            "crates/picsie-core/tests/adjustments.rs"
+            "crates/picsie-core/tests/adjustments.rs",
+            "crates/picsie-core/tests/cross_features.rs",
+            "artifacts/integration/combined/report.json"
           ]
         },
         {
@@ -3285,7 +3305,9 @@
           "behavior": "Create/reopen Levels and Curves nondestructive adjustment layers with mask/clipping/opacity/blend semantics, undo, .picsie/.comp persistence and export",
           "gap": "Only Levels and Curves kinds exist; HSV/exposure/gradient-map/grain/black-white/color-balance/invert layers are rejected on import. No destructive pixel editing of adjustments; adjustment layers cannot be paint/transform targets.",
           "evidence": [
-            "crates/picsie-core/tests/adjustments.rs"
+            "crates/picsie-core/tests/adjustments.rs",
+            "crates/picsie-core/tests/cross_features.rs",
+            "artifacts/integration/combined/report.json"
           ]
         }
       ]

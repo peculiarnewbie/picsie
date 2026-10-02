@@ -688,7 +688,12 @@ Necessary adaptations: shapes are procedural vector layers (not raster assets
 with image-identity liveness), so this is not claimed as a full direct port;
 radius units are source pixels; the gradient swatch uses a flat white base
 instead of a checkerboard; the 2048 preview cap and placement compensation reuse
-local grid/renderer machinery. `crates/picsie-core/tests/shapes_gradients.rs`
+local grid/renderer machinery. Like upstream (`ShapeTool.redrawShape` rounds the
+transformed size to whole pixels), a committed shape resize normalizes to an
+integer-pixel asset at unit scale, so the native Shift-resize harness check
+bounds the ratio by half-pixel rounding per dimension
+(`|w*oh - ow*h| <= (ow+oh)/2`) instead of asserting an exact float ratio.
+`crates/picsie-core/tests/shapes_gradients.rs`
 translates the `ShapeToolTests`/`GradientTests` scenarios (labeled) with local
 regressions kept separate; `tests/native.test.ts` drives the commands through
 the actual addon.

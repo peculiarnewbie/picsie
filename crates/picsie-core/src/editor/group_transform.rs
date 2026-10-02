@@ -82,11 +82,10 @@ pub(super) fn transforms_as_group(editor: &Editor) -> bool {
 /// (directly or via a hidden ancestor) stay out through effective visibility, and
 /// blank paint layers stay out, matching upstream's `asset != nil` requirement.
 ///
-/// Cross-branch integration (levels): that branch adds
-/// `Layer.adjustment: Option<Adjustment>` over sourceless `Content::Paint`.
-/// Such adjustment layers carry no pixels (upstream `asset == nil`) and must be
-/// excluded alongside blank paint below when the branches combine; the field does
-/// not exist on this branch, so this is documented, not implemented, here.
+/// Source-less adjustment layers (`Layer.adjustment` over `Content::Paint`) carry
+/// no pixels, matching upstream's `asset == nil`, so they are excluded alongside
+/// blank paint: a group never moves or reshapes an adjustment, and a lone
+/// adjustment (or an all-adjustment selection) yields no box at all.
 pub(super) fn group_members(index: &LayerIndex, selection: &Selection) -> Vec<Layer> {
     let doc = index.document;
     let grouped = selection.ids.len() > 1
@@ -105,6 +104,9 @@ pub(super) fn group_members(index: &LayerIndex, selection: &Selection) -> Vec<La
                 return false;
             }
             if layer.locked {
+                return false;
+            }
+            if layer.adjustment.is_some() {
                 return false;
             }
             if matches!(layer.content.as_ref(), Content::Paint) && layer.strokes.is_empty() {
@@ -174,13 +176,13 @@ pub(super) fn group_box(members: &[Layer]) -> Option<Layer> {
 /// `following` plus linked-mask placement, skipping invalid members like
 /// upstream's commit loop.
 ///
-/// SHAPES INTEGRATION HOOK: members keep their vector content untouched here.
-/// If the shapes branch caches document-pixel rasterization (corner radius, line
-/// width), its redraw must hook into this carry path. It runs on every pointer
-/// sample (the `GroupTransform` gesture arm in `editor.rs`), on every
-/// numeric/nudge edit of a persistent draft (`preview_group_box` below), and the
-/// mirror loop in `flip_group` needs the same hook. Deliberately not implemented
-/// on this branch.
+/// Shape members keep their vector content here: only placement travels during
+/// previews, and the renderer's bounded (2048) shape preview draws them scaled.
+/// Scaled shapes redraw at full displayed size at commit through
+/// `Editor::redraw_committed_shapes` (`shape::redraw_at_displayed_size`,
+/// `LayerShapeStyle.redrawShape`), preserving document-pixel radius/line width
+/// and pinning mask footprints — never per pointer sample, and never by
+/// normalizing these originals prematurely.
 pub(super) fn carry_members(members: &[Layer], original: &Layer, draft: &Layer) -> Vec<Layer> {
     let mut carried = Vec::with_capacity(members.len());
     for member in members {
@@ -566,8 +568,9 @@ impl Editor {
         let original = state.original.clone();
         let members = state.members.clone();
         let mut doc = self.history.document.clone();
-        // Member replacement is one indexed pass (see `replace_all`); shapes keep
-        // vector content here — the shapes-branch redraw hooks into `carry_members`.
+        // Member replacement is one indexed pass (see `replace_all`); shape
+        // members keep vector content in previews and redraw at commit through
+        // `redraw_committed_shapes`.
         replace_all(&mut doc, carry_members(&members, &original, &draft));
         doc.validate()?;
         self.history.preview(doc);
@@ -592,7 +595,9 @@ impl Editor {
         let mut doc = self.history.document.clone();
         let mut carried = Vec::with_capacity(members.len());
         for member in members.iter() {
-            // Mirror path: same shapes-branch redraw hook as `carry_members`.
+            // Mirror path: placement only, like `carry_members`; scaled shapes
+            // redraw at commit through `Editor::edit`'s shape pass, and a pure
+            // mirror never rescales so editability survives untouched.
             let mut next = mirror_member(member, horizontal, axis);
             Self::follow_mask(member, &mut next);
             next.validate()?;

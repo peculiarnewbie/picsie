@@ -540,6 +540,46 @@ test("native gradient tool previews, applies and cancels through the real addon"
     }
   }));
 
+test("pending gradient stays out of addon save/export until Apply", async () =>
+  temporary(async (dir) => {
+    const e = session();
+    try {
+      e.viewport = { width: 200, height: 160, zoom: 1, pan: { x: 0, y: 0 } };
+      e.setTool("rectangle");
+      e.setColor("#ff0000");
+      e.pointer("down", { x: 10, y: 10 });
+      e.pointer("up", { x: 110, y: 30 });
+      e.setTool("gradient");
+      e.setGradientStyle("foreground-to-background");
+      e.setColor("#000000");
+      e.pointer("down", { x: 10.5, y: 20 });
+      e.pointer("move", { x: 110.5, y: 20 });
+      e.pointer("up", { x: 110.5, y: 20 });
+      // The line is pending: canvas export and project save must keep the base.
+      const pending = join(dir, "pending.png");
+      await e.export(pending, "png");
+      assert.deepEqual(await pixel(pending, 10, 20), [255, 0, 0, 255]);
+      const project = join(dir, "pending.picsie");
+      await e.save(project);
+      const reopened = await Editor.open(project);
+      try {
+        const clean = join(dir, "reopened.png");
+        await reopened.export(clean, "png");
+        assert.deepEqual(await pixel(clean, 10, 20), [255, 0, 0, 255]);
+      } finally {
+        reopened.close();
+      }
+      // Apply bakes the gradient; the same export then shows it.
+      e.commitGradient();
+      const applied = join(dir, "applied.png");
+      await e.export(applied, "png");
+      const start = await pixel(applied, 10, 20);
+      assert.ok(Math.abs((start[0] ?? -100)) <= 3 && start[3] === 255);
+    } finally {
+      e.close();
+    }
+  }));
+
 test("canvas form preserves original ratio across relative and percent edits", () => {
   const draft = new CanvasSizeDraft({ width: 400, height: 200 });
   draft.relative = true;

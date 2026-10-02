@@ -171,9 +171,8 @@ impl Editor {
             }
             // Sourceless adjustments have no pixels to move or reshape; their
             // independent masks (when targeted) still publish handles below.
-            map.movable = selected.is_some_and(|l| {
-                l.adjustment.is_none() && self.history.document.effective(l).0
-            });
+            map.movable = selected
+                .is_some_and(|l| l.adjustment.is_none() && self.history.document.effective(l).0);
             // A folder or multi-selection shows one box around the members
             // (`TransformOverlay.geometry`'s group branch); handles stay hidden for
             // a lone folder or anything without transformable members.

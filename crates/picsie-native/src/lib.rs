@@ -167,7 +167,10 @@ impl NativeEditor {
         }
         Ok(AsyncTask::new(SaveTask {
             shared: shared.clone(),
-            document: editor.history.document.clone(),
+            // A pending gradient preview stays out of the saved file until Apply.
+            document: editor
+                .gradient_base_document()
+                .unwrap_or_else(|| editor.history.document.clone()),
             revision: editor.history.revision.clone(),
             path,
         }))
@@ -181,7 +184,10 @@ impl NativeEditor {
                 "Apply or cancel the transform with dispatchAsync before exporting",
             ));
         }
-        let document = editor.history.document.clone();
+        // A pending gradient preview stays out of the export until Apply.
+        let document = editor
+            .gradient_base_document()
+            .unwrap_or_else(|| editor.history.document.clone());
         drop(editor);
         Ok(AsyncTask::new(ExportTask {
             shared,
