@@ -1006,7 +1006,7 @@
           "polish": "partial",
           "verification": "tests",
           "behavior": "Combined transform box for a folder or multiple layers; resize/rotate/numeric edits carry every child from its original placement",
-          "gap": "Group resize/rotate/numeric/flip carry every member from original placement in one undo, with Escape cancel, save/reopen, Shift ratio and locked/hidden/blank exclusion. 16 focused Linux X11 checks pass with screenshots (see native evidence); the shared-harness label promotion is left for combination. Remaining: group distortion (Ctrl/Cmd-drag does plain resize), group sampling stays disabled, locked layers excluded per local move semantics (upstream has no locked field). Source-less adjustment layers are excluded like blank paint.",
+          "gap": "Group resize/rotate/numeric/flip carry every member from original placement in one undo, with Escape cancel, save/reopen, Shift ratio and locked/hidden/blank exclusion. 16 focused Linux X11 checks pass with screenshots (see native evidence); the shared baseline now covers group select/resize/numeric/flip in its 250 native checks plus the combined group-of-shapes commit. Remaining: group distortion (Ctrl/Cmd-drag does plain resize), group sampling stays disabled, locked layers excluded per local move semantics (upstream has no locked field). Source-less adjustment layers are excluded like blank paint.",
           "evidence": [
             "Compositor/Document/LayerTransform.swift",
             "Compositor/UI/TransformInspector.swift",
@@ -3218,7 +3218,8 @@
           "evidence": [
             "crates/picsie-core/tests/adjustments.rs",
             "crates/picsie-core/tests/cross_features.rs",
-            "artifacts/integration/combined/report.json"
+            "artifacts/integration/combined/report.json",
+            "artifacts/integration/levels-curves-native/report.json"
           ]
         },
         {
@@ -3240,7 +3241,8 @@
           "evidence": [
             "crates/picsie-core/tests/adjustments.rs",
             "crates/picsie-core/tests/cross_features.rs",
-            "artifacts/integration/combined/report.json"
+            "artifacts/integration/combined/report.json",
+            "artifacts/integration/levels-curves-native/report.json"
           ]
         },
         {
@@ -3303,11 +3305,12 @@
           "polish": "partial",
           "verification": "tests",
           "behavior": "Create/reopen Levels and Curves nondestructive adjustment layers with mask/clipping/opacity/blend semantics, undo, .picsie/.comp persistence and export",
-          "gap": "Only Levels and Curves kinds exist; HSV/exposure/gradient-map/grain/black-white/color-balance/invert layers are rejected on import. No destructive pixel editing of adjustments; adjustment layers cannot be paint/transform targets.",
+          "gap": "Only Levels and Curves kinds exist; HSV/exposure/gradient-map/grain/black-white/color-balance/invert layers are rejected on import. No destructive pixel editing of adjustment content: source-less adjustment layers cannot acquire raster content or transform placement, while their own masks remain editable and transformable.",
           "evidence": [
             "crates/picsie-core/tests/adjustments.rs",
             "crates/picsie-core/tests/cross_features.rs",
-            "artifacts/integration/combined/report.json"
+            "artifacts/integration/combined/report.json",
+            "artifacts/integration/levels-curves-native/report.json"
           ]
         }
       ]
